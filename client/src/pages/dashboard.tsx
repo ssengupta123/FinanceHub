@@ -224,15 +224,15 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={250} data-testid="chart-billing-pie">
+              <ResponsiveContainer width="100%" height={280} data-testid="chart-billing-pie">
                 <RechartsPie>
-                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={3} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={80} innerRadius={45} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {billingPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
-                  <Legend />
+                  <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
                 </RechartsPie>
               </ResponsiveContainer>
             )}
@@ -260,15 +260,15 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={250} data-testid="chart-classification-pie">
+              <ResponsiveContainer width="100%" height={280} data-testid="chart-classification-pie">
                 <RechartsPie>
-                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} paddingAngle={2} label={({ name, percent }) => `${name.split(" - ")[0]} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={80} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {classificationPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
-                  <Legend />
+                  <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
                 </RechartsPie>
               </ResponsiveContainer>
             )}
