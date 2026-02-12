@@ -1,120 +1,180 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import type { Project } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { FolderOpen, Plus, FileSpreadsheet, ArrowRight, LayoutGrid } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { DollarSign, Users, FolderOpen, TrendingUp, ArrowRight, Clock, Target } from "lucide-react";
+import type { Project, Employee, Kpi } from "@shared/schema";
 
-export default function Dashboard() {
-  const { data: projects, isLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
-
-  return (
-    <div className="flex-1 overflow-auto">
-      <div className="max-w-5xl mx-auto p-6 space-y-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-dashboard-title">
-              Your Projects
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Upload Excel files and transform them into interactive apps
-            </p>
-          </div>
-          <Link href="/upload">
-            <Button data-testid="button-new-project">
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Button>
-          </Link>
-        </div>
-
-        {isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-5 w-3/4" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-4 w-2/3" />
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {!isLoading && (!projects || projects.length === 0) && (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
-                <FileSpreadsheet className="h-7 w-7 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-semibold mb-1">No projects yet</h3>
-              <p className="text-sm text-muted-foreground mb-6 max-w-sm">
-                Upload an Excel file to create your first project. Each sheet becomes a screen you can customize with rules and views.
-              </p>
-              <Link href="/upload">
-                <Button data-testid="button-create-first">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Your First Project
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        )}
-
-        {projects && projects.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function formatCurrency(val: string | number | null | undefined) {
+  if (!val) return "$0";
+  const n = typeof val === "string" ? parseFloat(val) : val;
+  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `$${(n / 1000).toFixed(0)}K`;
+  return `$${n.toFixed(0)}`;
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function statusColor(status: string): "default" | "secondary" | "outline" | "destructive" {
+  switch (status) {
+    case "active": return "default";
+    case "completed": return "secondary";
+    case "planning": return "outline";
+    default: return "secondary";
+  }
+}
+
+export default function Dashboard() {
+  const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const { data: kpis, isLoading: loadingKpis } = useQuery<Kpi[]>({ queryKey: ["/api/kpis"] });
+
+  const activeProjects = projects?.filter(p => p.status === "active") || [];
+  const activeEmployees = employees?.filter(e => e.status === "active") || [];
+
+  const totalRevenue = kpis?.reduce((sum, k) => sum + parseFloat(k.revenue || "0"), 0) || 0;
+  const totalCosts = kpis?.reduce((sum, k) => sum + parseFloat(k.grossCost || "0"), 0) || 0;
+  const avgUtilization = kpis && kpis.length > 0
+    ? kpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / kpis.length
+    : 0;
+
+  const isLoading = loadingProjects || loadingEmployees || loadingKpis;
+
   return (
-    <Link href={`/project/${project.id}`}>
-      <Card className="hover-elevate active-elevate-2 cursor-pointer h-full" data-testid={`card-project-${project.id}`}>
-        <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
-              <FolderOpen className="h-4 w-4 text-primary" />
-            </div>
-            <div className="min-w-0">
-              <CardTitle className="text-base truncate" data-testid={`text-project-name-${project.id}`}>
-                {project.name}
-              </CardTitle>
-            </div>
-          </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-        </CardHeader>
-        <CardContent className="pt-0">
-          {project.description && (
-            <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-              {project.description}
-            </p>
-          )}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <Badge variant="secondary" className="text-xs">
-              <LayoutGrid className="h-3 w-3 mr-1" />
-              Sheets
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {project.createdAt ? format(new Date(project.createdAt), "MMM d, yyyy") : ""}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+    <div className="flex-1 overflow-auto p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Financial overview and project status</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-8 w-24" /> : (
+              <div className="text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
+            )}
+            <p className="text-xs text-muted-foreground">Across all projects</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+            <FolderOpen className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-8 w-12" /> : (
+              <div className="text-2xl font-bold" data-testid="text-active-projects">{activeProjects.length}</div>
+            )}
+            <p className="text-xs text-muted-foreground">of {projects?.length || 0} total</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Resources</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-8 w-12" /> : (
+              <div className="text-2xl font-bold" data-testid="text-active-resources">{activeEmployees.length}</div>
+            )}
+            <p className="text-xs text-muted-foreground">of {employees?.length || 0} total</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Utilization</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-2xl font-bold" data-testid="text-utilization">{avgUtilization.toFixed(0)}%</div>
+            )}
+            <p className="text-xs text-muted-foreground">Resource utilization</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+            <CardTitle className="text-base">Active Projects</CardTitle>
+            <Link href="/projects">
+              <Button variant="ghost" size="sm" data-testid="link-view-all-projects">
+                View All <ArrowRight className="ml-1 h-3 w-3" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
+            ) : activeProjects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No active projects</p>
+            ) : (
+              activeProjects.slice(0, 5).map(project => (
+                <Link key={project.id} href={`/projects/${project.id}`}>
+                  <div className="flex items-center justify-between gap-2 p-3 rounded-md hover-elevate cursor-pointer" data-testid={`card-project-${project.id}`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{project.name}</p>
+                      <p className="text-xs text-muted-foreground">{project.client}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant={statusColor(project.status)}>{project.status}</Badge>
+                      <span className="text-xs text-muted-foreground">{formatCurrency(project.budgetAmount)}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+            <CardTitle className="text-base">Financial Summary</CardTitle>
+            <Link href="/finance">
+              <Button variant="ghost" size="sm" data-testid="link-view-finance">
+                Details <ArrowRight className="ml-1 h-3 w-3" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">Total Revenue</span>
+                  </div>
+                  <span className="text-sm font-medium" data-testid="text-summary-revenue">{formatCurrency(totalRevenue)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">Total Costs</span>
+                  </div>
+                  <span className="text-sm font-medium" data-testid="text-summary-costs">{formatCurrency(totalCosts)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">Net Margin</span>
+                  </div>
+                  <span className="text-sm font-medium" data-testid="text-summary-margin">{formatCurrency(totalRevenue - totalCosts)}</span>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

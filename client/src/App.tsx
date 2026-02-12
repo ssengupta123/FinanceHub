@@ -9,17 +9,37 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
-import UploadPage from "@/pages/upload";
-import ProjectPage from "@/pages/project";
-import ScreenView from "@/pages/screen-view";
+import FinanceDashboard from "@/pages/finance";
+import UtilizationDashboard from "@/pages/utilization";
+import ProjectsList from "@/pages/projects";
+import ProjectDetail from "@/pages/project-detail";
+import Resources from "@/pages/resources";
+import RateCards from "@/pages/rate-cards";
+import ResourcePlans from "@/pages/resource-plans";
+import Timesheets from "@/pages/timesheets";
+import Costs from "@/pages/costs";
+import Milestones from "@/pages/milestones";
+import Forecasts from "@/pages/forecasts";
+import Onboarding from "@/pages/onboarding";
+import DataSources from "@/pages/data-sources";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/upload" component={UploadPage} />
-      <Route path="/project/:id" component={ProjectPage} />
-      <Route path="/project/:id/screen/:screenId" component={ScreenView} />
+      <Route path="/finance" component={FinanceDashboard} />
+      <Route path="/utilization" component={UtilizationDashboard} />
+      <Route path="/projects" component={ProjectsList} />
+      <Route path="/projects/:id" component={ProjectDetail} />
+      <Route path="/resources" component={Resources} />
+      <Route path="/rate-cards" component={RateCards} />
+      <Route path="/resource-plans" component={ResourcePlans} />
+      <Route path="/timesheets" component={Timesheets} />
+      <Route path="/costs" component={Costs} />
+      <Route path="/milestones" component={Milestones} />
+      <Route path="/forecasts" component={Forecasts} />
+      <Route path="/onboarding" component={Onboarding} />
+      <Route path="/data-sources" component={DataSources} />
       <Route component={NotFound} />
     </Switch>
   );

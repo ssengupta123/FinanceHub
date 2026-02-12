@@ -1,5 +1,20 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FolderOpen, Plus, FileSpreadsheet } from "lucide-react";
+import {
+  DollarSign,
+  LayoutDashboard,
+  TrendingUp,
+  BarChart3,
+  FolderOpen,
+  Users,
+  CreditCard,
+  Calendar,
+  Clock,
+  Receipt,
+  Target,
+  LineChart,
+  UserPlus,
+  Database,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -12,16 +27,45 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { useQuery } from "@tanstack/react-query";
-import type { Project } from "@shared/schema";
-import { Skeleton } from "@/components/ui/skeleton";
+
+const navGroups = [
+  {
+    label: "Overview",
+    items: [
+      { title: "Dashboard", icon: LayoutDashboard, path: "/" },
+      { title: "Finance", icon: TrendingUp, path: "/finance" },
+      { title: "Utilization", icon: BarChart3, path: "/utilization" },
+    ],
+  },
+  {
+    label: "Management",
+    items: [
+      { title: "Projects", icon: FolderOpen, path: "/projects" },
+      { title: "Resources", icon: Users, path: "/resources" },
+      { title: "Rate Cards", icon: CreditCard, path: "/rate-cards" },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { title: "Resource Plans", icon: Calendar, path: "/resource-plans" },
+      { title: "Timesheets", icon: Clock, path: "/timesheets" },
+      { title: "Costs", icon: Receipt, path: "/costs" },
+    ],
+  },
+  {
+    label: "Tracking",
+    items: [
+      { title: "Milestones", icon: Target, path: "/milestones" },
+      { title: "Forecasts", icon: LineChart, path: "/forecasts" },
+      { title: "Onboarding", icon: UserPlus, path: "/onboarding" },
+      { title: "Data Sources", icon: Database, path: "/data-sources" },
+    ],
+  },
+];
 
 export function AppSidebar() {
   const [location] = useLocation();
-
-  const { data: projects, isLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
 
   return (
     <Sidebar>
@@ -29,79 +73,39 @@ export function AppSidebar() {
         <Link href="/">
           <div className="flex items-center gap-2 cursor-pointer">
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-              <FileSpreadsheet className="h-4 w-4 text-primary-foreground" />
+              <DollarSign className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold tracking-tight" data-testid="text-app-name">SheetApp</h2>
-              <p className="text-xs text-muted-foreground">Excel to App</p>
+              <h2 className="text-sm font-semibold tracking-tight" data-testid="text-app-name">FinanceHub</h2>
+              <p className="text-xs text-muted-foreground">Project Finance Management</p>
             </div>
           </div>
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location === "/"}>
-                  <Link href="/" data-testid="link-dashboard">
-                    <LayoutDashboard className="h-4 w-4" />
-                    <span>Dashboard</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location === "/upload"}>
-                  <Link href="/upload" data-testid="link-upload">
-                    <Plus className="h-4 w-4" />
-                    <span>New Project</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>Projects</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {isLoading && (
-                <>
-                  {[1, 2, 3].map((i) => (
-                    <SidebarMenuItem key={i}>
-                      <div className="px-2 py-1.5">
-                        <Skeleton className="h-5 w-full" />
-                      </div>
-                    </SidebarMenuItem>
-                  ))}
-                </>
-              )}
-              {projects?.map((project) => (
-                <SidebarMenuItem key={project.id}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === `/project/${project.id}`}
-                  >
-                    <Link href={`/project/${project.id}`} data-testid={`link-project-${project.id}`}>
-                      <FolderOpen className="h-4 w-4" />
-                      <span className="truncate">{project.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-              {!isLoading && (!projects || projects.length === 0) && (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  No projects yet
-                </div>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={location === item.path}>
+                      <Link href={item.path} data-testid={`link-${item.path.replace(/\//g, "").replace(/-/g, "-") || "dashboard"}`}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
       <SidebarFooter className="p-3">
         <p className="text-xs text-muted-foreground text-center">
-          Upload Excel files to get started
+          v1.0 — Azure Ready
         </p>
       </SidebarFooter>
     </Sidebar>
