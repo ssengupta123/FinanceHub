@@ -1,200 +1,285 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import multer from "multer";
-import * as XLSX from "xlsx";
 import { z } from "zod";
-import { insertProjectSchema } from "@shared/schema";
-
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-const createScreenBody = z.object({
-  sheetId: z.string().min(1),
-  name: z.string().min(1),
-  type: z.enum(["table", "cards", "list"]).default("table"),
-  config: z.record(z.any()).default({}),
-});
-
-const createRuleBody = z.object({
-  name: z.string().min(1),
-  column: z.string().min(1),
-  type: z.enum(["validation", "highlight", "format"]),
-  config: z.record(z.any()).default({}),
-  active: z.boolean().default(true),
-});
-
-const updateRuleBody = z.object({
-  active: z.boolean().optional(),
-  name: z.string().min(1).optional(),
-  config: z.record(z.any()).optional(),
-});
+import {
+  insertEmployeeSchema,
+  insertProjectSchema,
+  insertRateCardSchema,
+  insertResourcePlanSchema,
+  insertTimesheetSchema,
+  insertCostSchema,
+  insertKpiSchema,
+  insertForecastSchema,
+  insertMilestoneSchema,
+  insertDataSourceSchema,
+  insertOnboardingStepSchema,
+} from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
+  // ─── Employees ───
+  app.get("/api/employees", async (_req, res) => {
+    const data = await storage.getEmployees();
+    res.json(data);
+  });
+  app.get("/api/employees/:id", async (req, res) => {
+    const data = await storage.getEmployee(Number(req.params.id));
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.post("/api/employees", async (req, res) => {
+    const parsed = insertEmployeeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createEmployee(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/employees/:id", async (req, res) => {
+    const data = await storage.updateEmployee(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.delete("/api/employees/:id", async (req, res) => {
+    await storage.deleteEmployee(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Projects ───
   app.get("/api/projects", async (_req, res) => {
-    const projects = await storage.getProjects();
-    res.json(projects);
+    const data = await storage.getProjects();
+    res.json(data);
   });
-
   app.get("/api/projects/:id", async (req, res) => {
-    const project = await storage.getProject(req.params.id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
-    res.json(project);
+    const data = await storage.getProject(Number(req.params.id));
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
   });
-
+  app.post("/api/projects", async (req, res) => {
+    const parsed = insertProjectSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createProject(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/projects/:id", async (req, res) => {
+    const data = await storage.updateProject(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
   app.delete("/api/projects/:id", async (req, res) => {
-    await storage.deleteProject(req.params.id);
+    await storage.deleteProject(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.post("/api/projects/upload", upload.single("file"), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).send("No file uploaded");
-      }
-
-      const ext = req.file.originalname.split(".").pop()?.toLowerCase();
-      if (!ext || !["xlsx", "xls", "csv"].includes(ext)) {
-        return res.status(400).send("Invalid file type. Please upload .xlsx, .xls, or .csv");
-      }
-
-      const name = req.body.name || req.file.originalname.replace(/\.(xlsx|xls|csv)$/i, "");
-      const description = req.body.description || null;
-
-      const parsed = insertProjectSchema.safeParse({ name, description });
-      if (!parsed.success) {
-        return res.status(400).send("Invalid project data");
-      }
-
-      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-
-      const project = await storage.createProject(parsed.data);
-
-      for (const sheetName of workbook.SheetNames) {
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-        if (jsonData.length === 0) continue;
-
-        const columns = Object.keys(jsonData[0] as Record<string, any>);
-
-        const sheet = await storage.createSheet({
-          projectId: project.id,
-          name: sheetName,
-          columns,
-          data: jsonData as Record<string, any>[],
-        });
-
-        await storage.createScreen({
-          projectId: project.id,
-          sheetId: sheet.id,
-          name: `${sheetName} - Table View`,
-          type: "table",
-          config: { visibleColumns: columns },
-        });
-      }
-
-      res.json(project);
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      res.status(500).send(error.message || "Upload failed");
-    }
+  // ─── Rate Cards ───
+  app.get("/api/rate-cards", async (_req, res) => {
+    const data = await storage.getRateCards();
+    res.json(data);
   });
-
-  app.get("/api/projects/:id/sheets", async (req, res) => {
-    const projectSheets = await storage.getSheetsByProject(req.params.id);
-    res.json(projectSheets);
+  app.post("/api/rate-cards", async (req, res) => {
+    const parsed = insertRateCardSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createRateCard(parsed.data);
+    res.json(data);
   });
-
-  app.get("/api/sheets/:id", async (req, res) => {
-    const sheet = await storage.getSheet(req.params.id);
-    if (!sheet) return res.status(404).json({ message: "Sheet not found" });
-    res.json(sheet);
+  app.patch("/api/rate-cards/:id", async (req, res) => {
+    const data = await storage.updateRateCard(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
   });
-
-  app.get("/api/projects/:id/screens", async (req, res) => {
-    const projectScreens = await storage.getScreensByProject(req.params.id);
-    res.json(projectScreens);
-  });
-
-  app.get("/api/screens/:id", async (req, res) => {
-    const screen = await storage.getScreen(req.params.id);
-    if (!screen) return res.status(404).json({ message: "Screen not found" });
-    res.json(screen);
-  });
-
-  app.post("/api/projects/:id/screens", async (req, res) => {
-    try {
-      const parsed = createScreenBody.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.message });
-      }
-
-      const screen = await storage.createScreen({
-        projectId: req.params.id,
-        sheetId: parsed.data.sheetId,
-        name: parsed.data.name,
-        type: parsed.data.type,
-        config: parsed.data.config as any,
-      });
-      res.json(screen);
-    } catch (error: any) {
-      res.status(400).send(error.message);
-    }
-  });
-
-  app.delete("/api/projects/:id/screens/:screenId", async (req, res) => {
-    await storage.deleteScreen(req.params.screenId);
+  app.delete("/api/rate-cards/:id", async (req, res) => {
+    await storage.deleteRateCard(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.get("/api/projects/:id/rules", async (req, res) => {
-    const projectRules = await storage.getRulesByProject(req.params.id);
-    res.json(projectRules);
-  });
-
-  app.get("/api/sheets/:id/rules", async (req, res) => {
-    const sheetRules = await storage.getRulesBySheet(req.params.id);
-    res.json(sheetRules);
-  });
-
-  app.post("/api/sheets/:id/rules", async (req, res) => {
-    try {
-      const parsed = createRuleBody.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.message });
-      }
-
-      const rule = await storage.createRule({
-        sheetId: req.params.id,
-        name: parsed.data.name,
-        column: parsed.data.column,
-        type: parsed.data.type,
-        config: parsed.data.config as any,
-        active: parsed.data.active,
-      });
-      res.json(rule);
-    } catch (error: any) {
-      res.status(400).send(error.message);
+  // ─── Resource Plans ───
+  app.get("/api/resource-plans", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getResourcePlansByProject(Number(req.query.projectId));
+      return res.json(data);
     }
-  });
-
-  app.patch("/api/rules/:id", async (req, res) => {
-    const parsed = updateRuleBody.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: parsed.error.message });
+    if (req.query.employeeId) {
+      const data = await storage.getResourcePlansByEmployee(Number(req.query.employeeId));
+      return res.json(data);
     }
-    const rule = await storage.updateRule(req.params.id, parsed.data);
-    if (!rule) return res.status(404).json({ message: "Rule not found" });
-    res.json(rule);
+    const data = await storage.getResourcePlans();
+    res.json(data);
   });
-
-  app.delete("/api/rules/:id", async (req, res) => {
-    await storage.deleteRule(req.params.id);
+  app.post("/api/resource-plans", async (req, res) => {
+    const parsed = insertResourcePlanSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createResourcePlan(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/resource-plans/:id", async (req, res) => {
+    const data = await storage.updateResourcePlan(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.delete("/api/resource-plans/:id", async (req, res) => {
+    await storage.deleteResourcePlan(Number(req.params.id));
     res.json({ success: true });
+  });
+
+  // ─── Timesheets ───
+  app.get("/api/timesheets", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getTimesheetsByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    if (req.query.employeeId) {
+      const data = await storage.getTimesheetsByEmployee(Number(req.query.employeeId));
+      return res.json(data);
+    }
+    const data = await storage.getTimesheets();
+    res.json(data);
+  });
+  app.post("/api/timesheets", async (req, res) => {
+    const parsed = insertTimesheetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createTimesheet(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/timesheets/:id", async (req, res) => {
+    const data = await storage.updateTimesheet(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.delete("/api/timesheets/:id", async (req, res) => {
+    await storage.deleteTimesheet(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Costs ───
+  app.get("/api/costs", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getCostsByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    const data = await storage.getCosts();
+    res.json(data);
+  });
+  app.post("/api/costs", async (req, res) => {
+    const parsed = insertCostSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createCost(parsed.data);
+    res.json(data);
+  });
+  app.delete("/api/costs/:id", async (req, res) => {
+    await storage.deleteCost(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── KPIs ───
+  app.get("/api/kpis", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getKpisByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    const data = await storage.getKpis();
+    res.json(data);
+  });
+  app.post("/api/kpis", async (req, res) => {
+    const parsed = insertKpiSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createKpi(parsed.data);
+    res.json(data);
+  });
+
+  // ─── Forecasts ───
+  app.get("/api/forecasts", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getForecastsByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    const data = await storage.getForecasts();
+    res.json(data);
+  });
+  app.post("/api/forecasts", async (req, res) => {
+    const parsed = insertForecastSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createForecast(parsed.data);
+    res.json(data);
+  });
+
+  // ─── Milestones ───
+  app.get("/api/milestones", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getMilestonesByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    const data = await storage.getMilestones();
+    res.json(data);
+  });
+  app.post("/api/milestones", async (req, res) => {
+    const parsed = insertMilestoneSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createMilestone(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/milestones/:id", async (req, res) => {
+    const data = await storage.updateMilestone(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.delete("/api/milestones/:id", async (req, res) => {
+    await storage.deleteMilestone(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Data Sources ───
+  app.get("/api/data-sources", async (_req, res) => {
+    const data = await storage.getDataSources();
+    res.json(data);
+  });
+  app.post("/api/data-sources", async (req, res) => {
+    const parsed = insertDataSourceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createDataSource(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/data-sources/:id", async (req, res) => {
+    const data = await storage.updateDataSource(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+
+  // ─── Onboarding Steps ───
+  app.get("/api/employees/:id/onboarding", async (req, res) => {
+    const data = await storage.getOnboardingStepsByEmployee(Number(req.params.id));
+    res.json(data);
+  });
+  app.post("/api/employees/:id/onboarding", async (req, res) => {
+    const parsed = insertOnboardingStepSchema.safeParse({ ...req.body, employeeId: Number(req.params.id) });
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createOnboardingStep(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/onboarding-steps/:id", async (req, res) => {
+    const data = await storage.updateOnboardingStep(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+
+  // ─── Dashboard Aggregates ───
+  app.get("/api/dashboard/summary", async (_req, res) => {
+    const data = await storage.getDashboardSummary();
+    res.json(data);
+  });
+  app.get("/api/dashboard/finance", async (_req, res) => {
+    const data = await storage.getFinanceDashboard();
+    res.json(data);
+  });
+  app.get("/api/dashboard/utilization", async (_req, res) => {
+    const data = await storage.getUtilizationSummary();
+    res.json(data);
+  });
+  app.get("/api/projects/:id/summary", async (req, res) => {
+    const data = await storage.getProjectSummary(Number(req.params.id));
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
   });
 
   return httpServer;
