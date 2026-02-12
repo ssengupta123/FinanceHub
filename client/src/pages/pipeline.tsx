@@ -17,11 +17,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GitBranch, Filter } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { GitBranch, Filter, Settings2 } from "lucide-react";
 import { useState } from "react";
 import type { PipelineOpportunity } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
+type PipelineColumnKey = "name" | "classification" | "vat" | "m1" | "m2" | "m3" | "m4" | "m5" | "m6" | "m7" | "m8" | "m9" | "m10" | "m11" | "m12" | "fyTotal";
+
+const ALL_PIPELINE_COLUMNS: { key: PipelineColumnKey; label: string }[] = [
+  { key: "name", label: "Opportunity" },
+  { key: "classification", label: "Status" },
+  { key: "vat", label: "VAT" },
+  ...FY_MONTHS.map((m, i) => ({ key: `m${i + 1}` as PipelineColumnKey, label: m })),
+  { key: "fyTotal", label: "FY Total" },
+];
 const CLASSIFICATIONS = [
   { value: "all", label: "All Classifications" },
   { value: "C", label: "Contracted" },
@@ -50,6 +67,20 @@ function classificationColor(c: string): "default" | "secondary" | "outline" | "
 
 export default function Pipeline() {
   const [filter, setFilter] = useState("all");
+  const [visibleColumns, setVisibleColumns] = useState<Set<PipelineColumnKey>>(
+    new Set(ALL_PIPELINE_COLUMNS.map(c => c.key))
+  );
+
+  const toggleColumn = (key: PipelineColumnKey) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const isCol = (key: PipelineColumnKey) => visibleColumns.has(key);
   const { data: pipeline, isLoading } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
 
   const filtered = filter === "all" ? pipeline : pipeline?.filter(o => o.classification === filter);
@@ -167,6 +198,25 @@ export default function Pipeline() {
                 ))}
               </SelectContent>
             </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" data-testid="button-column-toggle">
+                  <Settings2 className="mr-2 h-4 w-4" /> Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[200px]">
+                {ALL_PIPELINE_COLUMNS.map(col => (
+                  <DropdownMenuCheckboxItem
+                    key={col.key}
+                    checked={visibleColumns.has(col.key)}
+                    onCheckedChange={() => toggleColumn(col.key)}
+                    data-testid={`toggle-column-${col.key}`}
+                  >
+                    {col.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </CardHeader>
         <CardContent>
@@ -177,24 +227,33 @@ export default function Pipeline() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[250px]">Opportunity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>VAT</TableHead>
-                    {FY_MONTHS.map(m => (
-                      <TableHead key={m} className="text-right min-w-[70px]">{m}</TableHead>
+                    {isCol("name") && <TableHead className="min-w-[250px]">Opportunity</TableHead>}
+                    {isCol("classification") && <TableHead>Status</TableHead>}
+                    {isCol("vat") && <TableHead>VAT</TableHead>}
+                    {FY_MONTHS.map((m, i) => (
+                      isCol(`m${i + 1}` as PipelineColumnKey) && <TableHead key={m} className="text-right min-w-[70px]">{m}</TableHead>
                     ))}
-                    <TableHead className="text-right min-w-[90px]">FY Total</TableHead>
+                    {isCol("fyTotal") && <TableHead className="text-right min-w-[90px]">FY Total</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(filtered || []).map(opp => {
                     const total = getTotalRevenue(opp);
+                    const ragColor = total > 500000 ? "bg-green-500" : total >= 200000 ? "bg-amber-500" : "bg-red-500";
                     return (
                       <TableRow key={opp.id} data-testid={`row-opp-${opp.id}`}>
-                        <TableCell className="font-medium text-sm">{opp.name}</TableCell>
-                        <TableCell><Badge variant={classificationColor(opp.classification)}>{opp.classification}</Badge></TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{opp.vat || "-"}</TableCell>
+                        {isCol("name") && (
+                          <TableCell className="font-medium text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-block w-2 h-2 rounded-full ${ragColor}`} data-testid={`rag-indicator-${opp.id}`} />
+                              {opp.name}
+                            </div>
+                          </TableCell>
+                        )}
+                        {isCol("classification") && <TableCell><Badge variant={classificationColor(opp.classification)}>{opp.classification}</Badge></TableCell>}
+                        {isCol("vat") && <TableCell className="text-sm text-muted-foreground">{opp.vat || "-"}</TableCell>}
                         {Array.from({ length: 12 }, (_, i) => {
+                          if (!isCol(`m${i + 1}` as PipelineColumnKey)) return null;
                           const val = getMonthlyRevenue(opp, i + 1);
                           return (
                             <TableCell key={i} className="text-right text-sm">
@@ -202,7 +261,7 @@ export default function Pipeline() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="text-right font-medium">{formatCurrency(total)}</TableCell>
+                        {isCol("fyTotal") && <TableCell className="text-right font-medium">{formatCurrency(total)}</TableCell>}
                       </TableRow>
                     );
                   })}

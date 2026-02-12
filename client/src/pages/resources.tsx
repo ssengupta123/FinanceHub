@@ -42,7 +42,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Users, UserCheck, UserMinus, DollarSign, Search } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Plus, Trash2, Users, UserCheck, UserMinus, DollarSign, Search, Settings2 } from "lucide-react";
 
 function statusVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
@@ -65,6 +71,45 @@ function formatDate(value: string | null | undefined): string {
   const d = new Date(value);
   if (isNaN(d.getTime())) return "--";
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+type ColumnKey = "jid" | "name" | "role" | "costBand" | "staffType" | "team" | "baseCost" | "grossCost" | "payrollTax" | "scheduleStart" | "scheduleEnd" | "location" | "status";
+
+const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: "jid", label: "JID" },
+  { key: "name", label: "Name" },
+  { key: "role", label: "Role" },
+  { key: "costBand", label: "Cost Band" },
+  { key: "staffType", label: "Staff Type" },
+  { key: "team", label: "Team" },
+  { key: "baseCost", label: "Base Cost ($/day)" },
+  { key: "grossCost", label: "Gross Cost ($/day)" },
+  { key: "payrollTax", label: "Payroll Tax" },
+  { key: "scheduleStart", label: "Schedule Start" },
+  { key: "scheduleEnd", label: "Schedule End" },
+  { key: "location", label: "Location" },
+  { key: "status", label: "Status" },
+];
+
+function grossCostRagColor(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "bg-gray-300";
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(num)) return "bg-gray-300";
+  if (num < 700) return "bg-green-500";
+  if (num <= 800) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function scheduleEndRagColor(value: string | null | undefined): string {
+  if (!value) return "bg-red-500";
+  const end = new Date(value);
+  if (isNaN(end.getTime())) return "bg-red-500";
+  const now = new Date();
+  if (end < now) return "bg-red-500";
+  const threeMonths = new Date();
+  threeMonths.setMonth(threeMonths.getMonth() + 3);
+  if (end <= threeMonths) return "bg-amber-500";
+  return "bg-green-500";
 }
 
 const initialForm = {
@@ -98,6 +143,20 @@ export default function Resources() {
   const [filterStaffType, setFilterStaffType] = useState("all");
   const [filterTeam, setFilterTeam] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
+    new Set(ALL_COLUMNS.map(c => c.key))
+  );
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const isCol = (key: ColumnKey) => visibleColumns.has(key);
 
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
 
@@ -183,13 +242,33 @@ export default function Resources() {
           <h1 className="text-2xl font-semibold" data-testid="text-resources-title">Staff SOT</h1>
           <p className="text-sm text-muted-foreground" data-testid="text-resources-subtitle">Staff Schedule of Tasks & Costing</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-employee">
-              <Plus className="mr-2 h-4 w-4" /> Add Employee
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center gap-2 flex-wrap">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" data-testid="button-column-toggle">
+                <Settings2 className="mr-2 h-4 w-4" /> Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[200px]">
+              {ALL_COLUMNS.map(col => (
+                <DropdownMenuCheckboxItem
+                  key={col.key}
+                  checked={visibleColumns.has(col.key)}
+                  onCheckedChange={() => toggleColumn(col.key)}
+                  data-testid={`toggle-column-${col.key}`}
+                >
+                  {col.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-employee">
+                <Plus className="mr-2 h-4 w-4" /> Add Employee
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Employee</DialogTitle>
             </DialogHeader>
@@ -309,8 +388,9 @@ export default function Resources() {
                 {createMutation.isPending ? "Adding..." : "Add Employee"}
               </Button>
             </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -409,40 +489,50 @@ export default function Resources() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>JID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Cost Band</TableHead>
-                    <TableHead>Staff Type</TableHead>
-                    <TableHead>Team</TableHead>
-                    <TableHead className="text-right">Base Cost ($/day)</TableHead>
-                    <TableHead className="text-right">Gross Cost ($/day)</TableHead>
-                    <TableHead>Payroll Tax</TableHead>
-                    <TableHead>Schedule Start</TableHead>
-                    <TableHead>Schedule End</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Status</TableHead>
+                    {isCol("jid") && <TableHead>JID</TableHead>}
+                    {isCol("name") && <TableHead>Name</TableHead>}
+                    {isCol("role") && <TableHead>Role</TableHead>}
+                    {isCol("costBand") && <TableHead>Cost Band</TableHead>}
+                    {isCol("staffType") && <TableHead>Staff Type</TableHead>}
+                    {isCol("team") && <TableHead>Team</TableHead>}
+                    {isCol("baseCost") && <TableHead className="text-right">Base Cost ($/day)</TableHead>}
+                    {isCol("grossCost") && <TableHead className="text-right">Gross Cost ($/day)</TableHead>}
+                    {isCol("payrollTax") && <TableHead>Payroll Tax</TableHead>}
+                    {isCol("scheduleStart") && <TableHead>Schedule Start</TableHead>}
+                    {isCol("scheduleEnd") && <TableHead>Schedule End</TableHead>}
+                    {isCol("location") && <TableHead>Location</TableHead>}
+                    {isCol("status") && <TableHead>Status</TableHead>}
                     <TableHead className="w-[60px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.length > 0 ? filtered.map(emp => (
                     <TableRow key={emp.id} data-testid={`row-employee-${emp.id}`}>
-                      <TableCell className="font-medium" data-testid={`text-employee-jid-${emp.id}`}>{emp.jid || "--"}</TableCell>
-                      <TableCell data-testid={`text-employee-name-${emp.id}`} className="whitespace-nowrap">{emp.firstName} {emp.lastName}</TableCell>
-                      <TableCell data-testid={`text-employee-role-${emp.id}`}>{emp.role || "--"}</TableCell>
-                      <TableCell data-testid={`text-employee-costband-${emp.id}`}>{emp.costBandLevel || "--"}</TableCell>
-                      <TableCell data-testid={`text-employee-stafftype-${emp.id}`}>{emp.staffType || "--"}</TableCell>
-                      <TableCell data-testid={`text-employee-team-${emp.id}`}>{emp.team || "--"}</TableCell>
-                      <TableCell className="text-right" data-testid={`text-employee-basecost-${emp.id}`}>{formatCurrency(emp.baseCost)}</TableCell>
-                      <TableCell className="text-right" data-testid={`text-employee-grosscost-${emp.id}`}>{formatCurrency(emp.grossCost)}</TableCell>
-                      <TableCell data-testid={`text-employee-payrolltax-${emp.id}`}>{emp.payrollTax ? "Yes" : "No"}</TableCell>
-                      <TableCell data-testid={`text-employee-schedstart-${emp.id}`}>{formatDate(emp.scheduleStart)}</TableCell>
-                      <TableCell data-testid={`text-employee-schedend-${emp.id}`}>{formatDate(emp.scheduleEnd)}</TableCell>
-                      <TableCell data-testid={`text-employee-location-${emp.id}`}>{emp.location || "--"}</TableCell>
-                      <TableCell>
+                      {isCol("jid") && <TableCell className="font-medium" data-testid={`text-employee-jid-${emp.id}`}>{emp.jid || "--"}</TableCell>}
+                      {isCol("name") && <TableCell data-testid={`text-employee-name-${emp.id}`} className="whitespace-nowrap">{emp.firstName} {emp.lastName}</TableCell>}
+                      {isCol("role") && <TableCell data-testid={`text-employee-role-${emp.id}`}>{emp.role || "--"}</TableCell>}
+                      {isCol("costBand") && <TableCell data-testid={`text-employee-costband-${emp.id}`}>{emp.costBandLevel || "--"}</TableCell>}
+                      {isCol("staffType") && <TableCell data-testid={`text-employee-stafftype-${emp.id}`}>{emp.staffType || "--"}</TableCell>}
+                      {isCol("team") && <TableCell data-testid={`text-employee-team-${emp.id}`}>{emp.team || "--"}</TableCell>}
+                      {isCol("baseCost") && <TableCell className="text-right" data-testid={`text-employee-basecost-${emp.id}`}>{formatCurrency(emp.baseCost)}</TableCell>}
+                      {isCol("grossCost") && <TableCell className="text-right" data-testid={`text-employee-grosscost-${emp.id}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`inline-block w-2 h-2 rounded-full ${grossCostRagColor(emp.grossCost)}`} data-testid={`rag-grosscost-${emp.id}`} />
+                          {formatCurrency(emp.grossCost)}
+                        </span>
+                      </TableCell>}
+                      {isCol("payrollTax") && <TableCell data-testid={`text-employee-payrolltax-${emp.id}`}>{emp.payrollTax ? "Yes" : "No"}</TableCell>}
+                      {isCol("scheduleStart") && <TableCell data-testid={`text-employee-schedstart-${emp.id}`}>{formatDate(emp.scheduleStart)}</TableCell>}
+                      {isCol("scheduleEnd") && <TableCell data-testid={`text-employee-schedend-${emp.id}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`inline-block w-2 h-2 rounded-full ${scheduleEndRagColor(emp.scheduleEnd)}`} data-testid={`rag-schedend-${emp.id}`} />
+                          {formatDate(emp.scheduleEnd)}
+                        </span>
+                      </TableCell>}
+                      {isCol("location") && <TableCell data-testid={`text-employee-location-${emp.id}`}>{emp.location || "--"}</TableCell>}
+                      {isCol("status") && <TableCell>
                         <Badge variant={statusVariant(emp.status)} data-testid={`badge-employee-status-${emp.id}`}>{emp.status}</Badge>
-                      </TableCell>
+                      </TableCell>}
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -456,7 +546,7 @@ export default function Resources() {
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={visibleColumns.size + 1} className="text-center text-muted-foreground py-8">
                         No employees found. Add one to get started.
                       </TableCell>
                     </TableRow>

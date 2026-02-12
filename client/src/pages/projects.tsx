@@ -85,6 +85,29 @@ function statusVariant(status: string | null | undefined): "default" | "secondar
   }
 }
 
+const MARGIN_TARGET = 0.20;
+
+function RagDot({ value, greenThreshold, amberThreshold }: { value: number; greenThreshold: number; amberThreshold: number }) {
+  let color = "bg-green-500";
+  if (value < amberThreshold) color = "bg-red-500";
+  else if (value < greenThreshold) color = "bg-amber-500";
+  return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
+}
+
+function marginRagClass(val: number): string {
+  if (val >= MARGIN_TARGET) return "text-green-600 dark:text-green-400";
+  if (val >= MARGIN_TARGET * 0.5) return "text-amber-500 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function varianceRagClass(balance: number, workOrder: number): string {
+  if (workOrder <= 0) return "";
+  const ratio = balance / workOrder;
+  if (ratio >= 0.3) return "text-green-600 dark:text-green-400";
+  if (ratio >= 0.1) return "text-amber-500 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
 const VAT_OPTIONS = ["Growth", "VIC", "DAFF", "Emerging", "DISR", "SAU"];
 const BILLING_OPTIONS = ["Fixed", "T&M"];
 const STATUS_OPTIONS = ["active", "planning", "completed", "on_hold"];
@@ -650,7 +673,7 @@ export default function ProjectsList() {
                         )}
                         {isCol("balance") && (
                           <TableCell
-                            className="text-right"
+                            className={`text-right ${varianceRagClass(parseNum(project.balanceAmount), parseNum(project.workOrderAmount))}`}
                             onClick={() => navigate(`/projects/${project.id}`)}
                             data-testid={`text-balance-${project.id}`}
                           >
@@ -668,11 +691,14 @@ export default function ProjectsList() {
                         )}
                         {isCol("margin") && (
                           <TableCell
-                            className="text-right"
+                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent))}`}
                             onClick={() => navigate(`/projects/${project.id}`)}
                             data-testid={`text-margin-${project.id}`}
                           >
-                            {formatPercent(project.forecastGmPercent)}
+                            <span className="inline-flex items-center gap-1.5 justify-end">
+                              <RagDot value={parseNum(project.forecastGmPercent)} greenThreshold={MARGIN_TARGET} amberThreshold={MARGIN_TARGET * 0.5} />
+                              {formatPercent(project.forecastGmPercent)}
+                            </span>
                           </TableCell>
                         )}
                         {isCol("opsCommentary") && (

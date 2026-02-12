@@ -25,12 +25,12 @@ A production-grade financial and project management application that consolidate
 - **Monthly Breakdown**: M1=Jul through M12=Jun, with R (revenue), C (cost), P (profit) per month
 
 ## Key Features
-1. **Dashboard** - KPI summary (Sold, Budgeted, Revenue, Margin), Engagement Margin Outlook (T&M vs Fixed), Forecast by Classification, Monthly Snapshot (M1-M12)
-2. **Finance Dashboard** - Client Summary with Q1-Q4 quarterly breakdown, YTD Revenue/Cost/GP/GP%, VAT Category Breakdown, Billing Type Split (Fixed vs T&M)
+1. **Dashboard** - KPI summary (Sold, Budgeted, Revenue, Margin) with RAG indicators, recharts visualizations (Revenue by Billing Type pie, Pipeline Classification pie, Monthly Revenue/Cost/Profit area chart, Project Margin vs Target bar chart), Target Tracking with progress bars, Monthly Snapshot (M1-M12)
+2. **Finance Dashboard** - Client Summary with Q1-Q4 quarterly breakdown, YTD Revenue/Cost/GP/GP%, column toggles, RAG dots on GP%, RAG borders on KPI cards, VAT Category Breakdown, Billing Type Split (Fixed vs T&M)
 3. **Utilization Dashboard** - Resource utilization, billable ratios, project hours
-4. **Projects (Job Status)** - Excel-style job status view with filters (VAT, Billing, Status), column toggles, expandable monthly R/C/P details, A/D status, work order/actual/balance/forecast tracking
-5. **Resources (Staff SOT)** - Staff Schedule of Tasks with JID, Cost Band, Staff Type, Base/Gross Cost rates, Payroll Tax, Schedule dates, team, summary cards
-6. **Pipeline** - Sales Pipeline with classification summary cards (C/S/DVF/DF/Q/A), opportunity table with monthly revenue (M1-M12), filtering by classification/VAT
+4. **Projects (Job Status)** - Excel-style job status view with filters (VAT, Billing, Status), column toggles, expandable monthly R/C/P details, A/D status, work order/actual/balance/forecast tracking, RAG dots on margin column, RAG color coding on balance
+5. **Resources (Staff SOT)** - Staff Schedule of Tasks with JID, Cost Band, Staff Type, Base/Gross Cost rates, Payroll Tax, Schedule dates, team, summary cards, column toggles, RAG indicators on gross cost and schedule end dates
+6. **Pipeline** - Sales Pipeline with classification summary cards (C/S/DVF/DF/Q/A), opportunity table with monthly revenue (M1-M12), column toggles, RAG dots based on total revenue, filtering by classification/VAT
 7. **What-If Scenarios** - Interactive win rate sliders (0-100%), real-time weighted revenue/GP, revenue/margin goal tracking, presets (Conservative/Base/Optimistic), monthly projections, scenario save/load
 8. **Rate Cards** - Role-based billing rates with effective dates
 9. **Resource Plans** - Project-resource allocation by month
