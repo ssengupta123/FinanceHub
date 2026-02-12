@@ -42,16 +42,10 @@ A production-grade financial and project management application that consolidate
 15. **Data Sources** - External system monitoring (VAGO, Dynamics, Payroll Tax, etc.)
 16. **Dark/Light Theme** - Full dark mode support
 
-## External Data Sources (from diagram)
-- VAGO Extracts (automated)
-- Microsoft Dynamics (automated)
-- Payroll Tax System (automated)
-- Employee Location DB (automated)
-- Security Clearance Registry (automated)
-- i-Time System (automated)
-- Robot Salary (manual input)
-- Resource Plans (manual input)
-- Rate Cards (manual input)
+## External Data Sources
+- Employment Hero (API, daily sync)
+- iTimesheets (API, daily sync)
+- SharePoint (API, hourly sync)
 
 ## API Endpoints
 ### Employees

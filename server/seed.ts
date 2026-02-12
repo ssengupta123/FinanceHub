@@ -674,12 +674,9 @@ export async function seedDatabase() {
   await db
     .insert(dataSources)
     .values([
-      { name: "VAGO Extracts", type: "file_extract", connectionInfo: "SFTP: vago-extract.gov.au/reports", lastSyncAt: new Date("2026-02-10T08:30:00Z"), status: "active", recordsProcessed: 1245, syncFrequency: "daily" },
-      { name: "Microsoft Dynamics", type: "api", connectionInfo: "https://dynamics365.company.com.au/api/v2", lastSyncAt: new Date("2026-02-11T14:15:00Z"), status: "active", recordsProcessed: 3892, syncFrequency: "hourly" },
-      { name: "Payroll Tax System", type: "database", connectionInfo: "payroll-db.internal:5432/payroll_prod", lastSyncAt: new Date("2026-02-09T22:00:00Z"), status: "active", recordsProcessed: 487, syncFrequency: "weekly" },
-      { name: "Employee Location DB", type: "database", connectionInfo: "hr-db.internal:5432/employee_locations", lastSyncAt: new Date("2026-02-05T10:00:00Z"), status: "configured", recordsProcessed: 156, syncFrequency: "weekly" },
-      { name: "Security Clearance Registry", type: "api", connectionInfo: "https://clearance-registry.gov.au/api/v1", lastSyncAt: new Date("2026-01-28T16:45:00Z"), status: "error", recordsProcessed: 0, syncFrequency: "daily" },
-      { name: "i-Time System", type: "api", connectionInfo: "https://itime.company.com.au/api/timesheets", lastSyncAt: new Date("2026-02-11T18:00:00Z"), status: "active", recordsProcessed: 2134, syncFrequency: "daily" },
+      { name: "Employment Hero", type: "api", connectionInfo: "https://api.employmenthero.com/api/v1", lastSyncAt: new Date("2026-02-11T14:15:00Z"), status: "active", recordsProcessed: 3892, syncFrequency: "daily" },
+      { name: "iTimesheets", type: "api", connectionInfo: "https://itimesheets.company.com.au/api/timesheets", lastSyncAt: new Date("2026-02-11T18:00:00Z"), status: "active", recordsProcessed: 2134, syncFrequency: "daily" },
+      { name: "SharePoint", type: "api", connectionInfo: "https://company.sharepoint.com/sites/projects/_api", lastSyncAt: new Date("2026-02-10T08:30:00Z"), status: "active", recordsProcessed: 1245, syncFrequency: "hourly" },
     ])
     .onConflictDoNothing();
 
