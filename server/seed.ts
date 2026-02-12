@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   employees,
@@ -18,8 +19,14 @@ import {
 } from "@shared/schema";
 
 export async function seedDatabase() {
+  const existingPipeline = await db.select().from(pipelineOpportunities).limit(1);
+  if (existingPipeline.length > 0) return;
+
   const existingEmployees = await db.select().from(employees).limit(1);
-  if (existingEmployees.length > 0) return;
+  if (existingEmployees.length > 0) {
+    await seedPipelineAndScenarios();
+    return;
+  }
 
   const insertedEmployees = await db
     .insert(employees)
@@ -789,4 +796,129 @@ export async function seedDatabase() {
   }
 
   console.log("Seed data created successfully");
+}
+
+async function seedPipelineAndScenarios() {
+  const existingProjects = await db.select().from(projects);
+  const projMap: Record<string, number> = {};
+  for (const p of existingProjects) {
+    projMap[p.projectCode] = p.id;
+  }
+
+  for (const p of existingProjects) {
+    let billingCategory = p.billingCategory;
+    let vat = p.vat;
+    if (!billingCategory) {
+      billingCategory = p.contractType === "fixed_price" ? "Fixed" : "T&M";
+    }
+    if (!vat) {
+      if (p.client?.includes("Defence") || p.client?.includes("Federal")) vat = "Growth";
+      else if (p.client?.includes("Victoria")) vat = "VIC";
+      else vat = "Emerging";
+    }
+    if (billingCategory !== p.billingCategory || vat !== p.vat) {
+      await db.update(projects).set({ billingCategory, vat }).where(
+        eq(projects.id, p.id)
+      );
+    }
+  }
+
+  const monthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
+  const existingProjectMonthly = await db.select().from(projectMonthly).limit(1);
+  if (existingProjectMonthly.length === 0) {
+    const projectMonthlyValues: any[] = [];
+    const projectMonthlyData: Record<string, { rev: number[]; cost: number[] }> = {
+      "PRJ-DEF-001": {
+        rev: [280000, 295000, 310000, 285000, 280000, 295000, 310000, 320000, 335000, 310000, 300000, 290000],
+        cost: [220000, 230000, 245000, 225000, 225000, 238000, 245000, 250000, 255000, 240000, 235000, 230000],
+      },
+      "PRJ-ACM-002": {
+        rev: [0, 0, 0, 95000, 102000, 98000, 105000, 110000, 100000, 95000, 90000, 85000],
+        cost: [0, 0, 0, 85500, 88000, 86500, 90000, 92000, 88000, 82000, 78000, 75000],
+      },
+      "PRJ-VIC-003": {
+        rev: [65000, 72000, 78000, 68000, 65000, 72000, 78000, 82000, 85000, 88000, 80000, 75000],
+        cost: [83000, 80000, 82000, 75000, 78000, 80000, 82000, 78000, 76000, 75000, 72000, 70000],
+      },
+      "PRJ-TST-004": {
+        rev: [48000, 52000, 55000, 50000, 48000, 52000, 55000, 0, 0, 0, 0, 0],
+        cost: [42000, 44000, 46000, 43000, 42000, 44000, 46000, 0, 0, 0, 0, 0],
+      },
+      "PRJ-FED-005": {
+        rev: [0, 0, 0, 0, 0, 0, 0, 0, 0, 120000, 150000, 160000],
+        cost: [0, 0, 0, 0, 0, 8000, 8500, 9000, 9500, 95000, 110000, 115000],
+      },
+    };
+
+    for (const [code, data] of Object.entries(projectMonthlyData)) {
+      const projId = projMap[code];
+      if (!projId) continue;
+      for (let m = 0; m < 12; m++) {
+        const rev = data.rev[m];
+        const cost = data.cost[m];
+        projectMonthlyValues.push({
+          projectId: projId,
+          fyYear: "25-26",
+          month: m + 1,
+          monthLabel: monthLabels[m],
+          revenue: rev.toFixed(2),
+          cost: cost.toFixed(2),
+          profit: (rev - cost).toFixed(2),
+        });
+      }
+    }
+    if (projectMonthlyValues.length > 0) {
+      await db.insert(projectMonthly).values(projectMonthlyValues).onConflictDoNothing();
+    }
+  }
+
+  const insertedPipeline = await db
+    .insert(pipelineOpportunities)
+    .values([
+      { name: "DTA Digital Identity Phase 2", classification: "C", vat: "Growth", fyYear: "25-26", revenueM1: "45000.00", revenueM2: "48000.00", revenueM3: "52000.00", revenueM4: "55000.00", revenueM5: "58000.00", revenueM6: "60000.00", revenueM7: "62000.00", revenueM8: "65000.00", revenueM9: "60000.00", revenueM10: "55000.00", revenueM11: "50000.00", revenueM12: "45000.00", grossProfitM1: "9000.00", grossProfitM2: "9600.00", grossProfitM3: "10400.00", grossProfitM4: "11000.00", grossProfitM5: "11600.00", grossProfitM6: "12000.00", grossProfitM7: "12400.00", grossProfitM8: "13000.00", grossProfitM9: "12000.00", grossProfitM10: "11000.00", grossProfitM11: "10000.00", grossProfitM12: "9000.00" },
+      { name: "ATO Data Platform Uplift", classification: "C", vat: "Growth", fyYear: "25-26", revenueM1: "120000.00", revenueM2: "125000.00", revenueM3: "130000.00", revenueM4: "135000.00", revenueM5: "140000.00", revenueM6: "135000.00", revenueM7: "130000.00", revenueM8: "125000.00", revenueM9: "120000.00", revenueM10: "115000.00", revenueM11: "110000.00", revenueM12: "105000.00", grossProfitM1: "24000.00", grossProfitM2: "25000.00", grossProfitM3: "26000.00", grossProfitM4: "27000.00", grossProfitM5: "28000.00", grossProfitM6: "27000.00", grossProfitM7: "26000.00", grossProfitM8: "25000.00", grossProfitM9: "24000.00", grossProfitM10: "23000.00", grossProfitM11: "22000.00", grossProfitM12: "21000.00" },
+      { name: "Services Australia CX Redesign", classification: "S", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "35000.00", revenueM5: "70000.00", revenueM6: "85000.00", revenueM7: "90000.00", revenueM8: "95000.00", revenueM9: "90000.00", revenueM10: "85000.00", revenueM11: "80000.00", revenueM12: "75000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "7000.00", grossProfitM5: "14000.00", grossProfitM6: "17000.00", grossProfitM7: "18000.00", grossProfitM8: "19000.00", grossProfitM9: "18000.00", grossProfitM10: "17000.00", grossProfitM11: "16000.00", grossProfitM12: "15000.00" },
+      { name: "NBN Co Analytics Advisory", classification: "S", vat: "VIC", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "25000.00", revenueM4: "30000.00", revenueM5: "35000.00", revenueM6: "40000.00", revenueM7: "40000.00", revenueM8: "35000.00", revenueM9: "30000.00", revenueM10: "25000.00", revenueM11: "20000.00", revenueM12: "15000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "5000.00", grossProfitM4: "6000.00", grossProfitM5: "7000.00", grossProfitM6: "8000.00", grossProfitM7: "8000.00", grossProfitM8: "7000.00", grossProfitM9: "6000.00", grossProfitM10: "5000.00", grossProfitM11: "4000.00", grossProfitM12: "3000.00" },
+      { name: "Telstra Security Uplift", classification: "DVF", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "45000.00", revenueM7: "90000.00", revenueM8: "120000.00", revenueM9: "120000.00", revenueM10: "110000.00", revenueM11: "100000.00", revenueM12: "90000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "11250.00", grossProfitM7: "22500.00", grossProfitM8: "30000.00", grossProfitM9: "30000.00", grossProfitM10: "27500.00", grossProfitM11: "25000.00", grossProfitM12: "22500.00" },
+      { name: "Optus Cloud Migration", classification: "DVF", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "55000.00", revenueM8: "75000.00", revenueM9: "85000.00", revenueM10: "90000.00", revenueM11: "85000.00", revenueM12: "80000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "11000.00", grossProfitM8: "15000.00", grossProfitM9: "17000.00", grossProfitM10: "18000.00", grossProfitM11: "17000.00", grossProfitM12: "16000.00" },
+      { name: "VicRoads Digital Twin", classification: "DF", vat: "VIC", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "0.00", revenueM8: "40000.00", revenueM9: "65000.00", revenueM10: "80000.00", revenueM11: "85000.00", revenueM12: "90000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "0.00", grossProfitM8: "8000.00", grossProfitM9: "13000.00", grossProfitM10: "16000.00", grossProfitM11: "17000.00", grossProfitM12: "18000.00" },
+      { name: "DHHS Case Management", classification: "DF", vat: "VIC", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "0.00", revenueM8: "0.00", revenueM9: "35000.00", revenueM10: "55000.00", revenueM11: "70000.00", revenueM12: "75000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "0.00", grossProfitM8: "0.00", grossProfitM9: "7000.00", grossProfitM10: "11000.00", grossProfitM11: "14000.00", grossProfitM12: "15000.00" },
+      { name: "BHP Mine Automation Advisory", classification: "Q", vat: "Emerging", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "25000.00", revenueM6: "35000.00", revenueM7: "45000.00", revenueM8: "50000.00", revenueM9: "50000.00", revenueM10: "45000.00", revenueM11: "40000.00", revenueM12: "35000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "6250.00", grossProfitM6: "8750.00", grossProfitM7: "11250.00", grossProfitM8: "12500.00", grossProfitM9: "12500.00", grossProfitM10: "11250.00", grossProfitM11: "10000.00", grossProfitM12: "8750.00" },
+      { name: "Rio Tinto ESG Dashboard", classification: "Q", vat: "Emerging", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "20000.00", revenueM7: "30000.00", revenueM8: "40000.00", revenueM9: "45000.00", revenueM10: "40000.00", revenueM11: "35000.00", revenueM12: "30000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "4000.00", grossProfitM7: "6000.00", grossProfitM8: "8000.00", grossProfitM9: "9000.00", grossProfitM10: "8000.00", grossProfitM11: "7000.00", grossProfitM12: "6000.00" },
+      { name: "ANZ Bank API Platform", classification: "A", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "0.00", revenueM8: "0.00", revenueM9: "0.00", revenueM10: "60000.00", revenueM11: "80000.00", revenueM12: "95000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "0.00", grossProfitM8: "0.00", grossProfitM9: "0.00", grossProfitM10: "12000.00", grossProfitM11: "16000.00", grossProfitM12: "19000.00" },
+      { name: "Westpac Data Governance", classification: "A", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "0.00", revenueM8: "0.00", revenueM9: "0.00", revenueM10: "0.00", revenueM11: "45000.00", revenueM12: "65000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "0.00", grossProfitM8: "0.00", grossProfitM9: "0.00", grossProfitM10: "0.00", grossProfitM11: "9000.00", grossProfitM12: "13000.00" },
+      { name: "Medicare Digital Transformation", classification: "S", vat: "Growth", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "45000.00", revenueM6: "65000.00", revenueM7: "80000.00", revenueM8: "85000.00", revenueM9: "80000.00", revenueM10: "75000.00", revenueM11: "70000.00", revenueM12: "65000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "9000.00", grossProfitM6: "13000.00", grossProfitM7: "16000.00", grossProfitM8: "17000.00", grossProfitM9: "16000.00", grossProfitM10: "15000.00", grossProfitM11: "14000.00", grossProfitM12: "13000.00" },
+      { name: "Qantas Loyalty Platform", classification: "DVF", vat: "Emerging", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "35000.00", revenueM8: "55000.00", revenueM9: "70000.00", revenueM10: "75000.00", revenueM11: "70000.00", revenueM12: "65000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "7000.00", grossProfitM8: "11000.00", grossProfitM9: "14000.00", grossProfitM10: "15000.00", grossProfitM11: "14000.00", grossProfitM12: "13000.00" },
+      { name: "Woodside Energy IoT Monitoring", classification: "Q", vat: "Emerging", fyYear: "25-26", revenueM1: "0.00", revenueM2: "0.00", revenueM3: "0.00", revenueM4: "0.00", revenueM5: "0.00", revenueM6: "0.00", revenueM7: "20000.00", revenueM8: "30000.00", revenueM9: "40000.00", revenueM10: "45000.00", revenueM11: "50000.00", revenueM12: "45000.00", grossProfitM1: "0.00", grossProfitM2: "0.00", grossProfitM3: "0.00", grossProfitM4: "0.00", grossProfitM5: "0.00", grossProfitM6: "0.00", grossProfitM7: "4000.00", grossProfitM8: "6000.00", grossProfitM9: "8000.00", grossProfitM10: "9000.00", grossProfitM11: "10000.00", grossProfitM12: "9000.00" },
+    ])
+    .onConflictDoNothing()
+    .returning();
+
+  const pipelineIds = insertedPipeline.map((p) => p.id);
+
+  const insertedScenarios = await db
+    .insert(scenarios)
+    .values([
+      { name: "Base Case", description: "Conservative forecast using current pipeline probabilities", fyYear: "25-26", revenueGoal: "8500000.00", marginGoalPercent: "18.00" },
+      { name: "Optimistic", description: "Aggressive growth scenario with higher win rates", fyYear: "25-26", revenueGoal: "10500000.00", marginGoalPercent: "22.00" },
+    ])
+    .onConflictDoNothing()
+    .returning();
+
+  const scenarioIds = insertedScenarios.map((s) => s.id);
+
+  if (scenarioIds.length >= 2 && pipelineIds.length >= 5) {
+    await db
+      .insert(scenarioAdjustments)
+      .values([
+        { scenarioId: scenarioIds[0], opportunityId: pipelineIds[0], classification: "C", adjustmentType: "win_probability", winProbability: "90.00", notes: "High confidence" },
+        { scenarioId: scenarioIds[0], opportunityId: pipelineIds[2], classification: "S", adjustmentType: "win_probability", winProbability: "60.00", notes: "Competitive tender" },
+        { scenarioId: scenarioIds[1], opportunityId: pipelineIds[0], classification: "C", adjustmentType: "win_probability", winProbability: "95.00", notes: "Near certain" },
+        { scenarioId: scenarioIds[1], opportunityId: pipelineIds[2], classification: "S", adjustmentType: "win_probability", winProbability: "80.00", notes: "Positive signals" },
+      ])
+      .onConflictDoNothing();
+  }
+
+  console.log("Pipeline and scenario seed data created successfully");
 }
