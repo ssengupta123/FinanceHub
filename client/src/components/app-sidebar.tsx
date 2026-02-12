@@ -14,6 +14,8 @@ import {
   LineChart,
   UserPlus,
   Database,
+  FlaskConical,
+  GitBranch,
 } from "lucide-react";
 import {
   Sidebar,
@@ -54,10 +56,17 @@ const navGroups = [
     ],
   },
   {
+    label: "Pipeline & Forecast",
+    items: [
+      { title: "Pipeline", icon: GitBranch, path: "/pipeline" },
+      { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios" },
+      { title: "Forecasts", icon: LineChart, path: "/forecasts" },
+    ],
+  },
+  {
     label: "Tracking",
     items: [
       { title: "Milestones", icon: Target, path: "/milestones" },
-      { title: "Forecasts", icon: LineChart, path: "/forecasts" },
       { title: "Onboarding", icon: UserPlus, path: "/onboarding" },
       { title: "Data Sources", icon: Database, path: "/data-sources" },
     ],

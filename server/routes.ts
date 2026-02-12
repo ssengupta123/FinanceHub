@@ -14,6 +14,10 @@ import {
   insertMilestoneSchema,
   insertDataSourceSchema,
   insertOnboardingStepSchema,
+  insertProjectMonthlySchema,
+  insertPipelineOpportunitySchema,
+  insertScenarioSchema,
+  insertScenarioAdjustmentSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -280,6 +284,79 @@ export async function registerRoutes(
     const data = await storage.getProjectSummary(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
+  });
+
+  // ─── Project Monthly ───
+  app.get("/api/project-monthly", async (req, res) => {
+    if (req.query.projectId) {
+      const data = await storage.getProjectMonthlyByProject(Number(req.query.projectId));
+      return res.json(data);
+    }
+    const data = await storage.getProjectMonthly();
+    res.json(data);
+  });
+  app.post("/api/project-monthly", async (req, res) => {
+    const parsed = insertProjectMonthlySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createProjectMonthly(parsed.data);
+    res.json(data);
+  });
+
+  // ─── Pipeline Opportunities ───
+  app.get("/api/pipeline-opportunities", async (req, res) => {
+    if (req.query.classification) {
+      const data = await storage.getPipelineByClassification(String(req.query.classification));
+      return res.json(data);
+    }
+    if (req.query.vat) {
+      const data = await storage.getPipelineByVat(String(req.query.vat));
+      return res.json(data);
+    }
+    const data = await storage.getPipelineOpportunities();
+    res.json(data);
+  });
+  app.post("/api/pipeline-opportunities", async (req, res) => {
+    const parsed = insertPipelineOpportunitySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createPipelineOpportunity(parsed.data);
+    res.json(data);
+  });
+  app.delete("/api/pipeline-opportunities/:id", async (req, res) => {
+    await storage.deletePipelineOpportunity(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Scenarios ───
+  app.get("/api/scenarios", async (_req, res) => {
+    const data = await storage.getScenarios();
+    res.json(data);
+  });
+  app.get("/api/scenarios/:id", async (req, res) => {
+    const data = await storage.getScenarioWithAdjustments(Number(req.params.id));
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.post("/api/scenarios", async (req, res) => {
+    const parsed = insertScenarioSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createScenario(parsed.data);
+    res.json(data);
+  });
+  app.delete("/api/scenarios/:id", async (req, res) => {
+    await storage.deleteScenario(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Scenario Adjustments ───
+  app.post("/api/scenarios/:id/adjustments", async (req, res) => {
+    const parsed = insertScenarioAdjustmentSchema.safeParse({ ...req.body, scenarioId: Number(req.params.id) });
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createScenarioAdjustment(parsed.data);
+    res.json(data);
+  });
+  app.delete("/api/scenario-adjustments/:id", async (req, res) => {
+    await storage.deleteScenarioAdjustment(Number(req.params.id));
+    res.json({ success: true });
   });
 
   return httpServer;

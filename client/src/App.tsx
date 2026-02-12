@@ -20,6 +20,8 @@ import Timesheets from "@/pages/timesheets";
 import Costs from "@/pages/costs";
 import Milestones from "@/pages/milestones";
 import Forecasts from "@/pages/forecasts";
+import Pipeline from "@/pages/pipeline";
+import WhatIfScenarios from "@/pages/scenarios";
 import Onboarding from "@/pages/onboarding";
 import DataSources from "@/pages/data-sources";
 
@@ -38,6 +40,8 @@ function Router() {
       <Route path="/costs" component={Costs} />
       <Route path="/milestones" component={Milestones} />
       <Route path="/forecasts" component={Forecasts} />
+      <Route path="/pipeline" component={Pipeline} />
+      <Route path="/scenarios" component={WhatIfScenarios} />
       <Route path="/onboarding" component={Onboarding} />
       <Route path="/data-sources" component={DataSources} />
       <Route component={NotFound} />

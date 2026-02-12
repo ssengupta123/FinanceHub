@@ -13,6 +13,10 @@ import {
   dataSources,
   onboardingSteps,
   users,
+  projectMonthly,
+  pipelineOpportunities,
+  scenarios,
+  scenarioAdjustments,
   type Employee,
   type InsertEmployee,
   type Project,
@@ -37,6 +41,14 @@ import {
   type InsertOnboardingStep,
   type User,
   type InsertUser,
+  type ProjectMonthly,
+  type InsertProjectMonthly,
+  type PipelineOpportunity,
+  type InsertPipelineOpportunity,
+  type Scenario,
+  type InsertScenario,
+  type ScenarioAdjustment,
+  type InsertScenarioAdjustment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -135,6 +147,32 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(data: InsertUser): Promise<User>;
+
+  // Project Monthly
+  getProjectMonthly(): Promise<ProjectMonthly[]>;
+  getProjectMonthlyByProject(projectId: number): Promise<ProjectMonthly[]>;
+  createProjectMonthly(data: InsertProjectMonthly): Promise<ProjectMonthly>;
+  deleteProjectMonthly(id: number): Promise<void>;
+
+  // Pipeline Opportunities
+  getPipelineOpportunities(): Promise<PipelineOpportunity[]>;
+  getPipelineOpportunity(id: number): Promise<PipelineOpportunity | undefined>;
+  getPipelineByClassification(classification: string): Promise<PipelineOpportunity[]>;
+  getPipelineByVat(vat: string): Promise<PipelineOpportunity[]>;
+  createPipelineOpportunity(data: InsertPipelineOpportunity): Promise<PipelineOpportunity>;
+  deletePipelineOpportunity(id: number): Promise<void>;
+
+  // Scenarios
+  getScenarios(): Promise<Scenario[]>;
+  getScenario(id: number): Promise<Scenario | undefined>;
+  getScenarioWithAdjustments(id: number): Promise<{ scenario: Scenario; adjustments: ScenarioAdjustment[] } | undefined>;
+  createScenario(data: InsertScenario): Promise<Scenario>;
+  deleteScenario(id: number): Promise<void>;
+
+  // Scenario Adjustments
+  getScenarioAdjustments(scenarioId: number): Promise<ScenarioAdjustment[]>;
+  createScenarioAdjustment(data: InsertScenarioAdjustment): Promise<ScenarioAdjustment>;
+  deleteScenarioAdjustment(id: number): Promise<void>;
 
   // Dashboard / Aggregates
   getDashboardSummary(): Promise<{
@@ -498,6 +536,91 @@ export class DatabaseStorage implements IStorage {
   async createUser(data: InsertUser): Promise<User> {
     const result = await db.insert(users).values(data).returning();
     return result[0];
+  }
+
+  // Project Monthly
+  async getProjectMonthly(): Promise<ProjectMonthly[]> {
+    return db.select().from(projectMonthly);
+  }
+
+  async getProjectMonthlyByProject(projectId: number): Promise<ProjectMonthly[]> {
+    return db.select().from(projectMonthly).where(eq(projectMonthly.projectId, projectId));
+  }
+
+  async createProjectMonthly(data: InsertProjectMonthly): Promise<ProjectMonthly> {
+    const result = await db.insert(projectMonthly).values(data).returning();
+    return result[0];
+  }
+
+  async deleteProjectMonthly(id: number): Promise<void> {
+    await db.delete(projectMonthly).where(eq(projectMonthly.id, id));
+  }
+
+  // Pipeline Opportunities
+  async getPipelineOpportunities(): Promise<PipelineOpportunity[]> {
+    return db.select().from(pipelineOpportunities);
+  }
+
+  async getPipelineOpportunity(id: number): Promise<PipelineOpportunity | undefined> {
+    const result = await db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.id, id));
+    return result[0];
+  }
+
+  async getPipelineByClassification(classification: string): Promise<PipelineOpportunity[]> {
+    return db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.classification, classification));
+  }
+
+  async getPipelineByVat(vat: string): Promise<PipelineOpportunity[]> {
+    return db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.vat, vat));
+  }
+
+  async createPipelineOpportunity(data: InsertPipelineOpportunity): Promise<PipelineOpportunity> {
+    const result = await db.insert(pipelineOpportunities).values(data).returning();
+    return result[0];
+  }
+
+  async deletePipelineOpportunity(id: number): Promise<void> {
+    await db.delete(pipelineOpportunities).where(eq(pipelineOpportunities.id, id));
+  }
+
+  // Scenarios
+  async getScenarios(): Promise<Scenario[]> {
+    return db.select().from(scenarios);
+  }
+
+  async getScenario(id: number): Promise<Scenario | undefined> {
+    const result = await db.select().from(scenarios).where(eq(scenarios.id, id));
+    return result[0];
+  }
+
+  async getScenarioWithAdjustments(id: number): Promise<{ scenario: Scenario; adjustments: ScenarioAdjustment[] } | undefined> {
+    const scenario = await this.getScenario(id);
+    if (!scenario) return undefined;
+    const adjustments = await db.select().from(scenarioAdjustments).where(eq(scenarioAdjustments.scenarioId, id));
+    return { scenario, adjustments };
+  }
+
+  async createScenario(data: InsertScenario): Promise<Scenario> {
+    const result = await db.insert(scenarios).values(data).returning();
+    return result[0];
+  }
+
+  async deleteScenario(id: number): Promise<void> {
+    await db.delete(scenarios).where(eq(scenarios.id, id));
+  }
+
+  // Scenario Adjustments
+  async getScenarioAdjustments(scenarioId: number): Promise<ScenarioAdjustment[]> {
+    return db.select().from(scenarioAdjustments).where(eq(scenarioAdjustments.scenarioId, scenarioId));
+  }
+
+  async createScenarioAdjustment(data: InsertScenarioAdjustment): Promise<ScenarioAdjustment> {
+    const result = await db.insert(scenarioAdjustments).values(data).returning();
+    return result[0];
+  }
+
+  async deleteScenarioAdjustment(id: number): Promise<void> {
+    await db.delete(scenarioAdjustments).where(eq(scenarioAdjustments.id, id));
   }
 
   // Dashboard / Aggregates
