@@ -10,7 +10,8 @@ A production-grade financial and project management application that consolidate
 - **Styling**: shadcn/ui components, dark/light theme support
 
 ## Architecture
-- `shared/schema.ts` - Data models: employees, projects, projectMonthly, rateCards, resourcePlans, timesheets, costs, kpis, forecasts, milestones, dataSources, onboardingSteps, pipelineOpportunities, scenarios, scenarioAdjustments
+- `shared/schema.ts` - Data models: employees, projects, projectMonthly, rateCards, resourcePlans, timesheets, costs, kpis, forecasts, milestones, dataSources, onboardingSteps, pipelineOpportunities, scenarios, scenarioAdjustments, conversations, messages
+- `shared/models/chat.ts` - Chat/conversation schema for AI integration (conversations + messages tables)
 - `server/routes.ts` - REST API endpoints with query param filtering
 - `server/storage.ts` - Database storage layer with CRUD + aggregation queries
 - `server/seed.ts` - Realistic demo data (5 projects, 9 employees, 15 pipeline opportunities, 2 scenarios, 60 monthly records, KPIs, timesheets, costs, milestones, forecasts, 6 data sources)
@@ -99,6 +100,9 @@ A production-grade financial and project management application that consolidate
 - `POST /api/data-sources` - Create
 - `PATCH /api/data-sources/:id` - Update (for sync status)
 
+### AI Insights
+- `POST /api/ai/insights` - Generate AI analysis (SSE streaming). Body: `{ type: "pipeline" | "projects" | "overview" }`. Uses OpenAI via Replit AI Integrations.
+
 ### Dashboard Aggregates
 - `GET /api/dashboard/summary` - Overall KPI summary
 - `GET /api/dashboard/finance` - Finance breakdown by month
@@ -121,6 +125,7 @@ A production-grade financial and project management application that consolidate
 - `/forecasts` - Forecasts
 - `/onboarding` - Person Onboarding
 - `/data-sources` - Data Sources
+- `/ai-insights` - AI Insights (AI-powered pipeline health, project status, executive overview analysis)
 
 ## Deployment
 - Designed for Azure deployment (not Replit hosting)

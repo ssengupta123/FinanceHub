@@ -17,6 +17,7 @@ import {
   FlaskConical,
   GitBranch,
   Upload,
+  Sparkles,
 } from "lucide-react";
 import {
   Sidebar,
@@ -62,6 +63,7 @@ const navGroups = [
       { title: "Pipeline", icon: GitBranch, path: "/pipeline" },
       { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios" },
       { title: "Forecasts", icon: LineChart, path: "/forecasts" },
+      { title: "AI Insights", icon: Sparkles, path: "/ai-insights" },
     ],
   },
   {

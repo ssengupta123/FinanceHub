@@ -25,6 +25,7 @@ import WhatIfScenarios from "@/pages/scenarios";
 import Onboarding from "@/pages/onboarding";
 import DataSources from "@/pages/data-sources";
 import UploadPage from "@/pages/upload";
+import AIInsights from "@/pages/ai-insights";
 
 function Router() {
   return (
@@ -46,6 +47,7 @@ function Router() {
       <Route path="/onboarding" component={Onboarding} />
       <Route path="/data-sources" component={DataSources} />
       <Route path="/upload" component={UploadPage} />
+      <Route path="/ai-insights" component={AIInsights} />
       <Route component={NotFound} />
     </Switch>
   );

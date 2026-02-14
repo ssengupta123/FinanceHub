@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { z } from "zod";
 import multer from "multer";
 import XLSX from "xlsx";
+import OpenAI from "openai";
 import {
   insertEmployeeSchema,
   insertProjectSchema,
@@ -422,6 +423,139 @@ export async function registerRoutes(
       res.json({ results });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Import failed" });
+    }
+  });
+
+  // ─── AI Insights ───
+  const openai = new OpenAI({
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+
+  app.post("/api/ai/insights", async (req, res) => {
+    try {
+      const { type } = req.body;
+      if (!type || !["pipeline", "projects", "overview"].includes(type)) {
+        return res.status(400).json({ message: "Invalid type. Use: pipeline, projects, or overview" });
+      }
+
+      const projects = await storage.getProjects();
+      const kpis = await storage.getKpis();
+      const pipelineOpps = await storage.getPipelineOpportunities();
+      const projectMonthly = await storage.getProjectMonthly();
+
+      let systemPrompt = `You are an expert financial analyst for a project management firm in Australia. 
+You analyze financial data and provide actionable insights. Use Australian Financial Year format (Jul-Jun, e.g. FY25-26).
+Pipeline classifications: C(100% Committed), S(80% Sold), DVF(50%), DF(30%), Q(15% Qualified), A(5% Awareness).
+Respond with structured analysis in markdown. Include specific numbers and percentages where possible.
+Keep analysis concise but impactful - focus on actionable insights.`;
+
+      let userPrompt = "";
+
+      if (type === "pipeline") {
+        const classGroups: Record<string, number> = {};
+        let totalWeighted = 0;
+        pipelineOpps.forEach(opp => {
+          const cls = opp.classification || "Unknown";
+          const total = [opp.m1Revenue, opp.m2Revenue, opp.m3Revenue, opp.m4Revenue, opp.m5Revenue, opp.m6Revenue,
+            opp.m7Revenue, opp.m8Revenue, opp.m9Revenue, opp.m10Revenue, opp.m11Revenue, opp.m12Revenue]
+            .reduce((s, v) => s + parseFloat(v || "0"), 0);
+          classGroups[cls] = (classGroups[cls] || 0) + total;
+          const winRate: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
+          totalWeighted += total * (winRate[cls] || 0);
+        });
+
+        userPrompt = `Analyze our sales pipeline health:
+
+Pipeline Summary (${pipelineOpps.length} opportunities):
+${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()}`).join("\n")}
+
+Total Weighted Pipeline: $${totalWeighted.toLocaleString()}
+Number of Active Projects: ${projects.filter(p => p.status === "active").length}
+Total Projects: ${projects.length}
+
+Key Questions:
+1. Is our pipeline healthy? What's the conversion risk?
+2. Are we too dependent on any single classification stage?
+3. What actions should we take to strengthen the pipeline?
+4. Any red flags in the pipeline distribution?`;
+      } else if (type === "projects") {
+        const projectSummaries = projects.slice(0, 15).map(p => {
+          const monthly = projectMonthly.filter(m => m.projectId === p.id);
+          const totalRev = monthly.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+          const totalCost = monthly.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
+          return `- ${p.name} (${p.billingCategory || "N/A"}): Revenue $${totalRev.toLocaleString()}, Cost $${totalCost.toLocaleString()}, Margin ${margin}%, Status: ${p.status}, AD: ${p.adStatus || "N/A"}`;
+        }).join("\n");
+
+        userPrompt = `Analyze project health and financial performance:
+
+Active Projects (${projects.length} total):
+${projectSummaries}
+
+Key Questions:
+1. Which projects are performing well and which need attention?
+2. Are there any margin concerns or burn rate issues?
+3. How does billing type (Fixed vs T&M) affect performance?
+4. What recommendations do you have for project portfolio management?`;
+      } else {
+        const totalRevenue = kpis.reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
+        const totalCost = kpis.reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
+        const avgMargin = kpis.length > 0
+          ? (kpis.reduce((s, k) => s + parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1)
+          : "0";
+        const avgUtil = kpis.length > 0
+          ? (kpis.reduce((s, k) => s + parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1)
+          : "0";
+
+        userPrompt = `Provide an executive overview of our financial position:
+
+Overall KPIs:
+- Total Revenue: $${totalRevenue.toLocaleString()}
+- Total Cost: $${totalCost.toLocaleString()}
+- Average Margin: ${avgMargin}%
+- Average Utilization: ${avgUtil}%
+- Active Projects: ${projects.filter(p => p.status === "active").length}
+- Total Pipeline Opportunities: ${pipelineOpps.length}
+
+Key Questions:
+1. What is the overall financial health of the organization?
+2. Are there trends we should be concerned about?
+3. What are the top 3 strategic recommendations?
+4. Risk assessment summary?`;
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        stream: true,
+        max_tokens: 2048,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    } catch (error: any) {
+      console.error("AI insights error:", error);
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ error: error.message || "AI analysis failed" })}\n\n`);
+        res.end();
+      } else {
+        res.status(500).json({ message: error.message || "AI analysis failed" });
+      }
     }
   });
 
