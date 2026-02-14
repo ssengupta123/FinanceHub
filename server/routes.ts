@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
+import multer from "multer";
+import XLSX from "xlsx";
 import {
   insertEmployeeSchema,
   insertProjectSchema,
@@ -359,5 +361,439 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // ─── Excel Upload (KPI Raw Data File) ───
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+  app.post("/api/upload/preview", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheets = wb.SheetNames.map((name) => {
+        const ws = wb.Sheets[name];
+        const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+        const rows = range.e.r + 1;
+        const cols = range.e.c + 1;
+        const preview = XLSX.utils.sheet_to_json(ws, { header: 1, range: { s: { r: 0, c: 0 }, e: { r: Math.min(4, range.e.r), c: range.e.c } } }) as any[][];
+        return { name, rows, cols, preview };
+      });
+      res.json({ fileName: req.file.originalname, sheets });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to parse file" });
+    }
+  });
+
+  app.post("/api/upload/import", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const selectedSheets: string[] = JSON.parse(req.body.sheets || "[]");
+      if (selectedSheets.length === 0) return res.status(400).json({ message: "No sheets selected" });
+
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const results: Record<string, { imported: number; errors: string[] }> = {};
+
+      for (const sheetName of selectedSheets) {
+        const ws = wb.Sheets[sheetName];
+        if (!ws) {
+          results[sheetName] = { imported: 0, errors: ["Sheet not found in file"] };
+          continue;
+        }
+
+        try {
+          if (sheetName === "Job Status") {
+            results[sheetName] = await importJobStatus(ws);
+          } else if (sheetName === "Staff SOT") {
+            results[sheetName] = await importStaffSOT(ws);
+          } else if (sheetName === "Resource Plan Opps" || sheetName === "Resource Plan Opps FY25-26") {
+            results[sheetName] = await importPipelineRevenue(ws, sheetName === "Resource Plan Opps", sheetName);
+          } else if (sheetName === "GrossProfit") {
+            results[sheetName] = await importGrossProfit(ws);
+          } else if (sheetName === "Personal Hours - inc non-projec") {
+            results[sheetName] = await importPersonalHours(ws);
+          } else if (sheetName === "Project Hours") {
+            results[sheetName] = await importProjectHours(ws);
+          } else {
+            results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
+          }
+        } catch (err: any) {
+          results[sheetName] = { imported: 0, errors: [err.message || "Unknown import error"] };
+        }
+      }
+
+      res.json({ results });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Import failed" });
+    }
+  });
+
   return httpServer;
+}
+
+function excelDateToString(val: any): string | null {
+  if (!val) return null;
+  if (typeof val === "number") {
+    const d = XLSX.SSF.parse_date_code(val);
+    return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+  }
+  return String(val);
+}
+
+function toNum(val: any): string {
+  if (val === null || val === undefined || val === "") return "0";
+  const n = typeof val === "number" ? val : parseFloat(String(val));
+  return isNaN(n) ? "0" : n.toFixed(2);
+}
+
+function toDecimal(val: any): string {
+  if (val === null || val === undefined || val === "") return "0";
+  const n = typeof val === "number" ? val : parseFloat(String(val));
+  return isNaN(n) ? "0" : n.toFixed(4);
+}
+
+async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const existingProjects = await storage.getProjects();
+  const existingNames = new Set(existingProjects.map(p => p.name.toLowerCase()));
+  let codeCounter = existingProjects.length + 1;
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[3]) continue;
+    try {
+      const projectName = String(r[3]).trim();
+      if (existingNames.has(projectName.toLowerCase())) {
+        errors.push(`Row ${i + 2}: Skipped duplicate project "${projectName}"`);
+        continue;
+      }
+      existingNames.add(projectName.toLowerCase());
+      const clientCode = String(r[2] || "").trim();
+      const projectCode = clientCode ? `${clientCode}-${String(codeCounter++).padStart(3, "0")}` : `IMP-${String(codeCounter++).padStart(3, "0")}`;
+      const billingCat = String(r[9] || "").trim();
+
+      const project = await storage.createProject({
+        projectCode,
+        name: projectName,
+        client: clientCode,
+        clientCode,
+        clientManager: r[4] ? String(r[4]) : null,
+        engagementManager: r[5] ? String(r[5]) : null,
+        engagementSupport: r[6] ? String(r[6]) : null,
+        contractType: billingCat === "Fixed" ? "fixed_price" : "time_materials",
+        billingCategory: billingCat || null,
+        workType: r[10] ? String(r[10]) : null,
+        panel: r[11] ? String(r[11]) : null,
+        recurring: r[12] ? String(r[12]) : null,
+        vat: r[1] ? String(r[1]).trim() : null,
+        pipelineStatus: "C",
+        adStatus: r[0] ? String(r[0]).trim() : "Active",
+        status: String(r[0] || "").toLowerCase().includes("closed") ? "completed" : "active",
+        startDate: excelDateToString(r[7]),
+        endDate: excelDateToString(r[8]),
+        workOrderAmount: toNum(r[13]),
+        budgetAmount: toNum(r[14]),
+        actualAmount: toNum(r[15]),
+        balanceAmount: toNum(r[16]),
+        forecastedRevenue: toNum(r[18]),
+        forecastedGrossCost: toNum(r[29]),
+        contractValue: toNum(r[13]),
+        varianceAtCompletion: toNum(r[19]),
+        variancePercent: toDecimal(r[20]),
+        varianceToContractPercent: toDecimal(r[21]),
+        writeOff: toNum(r[22]),
+        opsCommentary: r[23] ? String(r[23]) : null,
+        soldGmPercent: toDecimal(r[31]),
+        toDateGrossProfit: toNum(r[30]),
+        toDateGmPercent: toDecimal(r[32]),
+        gpAtCompletion: toNum(r[33]),
+        forecastGmPercent: toDecimal(r[34]),
+        description: null,
+      });
+
+      const monthCols = { revenue: [35,36,37,38,39,40,41,42,43,44,45,46], cost: [47,48,49,50,51,52,53,54,55,56,57,58], profit: [59,60,61,62,63,64,65,66,67,68,69,70] };
+      const monthLabels = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+
+      const startDateStr = excelDateToString(r[7]);
+      let fyYear = "23-24";
+      if (startDateStr) {
+        const yr = parseInt(startDateStr.slice(0, 4));
+        const mo = parseInt(startDateStr.slice(5, 7));
+        const fyStart = mo >= 7 ? yr : yr - 1;
+        fyYear = `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+      }
+
+      for (let m = 0; m < 12; m++) {
+        const rev = parseFloat(toNum(r[monthCols.revenue[m]]));
+        const cost = parseFloat(toNum(r[monthCols.cost[m]]));
+        const profit = parseFloat(toNum(r[monthCols.profit[m]]));
+        if (rev !== 0 || cost !== 0 || profit !== 0) {
+          await storage.createProjectMonthly({
+            projectId: project.id,
+            fyYear,
+            month: m + 1,
+            monthLabel: monthLabels[m],
+            revenue: toNum(rev),
+            cost: toNum(cost),
+            profit: toNum(profit),
+          });
+        }
+      }
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 2}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 2 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    try {
+      const fullName = String(r[0]).trim();
+      const parts = fullName.split(" ");
+      const firstName = parts[0] || fullName;
+      const lastName = parts.slice(1).join(" ") || "";
+      const empCode = `EMP-${String(imported + 100).padStart(3, "0")}`;
+
+      await storage.createEmployee({
+        employeeCode: empCode,
+        firstName,
+        lastName,
+        email: null,
+        role: null,
+        costBandLevel: r[1] ? String(r[1]) : null,
+        staffType: r[2] ? String(r[2]) : null,
+        grade: null,
+        location: r[12] ? String(r[12]) : null,
+        costCenter: null,
+        securityClearance: null,
+        payrollTax: String(r[3] || "").toLowerCase() === "yes",
+        payrollTaxRate: null,
+        baseCost: toNum(r[4]),
+        grossCost: toNum(r[6]),
+        baseSalary: null,
+        status: String(r[5] || "active").toLowerCase() === "virtual bench" ? "bench" : "active",
+        startDate: null,
+        endDate: null,
+        scheduleStart: excelDateToString(r[8]),
+        scheduleEnd: excelDateToString(r[9]),
+        resourceGroup: null,
+        team: r[10] ? String(r[10]) : null,
+        jid: r[7] ? String(r[7]) : null,
+        onboardingStatus: "completed",
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 3}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetName: string): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const fyMatch = sheetName.match(/FY(\d{2}-\d{2})/);
+  const fyYear = fyMatch ? fyMatch[1] : "23-24";
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    try {
+      const name = String(r[0]).trim();
+      const classification = String(r[1] || "Q").trim();
+      const monthStart = 2;
+      const vatCol = hasVat ? 14 : -1;
+
+      await storage.createPipelineOpportunity({
+        name,
+        classification,
+        vat: vatCol >= 0 && r[vatCol] ? String(r[vatCol]).trim() : null,
+        fyYear,
+        revenueM1: toNum(r[monthStart]),
+        revenueM2: toNum(r[monthStart + 1]),
+        revenueM3: toNum(r[monthStart + 2]),
+        revenueM4: toNum(r[monthStart + 3]),
+        revenueM5: toNum(r[monthStart + 4]),
+        revenueM6: toNum(r[monthStart + 5]),
+        revenueM7: toNum(r[monthStart + 6]),
+        revenueM8: toNum(r[monthStart + 7]),
+        revenueM9: toNum(r[monthStart + 8]),
+        revenueM10: toNum(r[monthStart + 9]),
+        revenueM11: toNum(r[monthStart + 10]),
+        revenueM12: toNum(r[monthStart + 11]),
+        grossProfitM1: "0",
+        grossProfitM2: "0",
+        grossProfitM3: "0",
+        grossProfitM4: "0",
+        grossProfitM5: "0",
+        grossProfitM6: "0",
+        grossProfitM7: "0",
+        grossProfitM8: "0",
+        grossProfitM9: "0",
+        grossProfitM10: "0",
+        grossProfitM11: "0",
+        grossProfitM12: "0",
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importGrossProfit(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    try {
+      const name = String(r[0]).trim();
+      const classification = String(r[1] || "Q").trim();
+      const vat = r[2] ? String(r[2]).trim() : null;
+
+      await storage.createPipelineOpportunity({
+        name: `${name} (GP)`,
+        classification,
+        vat,
+        fyYear: "23-24",
+        revenueM1: "0", revenueM2: "0", revenueM3: "0", revenueM4: "0",
+        revenueM5: "0", revenueM6: "0", revenueM7: "0", revenueM8: "0",
+        revenueM9: "0", revenueM10: "0", revenueM11: "0", revenueM12: "0",
+        grossProfitM1: toNum(r[3]),
+        grossProfitM2: toNum(r[4]),
+        grossProfitM3: toNum(r[5]),
+        grossProfitM4: toNum(r[6]),
+        grossProfitM5: toNum(r[7]),
+        grossProfitM6: toNum(r[8]),
+        grossProfitM7: toNum(r[9]),
+        grossProfitM8: toNum(r[10]),
+        grossProfitM9: toNum(r[11]),
+        grossProfitM10: toNum(r[12]),
+        grossProfitM11: toNum(r[13]),
+        grossProfitM12: toNum(r[14]),
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const allEmployees = await storage.getEmployees();
+  const empMap = new Map<string, number>();
+  for (const e of allEmployees) {
+    empMap.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e.id);
+  }
+
+  const allProjects = await storage.getProjects();
+  const projMap = new Map<string, number>();
+  for (const p of allProjects) {
+    projMap.set(p.name.toLowerCase(), p.id);
+    if (p.projectCode) projMap.set(p.projectCode.toLowerCase(), p.id);
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    try {
+      const firstName = r[10] ? String(r[10]).trim() : "";
+      const lastName = r[11] ? String(r[11]).trim() : "";
+      const fullName = `${firstName} ${lastName}`.toLowerCase();
+      const employeeId = empMap.get(fullName);
+      if (!employeeId) {
+        errors.push(`Row ${i + 1}: Employee "${firstName} ${lastName}" not found`);
+        continue;
+      }
+
+      const weekEnding = excelDateToString(r[0]);
+      if (!weekEnding) continue;
+
+      const projName = r[4] ? String(r[4]).trim().toLowerCase() : "";
+      const projectId = projName ? projMap.get(projName) : null;
+      if (!projectId) {
+        if (projName) errors.push(`Row ${i + 1}: Project "${r[4]}" not found`);
+        continue;
+      }
+
+      await storage.createTimesheet({
+        employeeId,
+        projectId,
+        weekEnding,
+        hoursWorked: toNum(r[1]),
+        saleValue: toNum(r[2]),
+        costValue: toNum(r[3]),
+        daysWorked: null,
+        billable: String(r[16] || "").toLowerCase() !== "leave",
+        activityType: r[16] ? String(r[16]) : null,
+        source: "excel-import",
+        status: "submitted",
+        fyMonth: r[13] ? Number(r[13]) : null,
+        fyYear: null,
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[3]) continue;
+    try {
+      const projectDesc = String(r[3]).trim();
+      const allProjects = await storage.getProjects();
+      const match = allProjects.find(p => p.name === projectDesc || p.projectCode === projectDesc);
+      if (!match) {
+        errors.push(`Row ${i + 1}: Project "${projectDesc}" not found`);
+        continue;
+      }
+
+      await storage.createKpi({
+        projectId: match.id,
+        month: new Date().toISOString().slice(0, 10),
+        revenue: toNum(r[1]),
+        contractRate: null,
+        billedAmount: null,
+        unbilledAmount: null,
+        grossCost: toNum(r[2]),
+        resourceCost: toNum(r[2]),
+        rdCost: "0",
+        margin: toNum(Number(r[1] || 0) - Number(r[2] || 0)),
+        marginPercent: r[1] && Number(r[1]) > 0 ? toNum(((Number(r[1]) - Number(r[2] || 0)) / Number(r[1])) * 100) : "0",
+        burnRate: toNum(r[2]),
+        utilization: r[0] ? toNum((Number(r[0]) / 2080) * 100) : "0",
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
 }

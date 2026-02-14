@@ -16,6 +16,7 @@ import {
   Database,
   FlaskConical,
   GitBranch,
+  Upload,
 } from "lucide-react";
 import {
   Sidebar,
@@ -69,6 +70,7 @@ const navGroups = [
       { title: "Milestones", icon: Target, path: "/milestones" },
       { title: "Onboarding", icon: UserPlus, path: "/onboarding" },
       { title: "Data Sources", icon: Database, path: "/data-sources" },
+      { title: "Data Upload", icon: Upload, path: "/upload" },
     ],
   },
 ];
