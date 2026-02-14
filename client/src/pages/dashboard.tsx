@@ -157,86 +157,86 @@ export default function Dashboard() {
   const customTooltipFormatter = (value: number) => formatCurrency(value);
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
+    <div className="flex-1 overflow-auto p-3 sm:p-6 space-y-4 sm:space-y-6" data-testid="page-dashboard">
       <div>
-        <h1 className="text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">FY 25-26 Company Overview</p>
+        <h1 className="text-xl sm:text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground">FY 25-26 Company Overview</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
         <Card className={`border ${ragBg(totalContracted, REVENUE_TARGET)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sold (Contracted)</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium">Sold</CardTitle>
             <RagDot actual={totalContracted} target={REVENUE_TARGET} />
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-24" /> : (
-              <div className="text-2xl font-bold" data-testid="text-total-contracted">{formatCurrency(totalContracted)}</div>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-7 sm:h-8 w-16 sm:w-24" /> : (
+              <div className="text-lg sm:text-2xl font-bold" data-testid="text-total-contracted">{formatCurrency(totalContracted)}</div>
             )}
-            <p className="text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET)}</p>
           </CardContent>
         </Card>
 
         <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * 0.3)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">YTD Revenue</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium">YTD Revenue</CardTitle>
             <RagDot actual={totalRevenue} target={REVENUE_TARGET * 0.3} />
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-24" /> : (
-              <div className="text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-7 sm:h-8 w-16 sm:w-24" /> : (
+              <div className="text-lg sm:text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
             )}
-            <p className="text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * 0.3)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * 0.3)}</p>
           </CardContent>
         </Card>
 
         <Card className={`border ${ragBg(marginPercent, MARGIN_TARGET)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Margin (%)</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium">Margin</CardTitle>
             <RagDot actual={marginPercent} target={MARGIN_TARGET} />
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-16" /> : (
-              <div className={`text-2xl font-bold ${ragColor(marginPercent, MARGIN_TARGET)}`} data-testid="text-margin-percent">{formatPercent(marginPercent)}</div>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-7 sm:h-8 w-12 sm:w-16" /> : (
+              <div className={`text-lg sm:text-2xl font-bold ${ragColor(marginPercent, MARGIN_TARGET)}`} data-testid="text-margin-percent">{formatPercent(marginPercent)}</div>
             )}
-            <p className="text-xs text-muted-foreground">Target: {formatPercent(MARGIN_TARGET)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatPercent(MARGIN_TARGET)}</p>
           </CardContent>
         </Card>
 
         <Card className={`border ${ragBg(avgUtilization, UTILIZATION_TARGET)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Utilization</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium">Utilization</CardTitle>
             <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-12" /> : (
-              <div className={`text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
+              <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
             )}
-            <p className="text-xs text-muted-foreground">{activeProjects.length} projects / {activeEmployees.length} resources</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">{activeProjects.length} proj / {activeEmployees.length} staff</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">Revenue by Billing Type</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Revenue by Billing Type</CardTitle>
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={280} data-testid="chart-billing-pie">
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={220} data-testid="chart-billing-pie">
                 <RechartsPie>
-                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={80} innerRadius={45} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
+                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={65} innerRadius={35} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {billingPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
-                  <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+                  <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "4px" }} />
                 </RechartsPie>
               </ResponsiveContainer>
             )}
-            <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
               <div>
                 <p className="text-muted-foreground">Fixed GP</p>
                 <p className="font-medium">{formatCurrency(fixedRevenue - fixedCost)} ({fixedRevenue > 0 ? formatPercent((fixedRevenue - fixedCost) / fixedRevenue) : "0%"})</p>
@@ -250,25 +250,25 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">Pipeline by Classification</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Pipeline by Classification</CardTitle>
             <Link href="/pipeline">
               <Button variant="ghost" size="sm" data-testid="link-view-pipeline">
-                Details <ArrowRight className="ml-1 h-3 w-3" />
+                <span className="hidden sm:inline">Details</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
               </Button>
             </Link>
           </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={280} data-testid="chart-classification-pie">
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={220} data-testid="chart-classification-pie">
                 <RechartsPie>
-                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={80} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
+                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={65} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {classificationPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
-                  <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+                  <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "4px" }} />
                 </RechartsPie>
               </ResponsiveContainer>
             )}
@@ -277,23 +277,23 @@ export default function Dashboard() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">Monthly Revenue & Cost Trend (FY 25-26)</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+          <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY 25-26)</CardTitle>
           <Link href="/finance">
             <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
-              Full View <ArrowRight className="ml-1 h-3 w-3" />
+              <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
             </Button>
           </Link>
         </CardHeader>
-        <CardContent>
-          {isLoading ? <Skeleton className="h-[300px] w-full" /> : (
-            <ResponsiveContainer width="100%" height={300} data-testid="chart-monthly-trend">
+        <CardContent className="p-3 sm:p-6 pt-0">
+          {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
+            <ResponsiveContainer width="100%" height={240} data-testid="chart-monthly-trend">
               <AreaChart data={monthlyTrendData}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 12 }} width={70} />
+                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
+                <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
                 <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                <Legend />
+                <Legend wrapperStyle={{ fontSize: "11px" }} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
                 <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
                 <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
@@ -304,18 +304,18 @@ export default function Dashboard() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">Project Margin vs Target ({(MARGIN_TARGET * 100).toFixed(0)}%)</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+          <CardTitle className="text-sm sm:text-base">Project Margin vs Target ({(MARGIN_TARGET * 100).toFixed(0)}%)</CardTitle>
         </CardHeader>
-        <CardContent>
-          {isLoading ? <Skeleton className="h-[250px] w-full" /> : marginBarData.length === 0 ? (
+        <CardContent className="p-3 sm:p-6 pt-0">
+          {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : marginBarData.length === 0 ? (
             <p className="text-sm text-muted-foreground">No active projects with margin data</p>
           ) : (
-            <ResponsiveContainer width="100%" height={250} data-testid="chart-margin-bar">
+            <ResponsiveContainer width="100%" height={200} data-testid="chart-margin-bar">
               <BarChart data={marginBarData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis type="number" domain={[0, 'auto']} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11 }} />
+                <XAxis type="number" domain={[0, 'auto']} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10 }} />
                 <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
                 <Bar dataKey="margin" name="Forecast Margin %">
                   {marginBarData.map((entry, index) => (
@@ -329,40 +329,40 @@ export default function Dashboard() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">Monthly Snapshot (FY 25-26)</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY 25-26)</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-3 sm:p-6 pt-0">
           {isLoading ? (
-            <Skeleton className="h-40 w-full" />
+            <Skeleton className="h-32 sm:h-40 w-full" />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[120px]">Metric</TableHead>
+                    <TableHead className="min-w-[70px] sm:min-w-[120px] text-xs sm:text-sm sticky left-0 bg-background z-10">Metric</TableHead>
                     {FY_MONTHS.map(m => (
-                      <TableHead key={m} className="text-right min-w-[80px]">{m}</TableHead>
+                      <TableHead key={m} className="text-right min-w-[55px] sm:min-w-[80px] text-xs">{m}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="font-medium">Revenue</TableCell>
+                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Revenue</TableCell>
                     {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className="text-right text-sm">{formatCurrency(d.revenue)}</TableCell>
+                      <TableCell key={i} className="text-right text-xs">{formatCurrency(d.revenue)}</TableCell>
                     ))}
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Cost</TableCell>
+                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Cost</TableCell>
                     {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className="text-right text-sm">{formatCurrency(d.cost)}</TableCell>
+                      <TableCell key={i} className="text-right text-xs">{formatCurrency(d.cost)}</TableCell>
                     ))}
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Profit</TableCell>
+                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Profit</TableCell>
                     {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className={`text-right text-sm font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
+                      <TableCell key={i} className={`text-right text-xs font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
                     ))}
                   </TableRow>
                 </TableBody>
@@ -372,19 +372,19 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">Active Projects</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Active Projects</CardTitle>
             <Link href="/projects">
               <Button variant="ghost" size="sm" data-testid="link-view-all-projects">
-                View All <ArrowRight className="ml-1 h-3 w-3" />
+                <span className="hidden sm:inline">View All</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
               </Button>
             </Link>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2 sm:space-y-3 p-3 sm:p-6 pt-0">
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 sm:h-14 w-full" />)
             ) : activeProjects.length === 0 ? (
               <p className="text-sm text-muted-foreground">No active projects</p>
             ) : (
@@ -392,15 +392,14 @@ export default function Dashboard() {
                 const forecastMargin = parseFloat(project.forecastGmPercent || "0");
                 return (
                   <Link key={project.id} href={`/projects/${project.id}`}>
-                    <div className="flex items-center justify-between gap-2 p-3 rounded-md hover-elevate cursor-pointer" data-testid={`card-project-${project.id}`}>
+                    <div className="flex items-center justify-between gap-2 p-2 sm:p-3 rounded-md hover-elevate cursor-pointer" data-testid={`card-project-${project.id}`}>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{project.name}</p>
-                        <p className="text-xs text-muted-foreground">{project.client} {project.vat ? `| ${project.vat}` : ""}</p>
+                        <p className="text-xs sm:text-sm font-medium truncate">{project.name}</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{project.client} {project.vat ? `| ${project.vat}` : ""}</p>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                         <RagDot actual={forecastMargin} target={MARGIN_TARGET} />
-                        {project.billingCategory && <Badge variant="outline" className="text-xs">{project.billingCategory}</Badge>}
-                        <Badge variant={statusColor(project.adStatus || project.status)}>{project.adStatus || project.status}</Badge>
+                        <Badge variant={statusColor(project.adStatus || project.status)} className="text-[10px] sm:text-xs">{project.adStatus || project.status}</Badge>
                       </div>
                     </div>
                   </Link>
@@ -411,12 +410,12 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-base">Target Tracking</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Target Tracking</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6 pt-0">
             {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
+              Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 sm:h-10 w-full" />)
             ) : (
               <>
                 {[
@@ -427,18 +426,17 @@ export default function Dashboard() {
                 ].map((item) => {
                   const pctComplete = item.target > 0 ? Math.min(item.actual / item.target, 1) : 0;
                   return (
-                    <div key={item.label} className="space-y-1.5" data-testid={`target-${item.label.replace(/\s/g, "-").toLowerCase()}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                    <div key={item.label} className="space-y-1" data-testid={`target-${item.label.replace(/\s/g, "-").toLowerCase()}`}>
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                           <RagDot actual={item.actual} target={item.target} />
-                          <span className="text-sm">{item.label}</span>
+                          <span className="text-xs sm:text-sm truncate">{item.label}</span>
                         </div>
-                        <span className={`text-sm font-medium ${ragColor(item.actual, item.target)}`}>
+                        <span className={`text-xs sm:text-sm font-medium flex-shrink-0 ${ragColor(item.actual, item.target)}`}>
                           {item.format === "currency" ? formatCurrency(item.actual) : formatPercent(item.actual)}
-                          <span className="text-muted-foreground font-normal"> / {item.format === "currency" ? formatCurrency(item.target) : formatPercent(item.target)}</span>
                         </span>
                       </div>
-                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-1.5 sm:h-2 w-full rounded-full bg-muted overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all ${item.actual >= item.target ? "bg-green-500" : item.actual >= item.target * 0.8 ? "bg-amber-500" : "bg-red-500"}`}
                           style={{ width: `${pctComplete * 100}%` }}
