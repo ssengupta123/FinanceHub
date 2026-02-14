@@ -444,60 +444,98 @@ export async function registerRoutes(
       const pipelineOpps = await storage.getPipelineOpportunities();
       const projectMonthly = await storage.getProjectMonthly();
 
-      let systemPrompt = `You are an expert financial analyst for a project management firm in Australia. 
-You analyze financial data and provide actionable insights. Use Australian Financial Year format (Jul-Jun, e.g. FY25-26).
-Pipeline classifications: C(100% Committed), S(80% Sold), DVF(50%), DF(30%), Q(15% Qualified), A(5% Awareness).
-Respond with structured analysis in markdown. Include specific numbers and percentages where possible.
-Keep analysis concise but impactful - focus on actionable insights.`;
+      let systemPrompt = `You are a risk-focused financial analyst for an Australian project management firm. Your job is to identify SPECIFIC RISKS, RED FLAGS, and WARNING SIGNS in the data provided. Do NOT give generic advice or summaries.
+
+Rules:
+- Australian Financial Year (Jul-Jun, e.g. FY25-26)
+- Pipeline classifications: C(100% Committed), S(80% Sold), DVF(50%), DF(30%), Q(15% Qualified), A(5% Awareness)
+- Use markdown with clear risk severity labels: **CRITICAL**, **HIGH**, **MEDIUM**, **LOW**
+- Name specific projects, opportunities, or numbers when flagging risks
+- For each risk, state: what the risk is, why it matters, and what to do about it
+- Be direct and blunt. The reader is a senior manager who needs to know what could go wrong.`;
 
       let userPrompt = "";
 
       if (type === "pipeline") {
         const classGroups: Record<string, number> = {};
         let totalWeighted = 0;
+        const oppDetails: string[] = [];
         pipelineOpps.forEach(opp => {
           const cls = opp.classification || "Unknown";
-          const total = [opp.m1Revenue, opp.m2Revenue, opp.m3Revenue, opp.m4Revenue, opp.m5Revenue, opp.m6Revenue,
-            opp.m7Revenue, opp.m8Revenue, opp.m9Revenue, opp.m10Revenue, opp.m11Revenue, opp.m12Revenue]
-            .reduce((s, v) => s + parseFloat(v || "0"), 0);
+          const monthRevs = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
+            opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
+          const total = monthRevs.reduce((s, v) => s + parseFloat(v || "0"), 0);
           classGroups[cls] = (classGroups[cls] || 0) + total;
           const winRate: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
           totalWeighted += total * (winRate[cls] || 0);
+
+          const zeroMonths = monthRevs.filter(v => parseFloat(v || "0") === 0).length;
+          const h1 = monthRevs.slice(0, 6).reduce((s, v) => s + parseFloat(v || "0"), 0);
+          const h2 = monthRevs.slice(6).reduce((s, v) => s + parseFloat(v || "0"), 0);
+          oppDetails.push(`  - "${opp.name}" [${cls}] VAT:${opp.vat || "?"} Total:$${total.toLocaleString()} H1:$${h1.toLocaleString()} H2:$${h2.toLocaleString()} ZeroMonths:${zeroMonths}/12`);
         });
 
-        userPrompt = `Analyze our sales pipeline health:
+        const totalPipeline = Object.values(classGroups).reduce((s, v) => s + v, 0);
+        const committedPct = totalPipeline > 0 ? ((classGroups["C"] || 0) / totalPipeline * 100).toFixed(1) : "0";
+        const earlyPct = totalPipeline > 0 ? (((classGroups["Q"] || 0) + (classGroups["A"] || 0)) / totalPipeline * 100).toFixed(1) : "0";
 
-Pipeline Summary (${pipelineOpps.length} opportunities):
-${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()}`).join("\n")}
+        userPrompt = `Identify ALL risks in our sales pipeline. Be specific - name each opportunity that has problems.
 
-Total Weighted Pipeline: $${totalWeighted.toLocaleString()}
-Number of Active Projects: ${projects.filter(p => p.status === "active").length}
-Total Projects: ${projects.length}
+Pipeline Data (${pipelineOpps.length} opportunities, Total: $${totalPipeline.toLocaleString()}, Weighted: $${totalWeighted.toLocaleString()}):
+Classification breakdown:
+${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()} (${totalPipeline > 0 ? (v / totalPipeline * 100).toFixed(1) : 0}%)`).join("\n")}
 
-Key Questions:
-1. Is our pipeline healthy? What's the conversion risk?
-2. Are we too dependent on any single classification stage?
-3. What actions should we take to strengthen the pipeline?
-4. Any red flags in the pipeline distribution?`;
+Committed (C) as % of total: ${committedPct}%
+Early-stage (Q+A) as % of total: ${earlyPct}%
+Active projects that could absorb pipeline: ${projects.filter(p => p.status === "active").length}
+
+Individual Opportunities:
+${oppDetails.join("\n")}
+
+Identify risks including:
+- Concentration risk: too much revenue dependent on few opportunities or one classification
+- Conversion risk: opportunities stuck in early stages with large values
+- Revenue gap risk: months with zero or very low revenue across opportunities
+- Client/VAT concentration: over-reliance on specific VAT categories
+- H1 vs H2 imbalance: is revenue front-loaded or back-loaded?
+- Pipeline coverage ratio: is weighted pipeline sufficient vs target revenue?
+- Stale opportunities: large deals in low-probability stages (Q/A)`;
       } else if (type === "projects") {
-        const projectSummaries = projects.slice(0, 15).map(p => {
+        const projectSummaries = projects.map(p => {
           const monthly = projectMonthly.filter(m => m.projectId === p.id);
           const totalRev = monthly.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
           const totalCost = monthly.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
           const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
-          return `- ${p.name} (${p.billingCategory || "N/A"}): Revenue $${totalRev.toLocaleString()}, Cost $${totalCost.toLocaleString()}, Margin ${margin}%, Status: ${p.status}, AD: ${p.adStatus || "N/A"}`;
+          const monthlyMargins = monthly.map(m => {
+            const r = parseFloat(m.revenue || "0");
+            const c = parseFloat(m.cost || "0");
+            return r > 0 ? ((r - c) / r * 100).toFixed(0) : "N/A";
+          });
+          const costTrend = monthly.slice(-3).map(m => `$${parseFloat(m.cost || "0").toLocaleString()}`).join(" -> ");
+          const wo = parseFloat(p.workOrderAmount || "0");
+          const actual = parseFloat(p.actualAmount || "0");
+          const balance = parseFloat(p.balanceAmount || "0");
+          const burnPct = wo > 0 ? ((actual / wo) * 100).toFixed(0) : "N/A";
+          return `  - "${p.name}" [${p.billingCategory || "?"}] VAT:${p.vat || "?"} Status:${p.status} AD:${p.adStatus || "?"}
+    Revenue:$${totalRev.toLocaleString()} Cost:$${totalCost.toLocaleString()} Margin:${margin}%
+    WorkOrder:$${wo.toLocaleString()} Actual:$${actual.toLocaleString()} Balance:$${balance.toLocaleString()} BurnRate:${burnPct}%
+    MonthlyMargins:[${monthlyMargins.join(", ")}] RecentCostTrend:${costTrend}`;
         }).join("\n");
 
-        userPrompt = `Analyze project health and financial performance:
+        userPrompt = `Identify ALL risks across our project portfolio. Name each project that has issues.
 
-Active Projects (${projects.length} total):
+Project Data (${projects.length} total):
 ${projectSummaries}
 
-Key Questions:
-1. Which projects are performing well and which need attention?
-2. Are there any margin concerns or burn rate issues?
-3. How does billing type (Fixed vs T&M) affect performance?
-4. What recommendations do you have for project portfolio management?`;
+Identify risks including:
+- Margin erosion: projects where margin is below 20% or trending downward month-over-month
+- Budget overrun: projects where actual spend exceeds work order amount or balance is negative
+- Cost blowout: projects where costs are increasing month-over-month without matching revenue growth
+- Fixed-price risk: Fixed projects with low margins (cost overruns can't be recovered)
+- Stalled projects: projects with "pending" or unusual AD status
+- Revenue concentration: too much revenue from one or two projects
+- T&M leakage: T&M projects where billable rates may not cover costs
+- Forecast vs actual gaps: projects where forecasted revenue differs significantly from actual trajectory`;
       } else {
         const totalRevenue = kpis.reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
         const totalCost = kpis.reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
@@ -508,21 +546,54 @@ Key Questions:
           ? (kpis.reduce((s, k) => s + parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1)
           : "0";
 
-        userPrompt = `Provide an executive overview of our financial position:
+        const classGroups: Record<string, number> = {};
+        pipelineOpps.forEach(opp => {
+          const cls = opp.classification || "Unknown";
+          const total = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
+            opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12]
+            .reduce((s, v) => s + parseFloat(v || "0"), 0);
+          classGroups[cls] = (classGroups[cls] || 0) + total;
+        });
 
-Overall KPIs:
+        const projectRisks = projects.map(p => {
+          const monthly = projectMonthly.filter(m => m.projectId === p.id);
+          const totalRev = monthly.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+          const totalCost = monthly.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
+          const balance = parseFloat(p.balanceAmount || "0");
+          return { name: p.name, margin: parseFloat(margin), balance, totalRev, status: p.status };
+        });
+
+        const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
+        const negativeBalance = projectRisks.filter(p => p.balance < 0).map(p => `${p.name} ($${p.balance.toLocaleString()})`);
+        const topRevProject = projectRisks.sort((a, b) => b.totalRev - a.totalRev)[0];
+        const revConcentration = topRevProject && totalRevenue > 0 ? (topRevProject.totalRev / totalRevenue * 100).toFixed(1) : "0";
+
+        userPrompt = `Identify the top risks facing this organization RIGHT NOW. Be specific and blunt.
+
+Financial Position:
 - Total Revenue: $${totalRevenue.toLocaleString()}
 - Total Cost: $${totalCost.toLocaleString()}
-- Average Margin: ${avgMargin}%
+- Gross Margin: ${totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue * 100).toFixed(1) : 0}%
+- Average Project Margin: ${avgMargin}%
 - Average Utilization: ${avgUtil}%
-- Active Projects: ${projects.filter(p => p.status === "active").length}
-- Total Pipeline Opportunities: ${pipelineOpps.length}
+- Active Projects: ${projects.filter(p => p.status === "active").length} / ${projects.length} total
 
-Key Questions:
-1. What is the overall financial health of the organization?
-2. Are there trends we should be concerned about?
-3. What are the top 3 strategic recommendations?
-4. Risk assessment summary?`;
+Pipeline Coverage:
+${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()}`).join("\n")}
+
+Red Flag Data:
+- Projects with margin below 20%: ${lowMarginProjects.length > 0 ? lowMarginProjects.join(", ") : "None"}
+- Projects with negative balance: ${negativeBalance.length > 0 ? negativeBalance.join(", ") : "None"}
+- Largest project is ${revConcentration}% of total revenue (${topRevProject?.name || "N/A"})
+- Pipeline opportunities: ${pipelineOpps.length}
+
+Produce a RISK REGISTER with:
+1. Each risk rated CRITICAL / HIGH / MEDIUM / LOW
+2. The specific data point that triggered the risk
+3. What happens if we do nothing (impact)
+4. Recommended immediate action
+Focus on risks that could materially hurt revenue, margin, or cash flow in the next 6 months.`;
       }
 
       res.setHeader("Content-Type", "text/event-stream");

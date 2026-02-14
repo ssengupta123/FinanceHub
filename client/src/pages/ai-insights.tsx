@@ -2,27 +2,27 @@ import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Sparkles, GitBranch, FolderOpen, BarChart3, Loader2 } from "lucide-react";
+import { Sparkles, GitBranch, FolderOpen, AlertTriangle, Loader2 } from "lucide-react";
 
 type InsightType = "pipeline" | "projects" | "overview";
 
 const insightCards: { type: InsightType; title: string; description: string; icon: typeof Sparkles }[] = [
   {
     type: "overview",
-    title: "Executive Overview",
-    description: "Overall financial health, KPI trends, and strategic recommendations",
-    icon: BarChart3,
+    title: "Risk Register",
+    description: "Critical risks across the business: margin erosion, revenue concentration, pipeline gaps, and cash flow threats",
+    icon: AlertTriangle,
   },
   {
     type: "pipeline",
-    title: "Pipeline Health",
-    description: "Sales pipeline analysis, conversion risk, and classification distribution",
+    title: "Pipeline Risks",
+    description: "Concentration risk, conversion risk, revenue gaps, stale opportunities, and H1/H2 imbalance",
     icon: GitBranch,
   },
   {
     type: "projects",
-    title: "Project Status",
-    description: "Project performance, margin concerns, burn rate issues, and portfolio insights",
+    title: "Project Risks",
+    description: "Budget overruns, margin erosion, cost blowouts, fixed-price exposure, and billing leakage by project",
     icon: FolderOpen,
   },
 ];
