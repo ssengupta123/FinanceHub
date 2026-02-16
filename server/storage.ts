@@ -1,22 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql, sum, count } from "drizzle-orm";
 import {
-  employees,
-  projects,
-  rateCards,
-  resourcePlans,
-  timesheets,
-  costs,
-  kpis,
-  forecasts,
-  milestones,
-  dataSources,
-  onboardingSteps,
-  users,
-  projectMonthly,
-  pipelineOpportunities,
-  scenarios,
-  scenarioAdjustments,
   type Employee,
   type InsertEmployee,
   type Project,
@@ -51,8 +34,64 @@ import {
   type InsertScenarioAdjustment,
 } from "@shared/schema";
 
+function toSnakeCase(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+    result[snakeKey] = value;
+  }
+  return result;
+}
+
+function toCamelCase(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    result[camelKey] = value === null ? null : value;
+  }
+  return result;
+}
+
+function rowToModel<T>(row: Record<string, any>): T {
+  const camel = toCamelCase(row);
+  if (camel.grossCostRate !== undefined) {
+    camel.grossCost = camel.grossCostRate;
+    delete camel.grossCostRate;
+  }
+  for (const key of Object.keys(camel)) {
+    const val = camel[key];
+    if (val !== null && val !== undefined) {
+      if (typeof val === "number" && !Number.isInteger(val) && key !== "id" && !key.endsWith("Id") && key !== "month" && key !== "stepOrder" && key !== "recordsProcessed" && key !== "startMonthShift" && key !== "fyMonth") {
+        camel[key] = val.toString();
+      }
+      if (val instanceof Date && key !== "createdAt" && key !== "completedAt" && key !== "lastSyncAt") {
+        camel[key] = val.toISOString().split("T")[0];
+      }
+    }
+  }
+  return camel as T;
+}
+
+function rowsToModels<T>(rows: Record<string, any>[]): T[] {
+  return rows.map((r) => rowToModel<T>(r));
+}
+
+async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
+  const snakeData = toSnakeCase(data);
+  delete snakeData.id;
+  const [row] = await db(table).insert(snakeData).returning("*");
+  return rowToModel<T>(row);
+}
+
+async function updateReturning<T>(table: string, id: number, data: Record<string, any>): Promise<T | undefined> {
+  const snakeData = toSnakeCase(data);
+  delete snakeData.id;
+  const [row] = await db(table).where("id", id).update(snakeData).returning("*");
+  if (!row) return undefined;
+  return rowToModel<T>(row);
+}
+
 export interface IStorage {
-  // Employees
   getEmployees(): Promise<Employee[]>;
   getEmployee(id: number): Promise<Employee | undefined>;
   getEmployeesByStatus(status: string): Promise<Employee[]>;
@@ -60,7 +99,6 @@ export interface IStorage {
   updateEmployee(id: number, data: Partial<InsertEmployee>): Promise<Employee | undefined>;
   deleteEmployee(id: number): Promise<void>;
 
-  // Projects
   getProjects(): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
   getProjectsByStatus(status: string): Promise<Project[]>;
@@ -68,7 +106,6 @@ export interface IStorage {
   updateProject(id: number, data: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: number): Promise<void>;
 
-  // Rate Cards
   getRateCards(): Promise<RateCard[]>;
   getRateCard(id: number): Promise<RateCard | undefined>;
   getRateCardsByRole(role: string): Promise<RateCard[]>;
@@ -77,7 +114,6 @@ export interface IStorage {
   updateRateCard(id: number, data: Partial<InsertRateCard>): Promise<RateCard | undefined>;
   deleteRateCard(id: number): Promise<void>;
 
-  // Resource Plans
   getResourcePlans(): Promise<ResourcePlan[]>;
   getResourcePlan(id: number): Promise<ResourcePlan | undefined>;
   getResourcePlansByProject(projectId: number): Promise<ResourcePlan[]>;
@@ -86,7 +122,6 @@ export interface IStorage {
   updateResourcePlan(id: number, data: Partial<InsertResourcePlan>): Promise<ResourcePlan | undefined>;
   deleteResourcePlan(id: number): Promise<void>;
 
-  // Timesheets
   getTimesheets(): Promise<Timesheet[]>;
   getTimesheet(id: number): Promise<Timesheet | undefined>;
   getTimesheetsByProject(projectId: number): Promise<Timesheet[]>;
@@ -95,7 +130,6 @@ export interface IStorage {
   updateTimesheet(id: number, data: Partial<InsertTimesheet>): Promise<Timesheet | undefined>;
   deleteTimesheet(id: number): Promise<void>;
 
-  // Costs
   getCosts(): Promise<Cost[]>;
   getCost(id: number): Promise<Cost | undefined>;
   getCostsByProject(projectId: number): Promise<Cost[]>;
@@ -104,7 +138,6 @@ export interface IStorage {
   updateCost(id: number, data: Partial<InsertCost>): Promise<Cost | undefined>;
   deleteCost(id: number): Promise<void>;
 
-  // KPIs
   getKpis(): Promise<Kpi[]>;
   getKpi(id: number): Promise<Kpi | undefined>;
   getKpisByProject(projectId: number): Promise<Kpi[]>;
@@ -112,7 +145,6 @@ export interface IStorage {
   updateKpi(id: number, data: Partial<InsertKpi>): Promise<Kpi | undefined>;
   deleteKpi(id: number): Promise<void>;
 
-  // Forecasts
   getForecasts(): Promise<Forecast[]>;
   getForecast(id: number): Promise<Forecast | undefined>;
   getForecastsByProject(projectId: number): Promise<Forecast[]>;
@@ -120,7 +152,6 @@ export interface IStorage {
   updateForecast(id: number, data: Partial<InsertForecast>): Promise<Forecast | undefined>;
   deleteForecast(id: number): Promise<void>;
 
-  // Milestones
   getMilestones(): Promise<Milestone[]>;
   getMilestone(id: number): Promise<Milestone | undefined>;
   getMilestonesByProject(projectId: number): Promise<Milestone[]>;
@@ -128,14 +159,12 @@ export interface IStorage {
   updateMilestone(id: number, data: Partial<InsertMilestone>): Promise<Milestone | undefined>;
   deleteMilestone(id: number): Promise<void>;
 
-  // Data Sources
   getDataSources(): Promise<DataSource[]>;
   getDataSource(id: number): Promise<DataSource | undefined>;
   createDataSource(data: InsertDataSource): Promise<DataSource>;
   updateDataSource(id: number, data: Partial<InsertDataSource>): Promise<DataSource | undefined>;
   deleteDataSource(id: number): Promise<void>;
 
-  // Onboarding Steps
   getOnboardingSteps(): Promise<OnboardingStep[]>;
   getOnboardingStep(id: number): Promise<OnboardingStep | undefined>;
   getOnboardingStepsByEmployee(employeeId: number): Promise<OnboardingStep[]>;
@@ -143,18 +172,15 @@ export interface IStorage {
   updateOnboardingStep(id: number, data: Partial<InsertOnboardingStep>): Promise<OnboardingStep | undefined>;
   deleteOnboardingStep(id: number): Promise<void>;
 
-  // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(data: InsertUser): Promise<User>;
 
-  // Project Monthly
   getProjectMonthly(): Promise<ProjectMonthly[]>;
   getProjectMonthlyByProject(projectId: number): Promise<ProjectMonthly[]>;
   createProjectMonthly(data: InsertProjectMonthly): Promise<ProjectMonthly>;
   deleteProjectMonthly(id: number): Promise<void>;
 
-  // Pipeline Opportunities
   getPipelineOpportunities(): Promise<PipelineOpportunity[]>;
   getPipelineOpportunity(id: number): Promise<PipelineOpportunity | undefined>;
   getPipelineByClassification(classification: string): Promise<PipelineOpportunity[]>;
@@ -162,19 +188,16 @@ export interface IStorage {
   createPipelineOpportunity(data: InsertPipelineOpportunity): Promise<PipelineOpportunity>;
   deletePipelineOpportunity(id: number): Promise<void>;
 
-  // Scenarios
   getScenarios(): Promise<Scenario[]>;
   getScenario(id: number): Promise<Scenario | undefined>;
   getScenarioWithAdjustments(id: number): Promise<{ scenario: Scenario; adjustments: ScenarioAdjustment[] } | undefined>;
   createScenario(data: InsertScenario): Promise<Scenario>;
   deleteScenario(id: number): Promise<void>;
 
-  // Scenario Adjustments
   getScenarioAdjustments(scenarioId: number): Promise<ScenarioAdjustment[]>;
   createScenarioAdjustment(data: InsertScenarioAdjustment): Promise<ScenarioAdjustment>;
   deleteScenarioAdjustment(id: number): Promise<void>;
 
-  // Dashboard / Aggregates
   getDashboardSummary(): Promise<{
     totalProjects: number;
     totalEmployees: number;
@@ -202,448 +225,326 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // Employees
   async getEmployees(): Promise<Employee[]> {
-    return db.select().from(employees);
+    return rowsToModels<Employee>(await db("employees").select("*"));
   }
-
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const result = await db.select().from(employees).where(eq(employees.id, id));
-    return result[0];
+    const row = await db("employees").where("id", id).first();
+    return row ? rowToModel<Employee>(row) : undefined;
   }
-
   async getEmployeesByStatus(status: string): Promise<Employee[]> {
-    return db.select().from(employees).where(eq(employees.status, status));
+    return rowsToModels<Employee>(await db("employees").where("status", status));
   }
-
   async createEmployee(data: InsertEmployee): Promise<Employee> {
-    const result = await db.insert(employees).values(data).returning();
-    return result[0];
+    return insertReturning<Employee>("employees", data);
   }
-
   async updateEmployee(id: number, data: Partial<InsertEmployee>): Promise<Employee | undefined> {
-    const result = await db.update(employees).set(data).where(eq(employees.id, id)).returning();
-    return result[0];
+    return updateReturning<Employee>("employees", id, data);
   }
-
   async deleteEmployee(id: number): Promise<void> {
-    await db.delete(employees).where(eq(employees.id, id));
+    await db("employees").where("id", id).del();
   }
 
-  // Projects
   async getProjects(): Promise<Project[]> {
-    return db.select().from(projects);
+    return rowsToModels<Project>(await db("projects").select("*"));
   }
-
   async getProject(id: number): Promise<Project | undefined> {
-    const result = await db.select().from(projects).where(eq(projects.id, id));
-    return result[0];
+    const row = await db("projects").where("id", id).first();
+    return row ? rowToModel<Project>(row) : undefined;
   }
-
   async getProjectsByStatus(status: string): Promise<Project[]> {
-    return db.select().from(projects).where(eq(projects.status, status));
+    return rowsToModels<Project>(await db("projects").where("status", status));
   }
-
   async createProject(data: InsertProject): Promise<Project> {
-    const result = await db.insert(projects).values(data).returning();
-    return result[0];
+    return insertReturning<Project>("projects", data);
   }
-
   async updateProject(id: number, data: Partial<InsertProject>): Promise<Project | undefined> {
-    const result = await db.update(projects).set(data).where(eq(projects.id, id)).returning();
-    return result[0];
+    return updateReturning<Project>("projects", id, data);
   }
-
   async deleteProject(id: number): Promise<void> {
-    await db.delete(projects).where(eq(projects.id, id));
+    await db("projects").where("id", id).del();
   }
 
-  // Rate Cards
   async getRateCards(): Promise<RateCard[]> {
-    return db.select().from(rateCards);
+    return rowsToModels<RateCard>(await db("rate_cards").select("*"));
   }
-
   async getRateCard(id: number): Promise<RateCard | undefined> {
-    const result = await db.select().from(rateCards).where(eq(rateCards.id, id));
-    return result[0];
+    const row = await db("rate_cards").where("id", id).first();
+    return row ? rowToModel<RateCard>(row) : undefined;
   }
-
   async getRateCardsByRole(role: string): Promise<RateCard[]> {
-    return db.select().from(rateCards).where(eq(rateCards.role, role));
+    return rowsToModels<RateCard>(await db("rate_cards").where("role", role));
   }
-
   async getRateCardsByGrade(grade: string): Promise<RateCard[]> {
-    return db.select().from(rateCards).where(eq(rateCards.grade, grade));
+    return rowsToModels<RateCard>(await db("rate_cards").where("grade", grade));
   }
-
   async createRateCard(data: InsertRateCard): Promise<RateCard> {
-    const result = await db.insert(rateCards).values(data).returning();
-    return result[0];
+    return insertReturning<RateCard>("rate_cards", data);
   }
-
   async updateRateCard(id: number, data: Partial<InsertRateCard>): Promise<RateCard | undefined> {
-    const result = await db.update(rateCards).set(data).where(eq(rateCards.id, id)).returning();
-    return result[0];
+    return updateReturning<RateCard>("rate_cards", id, data);
   }
-
   async deleteRateCard(id: number): Promise<void> {
-    await db.delete(rateCards).where(eq(rateCards.id, id));
+    await db("rate_cards").where("id", id).del();
   }
 
-  // Resource Plans
   async getResourcePlans(): Promise<ResourcePlan[]> {
-    return db.select().from(resourcePlans);
+    return rowsToModels<ResourcePlan>(await db("resource_plans").select("*"));
   }
-
   async getResourcePlan(id: number): Promise<ResourcePlan | undefined> {
-    const result = await db.select().from(resourcePlans).where(eq(resourcePlans.id, id));
-    return result[0];
+    const row = await db("resource_plans").where("id", id).first();
+    return row ? rowToModel<ResourcePlan>(row) : undefined;
   }
-
   async getResourcePlansByProject(projectId: number): Promise<ResourcePlan[]> {
-    return db.select().from(resourcePlans).where(eq(resourcePlans.projectId, projectId));
+    return rowsToModels<ResourcePlan>(await db("resource_plans").where("project_id", projectId));
   }
-
   async getResourcePlansByEmployee(employeeId: number): Promise<ResourcePlan[]> {
-    return db.select().from(resourcePlans).where(eq(resourcePlans.employeeId, employeeId));
+    return rowsToModels<ResourcePlan>(await db("resource_plans").where("employee_id", employeeId));
   }
-
   async createResourcePlan(data: InsertResourcePlan): Promise<ResourcePlan> {
-    const result = await db.insert(resourcePlans).values(data).returning();
-    return result[0];
+    return insertReturning<ResourcePlan>("resource_plans", data);
   }
-
   async updateResourcePlan(id: number, data: Partial<InsertResourcePlan>): Promise<ResourcePlan | undefined> {
-    const result = await db.update(resourcePlans).set(data).where(eq(resourcePlans.id, id)).returning();
-    return result[0];
+    return updateReturning<ResourcePlan>("resource_plans", id, data);
   }
-
   async deleteResourcePlan(id: number): Promise<void> {
-    await db.delete(resourcePlans).where(eq(resourcePlans.id, id));
+    await db("resource_plans").where("id", id).del();
   }
 
-  // Timesheets
   async getTimesheets(): Promise<Timesheet[]> {
-    return db.select().from(timesheets);
+    return rowsToModels<Timesheet>(await db("timesheets").select("*"));
   }
-
   async getTimesheet(id: number): Promise<Timesheet | undefined> {
-    const result = await db.select().from(timesheets).where(eq(timesheets.id, id));
-    return result[0];
+    const row = await db("timesheets").where("id", id).first();
+    return row ? rowToModel<Timesheet>(row) : undefined;
   }
-
   async getTimesheetsByProject(projectId: number): Promise<Timesheet[]> {
-    return db.select().from(timesheets).where(eq(timesheets.projectId, projectId));
+    return rowsToModels<Timesheet>(await db("timesheets").where("project_id", projectId));
   }
-
   async getTimesheetsByEmployee(employeeId: number): Promise<Timesheet[]> {
-    return db.select().from(timesheets).where(eq(timesheets.employeeId, employeeId));
+    return rowsToModels<Timesheet>(await db("timesheets").where("employee_id", employeeId));
   }
-
   async createTimesheet(data: InsertTimesheet): Promise<Timesheet> {
-    const result = await db.insert(timesheets).values(data).returning();
-    return result[0];
+    return insertReturning<Timesheet>("timesheets", data);
   }
-
   async updateTimesheet(id: number, data: Partial<InsertTimesheet>): Promise<Timesheet | undefined> {
-    const result = await db.update(timesheets).set(data).where(eq(timesheets.id, id)).returning();
-    return result[0];
+    return updateReturning<Timesheet>("timesheets", id, data);
   }
-
   async deleteTimesheet(id: number): Promise<void> {
-    await db.delete(timesheets).where(eq(timesheets.id, id));
+    await db("timesheets").where("id", id).del();
   }
 
-  // Costs
   async getCosts(): Promise<Cost[]> {
-    return db.select().from(costs);
+    return rowsToModels<Cost>(await db("costs").select("*"));
   }
-
   async getCost(id: number): Promise<Cost | undefined> {
-    const result = await db.select().from(costs).where(eq(costs.id, id));
-    return result[0];
+    const row = await db("costs").where("id", id).first();
+    return row ? rowToModel<Cost>(row) : undefined;
   }
-
   async getCostsByProject(projectId: number): Promise<Cost[]> {
-    return db.select().from(costs).where(eq(costs.projectId, projectId));
+    return rowsToModels<Cost>(await db("costs").where("project_id", projectId));
   }
-
   async getCostsByCategory(category: string): Promise<Cost[]> {
-    return db.select().from(costs).where(eq(costs.category, category));
+    return rowsToModels<Cost>(await db("costs").where("category", category));
   }
-
   async createCost(data: InsertCost): Promise<Cost> {
-    const result = await db.insert(costs).values(data).returning();
-    return result[0];
+    return insertReturning<Cost>("costs", data);
   }
-
   async updateCost(id: number, data: Partial<InsertCost>): Promise<Cost | undefined> {
-    const result = await db.update(costs).set(data).where(eq(costs.id, id)).returning();
-    return result[0];
+    return updateReturning<Cost>("costs", id, data);
   }
-
   async deleteCost(id: number): Promise<void> {
-    await db.delete(costs).where(eq(costs.id, id));
+    await db("costs").where("id", id).del();
   }
 
-  // KPIs
   async getKpis(): Promise<Kpi[]> {
-    return db.select().from(kpis);
+    return rowsToModels<Kpi>(await db("kpis").select("*"));
   }
-
   async getKpi(id: number): Promise<Kpi | undefined> {
-    const result = await db.select().from(kpis).where(eq(kpis.id, id));
-    return result[0];
+    const row = await db("kpis").where("id", id).first();
+    return row ? rowToModel<Kpi>(row) : undefined;
   }
-
   async getKpisByProject(projectId: number): Promise<Kpi[]> {
-    return db.select().from(kpis).where(eq(kpis.projectId, projectId));
+    return rowsToModels<Kpi>(await db("kpis").where("project_id", projectId));
   }
-
   async createKpi(data: InsertKpi): Promise<Kpi> {
-    const result = await db.insert(kpis).values(data).returning();
-    return result[0];
+    return insertReturning<Kpi>("kpis", data);
   }
-
   async updateKpi(id: number, data: Partial<InsertKpi>): Promise<Kpi | undefined> {
-    const result = await db.update(kpis).set(data).where(eq(kpis.id, id)).returning();
-    return result[0];
+    return updateReturning<Kpi>("kpis", id, data);
   }
-
   async deleteKpi(id: number): Promise<void> {
-    await db.delete(kpis).where(eq(kpis.id, id));
+    await db("kpis").where("id", id).del();
   }
 
-  // Forecasts
   async getForecasts(): Promise<Forecast[]> {
-    return db.select().from(forecasts);
+    return rowsToModels<Forecast>(await db("forecasts").select("*"));
   }
-
   async getForecast(id: number): Promise<Forecast | undefined> {
-    const result = await db.select().from(forecasts).where(eq(forecasts.id, id));
-    return result[0];
+    const row = await db("forecasts").where("id", id).first();
+    return row ? rowToModel<Forecast>(row) : undefined;
   }
-
   async getForecastsByProject(projectId: number): Promise<Forecast[]> {
-    return db.select().from(forecasts).where(eq(forecasts.projectId, projectId));
+    return rowsToModels<Forecast>(await db("forecasts").where("project_id", projectId));
   }
-
   async createForecast(data: InsertForecast): Promise<Forecast> {
-    const result = await db.insert(forecasts).values(data).returning();
-    return result[0];
+    return insertReturning<Forecast>("forecasts", data);
   }
-
   async updateForecast(id: number, data: Partial<InsertForecast>): Promise<Forecast | undefined> {
-    const result = await db.update(forecasts).set(data).where(eq(forecasts.id, id)).returning();
-    return result[0];
+    return updateReturning<Forecast>("forecasts", id, data);
   }
-
   async deleteForecast(id: number): Promise<void> {
-    await db.delete(forecasts).where(eq(forecasts.id, id));
+    await db("forecasts").where("id", id).del();
   }
 
-  // Milestones
   async getMilestones(): Promise<Milestone[]> {
-    return db.select().from(milestones);
+    return rowsToModels<Milestone>(await db("milestones").select("*"));
   }
-
   async getMilestone(id: number): Promise<Milestone | undefined> {
-    const result = await db.select().from(milestones).where(eq(milestones.id, id));
-    return result[0];
+    const row = await db("milestones").where("id", id).first();
+    return row ? rowToModel<Milestone>(row) : undefined;
   }
-
   async getMilestonesByProject(projectId: number): Promise<Milestone[]> {
-    return db.select().from(milestones).where(eq(milestones.projectId, projectId));
+    return rowsToModels<Milestone>(await db("milestones").where("project_id", projectId));
   }
-
   async createMilestone(data: InsertMilestone): Promise<Milestone> {
-    const result = await db.insert(milestones).values(data).returning();
-    return result[0];
+    return insertReturning<Milestone>("milestones", data);
   }
-
   async updateMilestone(id: number, data: Partial<InsertMilestone>): Promise<Milestone | undefined> {
-    const result = await db.update(milestones).set(data).where(eq(milestones.id, id)).returning();
-    return result[0];
+    return updateReturning<Milestone>("milestones", id, data);
   }
-
   async deleteMilestone(id: number): Promise<void> {
-    await db.delete(milestones).where(eq(milestones.id, id));
+    await db("milestones").where("id", id).del();
   }
 
-  // Data Sources
   async getDataSources(): Promise<DataSource[]> {
-    return db.select().from(dataSources);
+    return rowsToModels<DataSource>(await db("data_sources").select("*"));
   }
-
   async getDataSource(id: number): Promise<DataSource | undefined> {
-    const result = await db.select().from(dataSources).where(eq(dataSources.id, id));
-    return result[0];
+    const row = await db("data_sources").where("id", id).first();
+    return row ? rowToModel<DataSource>(row) : undefined;
   }
-
   async createDataSource(data: InsertDataSource): Promise<DataSource> {
-    const result = await db.insert(dataSources).values(data).returning();
-    return result[0];
+    return insertReturning<DataSource>("data_sources", data);
   }
-
   async updateDataSource(id: number, data: Partial<InsertDataSource>): Promise<DataSource | undefined> {
-    const result = await db.update(dataSources).set(data).where(eq(dataSources.id, id)).returning();
-    return result[0];
+    return updateReturning<DataSource>("data_sources", id, data);
   }
-
   async deleteDataSource(id: number): Promise<void> {
-    await db.delete(dataSources).where(eq(dataSources.id, id));
+    await db("data_sources").where("id", id).del();
   }
 
-  // Onboarding Steps
   async getOnboardingSteps(): Promise<OnboardingStep[]> {
-    return db.select().from(onboardingSteps);
+    return rowsToModels<OnboardingStep>(await db("onboarding_steps").select("*"));
   }
-
   async getOnboardingStep(id: number): Promise<OnboardingStep | undefined> {
-    const result = await db.select().from(onboardingSteps).where(eq(onboardingSteps.id, id));
-    return result[0];
+    const row = await db("onboarding_steps").where("id", id).first();
+    return row ? rowToModel<OnboardingStep>(row) : undefined;
   }
-
   async getOnboardingStepsByEmployee(employeeId: number): Promise<OnboardingStep[]> {
-    return db.select().from(onboardingSteps).where(eq(onboardingSteps.employeeId, employeeId));
+    return rowsToModels<OnboardingStep>(await db("onboarding_steps").where("employee_id", employeeId));
   }
-
   async createOnboardingStep(data: InsertOnboardingStep): Promise<OnboardingStep> {
-    const result = await db.insert(onboardingSteps).values(data).returning();
-    return result[0];
+    return insertReturning<OnboardingStep>("onboarding_steps", data);
   }
-
   async updateOnboardingStep(id: number, data: Partial<InsertOnboardingStep>): Promise<OnboardingStep | undefined> {
-    const result = await db.update(onboardingSteps).set(data).where(eq(onboardingSteps.id, id)).returning();
-    return result[0];
+    return updateReturning<OnboardingStep>("onboarding_steps", id, data);
   }
-
   async deleteOnboardingStep(id: number): Promise<void> {
-    await db.delete(onboardingSteps).where(eq(onboardingSteps.id, id));
+    await db("onboarding_steps").where("id", id).del();
   }
 
-  // Users
   async getUser(id: number): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.id, id));
-    return result[0];
+    const row = await db("users").where("id", id).first();
+    return row ? rowToModel<User>(row) : undefined;
   }
-
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.username, username));
-    return result[0];
+    const row = await db("users").where("username", username).first();
+    return row ? rowToModel<User>(row) : undefined;
   }
-
   async createUser(data: InsertUser): Promise<User> {
-    const result = await db.insert(users).values(data).returning();
-    return result[0];
+    return insertReturning<User>("users", data);
   }
 
-  // Project Monthly
   async getProjectMonthly(): Promise<ProjectMonthly[]> {
-    return db.select().from(projectMonthly);
+    return rowsToModels<ProjectMonthly>(await db("project_monthly").select("*"));
   }
-
   async getProjectMonthlyByProject(projectId: number): Promise<ProjectMonthly[]> {
-    return db.select().from(projectMonthly).where(eq(projectMonthly.projectId, projectId));
+    return rowsToModels<ProjectMonthly>(await db("project_monthly").where("project_id", projectId));
   }
-
   async createProjectMonthly(data: InsertProjectMonthly): Promise<ProjectMonthly> {
-    const result = await db.insert(projectMonthly).values(data).returning();
-    return result[0];
+    return insertReturning<ProjectMonthly>("project_monthly", data);
   }
-
   async deleteProjectMonthly(id: number): Promise<void> {
-    await db.delete(projectMonthly).where(eq(projectMonthly.id, id));
+    await db("project_monthly").where("id", id).del();
   }
 
-  // Pipeline Opportunities
   async getPipelineOpportunities(): Promise<PipelineOpportunity[]> {
-    return db.select().from(pipelineOpportunities);
+    return rowsToModels<PipelineOpportunity>(await db("pipeline_opportunities").select("*"));
   }
-
   async getPipelineOpportunity(id: number): Promise<PipelineOpportunity | undefined> {
-    const result = await db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.id, id));
-    return result[0];
+    const row = await db("pipeline_opportunities").where("id", id).first();
+    return row ? rowToModel<PipelineOpportunity>(row) : undefined;
   }
-
   async getPipelineByClassification(classification: string): Promise<PipelineOpportunity[]> {
-    return db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.classification, classification));
+    return rowsToModels<PipelineOpportunity>(await db("pipeline_opportunities").where("classification", classification));
   }
-
   async getPipelineByVat(vat: string): Promise<PipelineOpportunity[]> {
-    return db.select().from(pipelineOpportunities).where(eq(pipelineOpportunities.vat, vat));
+    return rowsToModels<PipelineOpportunity>(await db("pipeline_opportunities").where("vat", vat));
   }
-
   async createPipelineOpportunity(data: InsertPipelineOpportunity): Promise<PipelineOpportunity> {
-    const result = await db.insert(pipelineOpportunities).values(data).returning();
-    return result[0];
+    return insertReturning<PipelineOpportunity>("pipeline_opportunities", data);
   }
-
   async deletePipelineOpportunity(id: number): Promise<void> {
-    await db.delete(pipelineOpportunities).where(eq(pipelineOpportunities.id, id));
+    await db("pipeline_opportunities").where("id", id).del();
   }
 
-  // Scenarios
   async getScenarios(): Promise<Scenario[]> {
-    return db.select().from(scenarios);
+    return rowsToModels<Scenario>(await db("scenarios").select("*"));
   }
-
   async getScenario(id: number): Promise<Scenario | undefined> {
-    const result = await db.select().from(scenarios).where(eq(scenarios.id, id));
-    return result[0];
+    const row = await db("scenarios").where("id", id).first();
+    return row ? rowToModel<Scenario>(row) : undefined;
   }
-
   async getScenarioWithAdjustments(id: number): Promise<{ scenario: Scenario; adjustments: ScenarioAdjustment[] } | undefined> {
     const scenario = await this.getScenario(id);
     if (!scenario) return undefined;
-    const adjustments = await db.select().from(scenarioAdjustments).where(eq(scenarioAdjustments.scenarioId, id));
+    const adjustments = rowsToModels<ScenarioAdjustment>(await db("scenario_adjustments").where("scenario_id", id));
     return { scenario, adjustments };
   }
-
   async createScenario(data: InsertScenario): Promise<Scenario> {
-    const result = await db.insert(scenarios).values(data).returning();
-    return result[0];
+    return insertReturning<Scenario>("scenarios", data);
   }
-
   async deleteScenario(id: number): Promise<void> {
-    await db.delete(scenarios).where(eq(scenarios.id, id));
+    await db("scenarios").where("id", id).del();
   }
 
-  // Scenario Adjustments
   async getScenarioAdjustments(scenarioId: number): Promise<ScenarioAdjustment[]> {
-    return db.select().from(scenarioAdjustments).where(eq(scenarioAdjustments.scenarioId, scenarioId));
+    return rowsToModels<ScenarioAdjustment>(await db("scenario_adjustments").where("scenario_id", scenarioId));
   }
-
   async createScenarioAdjustment(data: InsertScenarioAdjustment): Promise<ScenarioAdjustment> {
-    const result = await db.insert(scenarioAdjustments).values(data).returning();
-    return result[0];
+    return insertReturning<ScenarioAdjustment>("scenario_adjustments", data);
   }
-
   async deleteScenarioAdjustment(id: number): Promise<void> {
-    await db.delete(scenarioAdjustments).where(eq(scenarioAdjustments.id, id));
+    await db("scenario_adjustments").where("id", id).del();
   }
 
-  // Dashboard / Aggregates
   async getDashboardSummary(): Promise<{
     totalProjects: number;
     totalEmployees: number;
     totalRevenue: number;
     totalCosts: number;
   }> {
-    const [projectCount] = await db.select({ value: count() }).from(projects);
-    const [employeeCount] = await db.select({ value: count() }).from(employees);
-    const [revenueSum] = await db
-      .select({ value: sum(kpis.revenue) })
-      .from(kpis);
-    const [costSum] = await db
-      .select({ value: sum(costs.amount) })
-      .from(costs);
+    const [{ count: projectCount }] = await db("projects").count("* as count");
+    const [{ count: employeeCount }] = await db("employees").count("* as count");
+    const [{ total: revenueSum }] = await db("kpis").sum("revenue as total");
+    const [{ total: costSum }] = await db("costs").sum("amount as total");
 
     return {
-      totalProjects: projectCount.value,
-      totalEmployees: employeeCount.value,
-      totalRevenue: Number(revenueSum.value) || 0,
-      totalCosts: Number(costSum.value) || 0,
+      totalProjects: Number(projectCount) || 0,
+      totalEmployees: Number(employeeCount) || 0,
+      totalRevenue: Number(revenueSum) || 0,
+      totalCosts: Number(costSum) || 0,
     };
   }
 
@@ -657,32 +558,17 @@ export class DatabaseStorage implements IStorage {
     const project = await this.getProject(projectId);
     if (!project) return undefined;
 
-    const [revenueResult] = await db
-      .select({ value: sum(kpis.revenue) })
-      .from(kpis)
-      .where(eq(kpis.projectId, projectId));
-
-    const [costResult] = await db
-      .select({ value: sum(costs.amount) })
-      .from(costs)
-      .where(eq(costs.projectId, projectId));
-
-    const [marginResult] = await db
-      .select({ value: sql<string>`avg(${kpis.marginPercent})` })
-      .from(kpis)
-      .where(eq(kpis.projectId, projectId));
-
-    const [utilResult] = await db
-      .select({ value: sql<string>`avg(${kpis.utilization})` })
-      .from(kpis)
-      .where(eq(kpis.projectId, projectId));
+    const [{ total: revenueResult }] = await db("kpis").where("project_id", projectId).sum("revenue as total");
+    const [{ total: costResult }] = await db("costs").where("project_id", projectId).sum("amount as total");
+    const [{ avg: marginResult }] = await db("kpis").where("project_id", projectId).avg("margin_percent as avg");
+    const [{ avg: utilResult }] = await db("kpis").where("project_id", projectId).avg("utilization as avg");
 
     return {
       project,
-      totalRevenue: Number(revenueResult.value) || 0,
-      totalCosts: Number(costResult.value) || 0,
-      avgMarginPercent: Number(marginResult.value) || 0,
-      avgUtilization: Number(utilResult.value) || 0,
+      totalRevenue: Number(revenueResult) || 0,
+      totalCosts: Number(costResult) || 0,
+      avgMarginPercent: Number(marginResult) || 0,
+      avgUtilization: Number(utilResult) || 0,
     };
   }
 
@@ -691,46 +577,35 @@ export class DatabaseStorage implements IStorage {
     revenue: number;
     cost: number;
   }[]> {
-    const revenueByMonth = await db
-      .select({
-        month: kpis.month,
-        revenue: sum(kpis.revenue),
-      })
-      .from(kpis)
-      .groupBy(kpis.month)
-      .orderBy(kpis.month);
+    const revenueByMonth = await db("kpis")
+      .select("month")
+      .sum("revenue as revenue")
+      .groupBy("month")
+      .orderBy("month");
 
-    const costByMonth = await db
-      .select({
-        month: costs.month,
-        cost: sum(costs.amount),
-      })
-      .from(costs)
-      .groupBy(costs.month)
-      .orderBy(costs.month);
+    const costByMonth = await db("costs")
+      .select("month")
+      .sum("amount as cost")
+      .groupBy("month")
+      .orderBy("month");
 
     const monthMap = new Map<string, { revenue: number; cost: number }>();
 
     for (const row of revenueByMonth) {
-      monthMap.set(row.month, {
-        revenue: Number(row.revenue) || 0,
-        cost: 0,
-      });
+      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      monthMap.set(m, { revenue: Number(row.revenue) || 0, cost: 0 });
     }
 
     for (const row of costByMonth) {
-      const existing = monthMap.get(row.month) || { revenue: 0, cost: 0 };
+      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      const existing = monthMap.get(m) || { revenue: 0, cost: 0 };
       existing.cost = Number(row.cost) || 0;
-      monthMap.set(row.month, existing);
+      monthMap.set(m, existing);
     }
 
     return Array.from(monthMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, data]) => ({
-        month,
-        revenue: data.revenue,
-        cost: data.cost,
-      }));
+      .map(([month, data]) => ({ month, revenue: data.revenue, cost: data.cost }));
   }
 
   async getUtilizationSummary(): Promise<{
@@ -739,32 +614,26 @@ export class DatabaseStorage implements IStorage {
     totalActualHours: number;
     utilization: number;
   }[]> {
-    const planned = await db
-      .select({
-        employeeId: resourcePlans.employeeId,
-        totalPlannedHours: sum(resourcePlans.plannedHours),
-      })
-      .from(resourcePlans)
-      .groupBy(resourcePlans.employeeId);
+    const planned = await db("resource_plans")
+      .select("employee_id")
+      .sum("planned_hours as total_planned_hours")
+      .groupBy("employee_id");
 
-    const actual = await db
-      .select({
-        employeeId: timesheets.employeeId,
-        totalActualHours: sum(timesheets.hoursWorked),
-      })
-      .from(timesheets)
-      .groupBy(timesheets.employeeId);
+    const actual = await db("timesheets")
+      .select("employee_id")
+      .sum("hours_worked as total_actual_hours")
+      .groupBy("employee_id");
 
     const actualMap = new Map<number, number>();
     for (const row of actual) {
-      actualMap.set(row.employeeId, Number(row.totalActualHours) || 0);
+      actualMap.set(row.employee_id, Number(row.total_actual_hours) || 0);
     }
 
-    return planned.map((row) => {
-      const totalPlanned = Number(row.totalPlannedHours) || 0;
-      const totalActual = actualMap.get(row.employeeId) || 0;
+    return planned.map((row: any) => {
+      const totalPlanned = Number(row.total_planned_hours) || 0;
+      const totalActual = actualMap.get(row.employee_id) || 0;
       return {
-        employeeId: row.employeeId,
+        employeeId: row.employee_id,
         totalPlannedHours: totalPlanned,
         totalActualHours: totalActual,
         utilization: totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0,
