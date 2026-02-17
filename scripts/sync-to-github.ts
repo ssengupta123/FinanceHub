@@ -47,14 +47,14 @@ async function getUncachableGitHubClient() {
 const WORKSPACE = '/home/runner/workspace';
 
 const IGNORE_PATTERNS = [
-  'node_modules', '.git', '.cache', '.config', '.local',
+  'node_modules', '.git', '.github', '.cache', '.config', '.local',
   'dist', '.replit', 'replit.nix', '.upm',
   'scripts/sync-to-github.ts',
   '.gitignore'
 ];
 
 function shouldIgnore(relativePath: string): boolean {
-  return IGNORE_PATTERNS.some(p => relativePath.startsWith(p) || relativePath.includes('/' + p));
+  return IGNORE_PATTERNS.some(p => relativePath === p || relativePath.startsWith(p + '/'));
 }
 
 function getAllFiles(dir: string, base: string = ''): { path: string; fullPath: string }[] {
