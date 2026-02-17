@@ -1,0 +1,120 @@
+Run npm install
+  npm install
+  npm run build --if-present
+  npm run test --if-present
+  shell: /usr/bin/bash -e {0}
+
+added 675 packages, and audited 676 packages in 11s
+
+162 packages are looking for funding
+  run `npm fund` for details
+
+3 vulnerabilities (1 low, 1 moderate, 1 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.
+
+> rest-express@1.0.0 build
+> tsx script/build.ts
+
+building client...
+vite v7.3.0 building client environment for production...
+transforming...
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+✓ 2533 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/public/index.html                     2.77 kB │ gzip:   1.07 kB
+../dist/public/assets/index-BVsGBugE.css     94.83 kB │ gzip:  14.53 kB
+../dist/public/assets/index-CVsFyZqA.js   1,102.07 kB │ gzip: 307.81 kB
+✓ built in 6.23s
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+building server...
+Error: R] Could not resolve "sqlite3"
+
+    node_modules/knex/lib/dialects/sqlite3/index.js:42:19:
+      42 │     return require('sqlite3');
+         ╵                    ~~~~~~~~~
+
+  You can mark the path "sqlite3" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "pg-query-stream"
+
+    node_modules/knex/lib/dialects/postgres/index.js:192:16:
+      192 │       : require('pg-query-stream');
+          ╵                 ~~~~~~~~~~~~~~~~~
+
+  You can mark the path "pg-query-stream" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "better-sqlite3"
+
+    node_modules/knex/lib/dialects/better-sqlite3/index.js:7:19:
+      7 │     return require('better-sqlite3');
+        ╵                    ~~~~~~~~~~~~~~~~
+
+  You can mark the path "better-sqlite3" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "oracledb"
+
+    node_modules/knex/lib/dialects/oracledb/index.js:44:29:
+      44 │     const oracledb = require('oracledb');
+         ╵                              ~~~~~~~~~~
+
+  You can mark the path "oracledb" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "mysql2"
+
+    node_modules/knex/lib/dialects/mysql2/index.js:15:19:
+      15 │     return require('mysql2');
+         ╵                    ~~~~~~~~
+
+  You can mark the path "mysql2" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "mysql"
+
+    node_modules/knex/lib/dialects/mysql/index.js:24:19:
+      24 │     return require('mysql');
+         ╵                    ~~~~~~~
+
+  You can mark the path "mysql" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+Error: R] Could not resolve "oracledb"
+
+    node_modules/knex/lib/dialects/oracledb/utils.js:40:27:
+      40 │   const oracledb = require('oracledb');
+         ╵                            ~~~~~~~~~~
+
+  You can mark the path "oracledb" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle. You can also surround this "require" call with a try/catch block to handle this failure at run-time instead of bundle-time.
+
+7 errors
+Error: Build failed with 7 errors:
+node_modules/knex/lib/dialects/better-sqlite3/index.js:7:19: ERROR: Could not resolve "better-sqlite3"
+node_modules/knex/lib/dialects/mysql/index.js:24:19: ERROR: Could not resolve "mysql"
+node_modules/knex/lib/dialects/mysql2/index.js:15:19: ERROR: Could not resolve "mysql2"
+node_modules/knex/lib/dialects/oracledb/index.js:44:29: ERROR: Could not resolve "oracledb"
+node_modules/knex/lib/dialects/oracledb/utils.js:40:27: ERROR: Could not resolve "oracledb"
+...
+    at failureErrorWithLog (/home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:1467:15)
+    at /home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:926:25
+    at /home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:878:52
+    at buildResponseToResult (/home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:924:7)
+    at /home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:951:16
+    at responseCallbacks.<computed> (/home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/home/runner/work/FinanceHub-195c5700/FinanceHub-195c5700/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+Error: Process completed with exit code 1.
