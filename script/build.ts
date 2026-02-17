@@ -7,6 +7,7 @@ import { rm, readFile } from "fs/promises";
 const allowlist = [
   "@google/generative-ai",
   "axios",
+  "bcryptjs",
   "connect-pg-simple",
   "cors",
   "date-fns",
@@ -16,6 +17,7 @@ const allowlist = [
   "express-rate-limit",
   "express-session",
   "jsonwebtoken",
+  "knex",
   "memorystore",
   "multer",
   "nanoid",
@@ -25,6 +27,7 @@ const allowlist = [
   "passport-local",
   "pg",
   "stripe",
+  "tedious",
   "uuid",
   "ws",
   "xlsx",
