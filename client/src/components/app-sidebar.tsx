@@ -12,12 +12,12 @@ import {
   Receipt,
   Target,
   LineChart,
-  UserPlus,
   Database,
   FlaskConical,
   GitBranch,
   Upload,
   Sparkles,
+  Shield,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +31,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/hooks/use-auth";
 
 const navGroups = [
   {
@@ -70,7 +71,6 @@ const navGroups = [
     label: "Tracking",
     items: [
       { title: "Milestones", icon: Target, path: "/milestones" },
-      { title: "Onboarding", icon: UserPlus, path: "/onboarding" },
       { title: "Data Sources", icon: Database, path: "/data-sources" },
       { title: "Data Upload", icon: Upload, path: "/upload" },
     ],
@@ -79,6 +79,7 @@ const navGroups = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { isAdmin } = useAuth();
 
   return (
     <Sidebar>
@@ -115,6 +116,23 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location === "/admin"}>
+                    <Link href="/admin" data-testid="link-admin">
+                      <Shield className="h-4 w-4" />
+                      <span>Reference Data</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="p-3">
         <p className="text-xs text-muted-foreground text-center">

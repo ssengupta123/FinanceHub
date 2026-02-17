@@ -7,6 +7,9 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
+import { LogOut, Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import FinanceDashboard from "@/pages/finance";
@@ -22,10 +25,11 @@ import Milestones from "@/pages/milestones";
 import Forecasts from "@/pages/forecasts";
 import Pipeline from "@/pages/pipeline";
 import WhatIfScenarios from "@/pages/scenarios";
-import Onboarding from "@/pages/onboarding";
 import DataSources from "@/pages/data-sources";
 import UploadPage from "@/pages/upload";
 import AIInsights from "@/pages/ai-insights";
+import LoginPage from "@/pages/login";
+import AdminPage from "@/pages/admin";
 
 function Router() {
   return (
@@ -44,39 +48,83 @@ function Router() {
       <Route path="/forecasts" component={Forecasts} />
       <Route path="/pipeline" component={Pipeline} />
       <Route path="/scenarios" component={WhatIfScenarios} />
-      <Route path="/onboarding" component={Onboarding} />
       <Route path="/data-sources" component={DataSources} />
       <Route path="/upload" component={UploadPage} />
       <Route path="/ai-insights" component={AIInsights} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+function AuthenticatedApp() {
+  const { user, logoutMutation, isAdmin } = useAuth();
+
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
 
   return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 min-w-0">
+          <header className="flex items-center justify-between gap-2 p-2 border-b sticky top-0 z-50 bg-background">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <div className="flex items-center gap-2 flex-wrap">
+              {user && (
+                <span className="text-sm text-muted-foreground" data-testid="text-current-user">
+                  {user.displayName || user.username}
+                  {isAdmin && " (Admin)"}
+                </span>
+              )}
+              <ThemeToggle />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => logoutMutation.mutate(undefined)}
+                data-testid="button-logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </header>
+          <main className="flex-1 overflow-hidden flex flex-col">
+            <Router />
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <AuthenticatedApp />;
+}
+
+function App() {
+  return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex h-screen w-full">
-              <AppSidebar />
-              <div className="flex flex-col flex-1 min-w-0">
-                <header className="flex items-center justify-between gap-2 p-2 border-b sticky top-0 z-50 bg-background">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <ThemeToggle />
-                </header>
-                <main className="flex-1 overflow-hidden flex flex-col">
-                  <Router />
-                </main>
-              </div>
-            </div>
-          </SidebarProvider>
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

@@ -21,6 +21,7 @@ import {
   insertPipelineOpportunitySchema,
   insertScenarioSchema,
   insertScenarioAdjustmentSchema,
+  insertReferenceDataSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -360,6 +361,107 @@ export async function registerRoutes(
   app.delete("/api/scenario-adjustments/:id", async (req, res) => {
     await storage.deleteScenarioAdjustment(Number(req.params.id));
     res.json({ success: true });
+  });
+
+  // ─── Reference Data (Admin) ───
+  app.get("/api/reference-data", async (req, res) => {
+    if (req.query.category) {
+      const data = await storage.getReferenceDataByCategory(String(req.query.category));
+      return res.json(data);
+    }
+    const data = await storage.getReferenceData();
+    res.json(data);
+  });
+  app.post("/api/reference-data", async (req, res) => {
+    const parsed = insertReferenceDataSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createReferenceData(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/reference-data/:id", async (req, res) => {
+    const data = await storage.updateReferenceData(Number(req.params.id), req.body);
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.delete("/api/reference-data/:id", async (req, res) => {
+    await storage.deleteReferenceData(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── Auth ───
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password required" });
+      }
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      const bcrypt = await import("bcryptjs");
+      const valid = await bcrypt.compare(password, user.password);
+      if (!valid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.role = (user as any).role || "user";
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ user: userWithoutPassword });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, password, email, displayName } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password required" });
+      }
+      const existing = await storage.getUserByUsername(username);
+      if (existing) {
+        return res.status(409).json({ message: "Username already exists" });
+      }
+      const bcrypt = await import("bcryptjs");
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        email: email || null,
+        displayName: displayName || null,
+        role: "user",
+      });
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.role = "user";
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ user: userWithoutPassword });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Registration failed" });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ user: userWithoutPassword });
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ success: true });
+    });
   });
 
   // ─── Excel Upload (KPI Raw Data File) ───

@@ -160,6 +160,7 @@ export const insertPipelineOpportunitySchema = z.object({
   classification: z.string(),
   vat: z.string().nullable().optional(),
   fyYear: z.string().nullable().optional(),
+  billingType: z.string().nullable().optional(),
   revenueM1: z.string().nullable().optional(),
   revenueM2: z.string().nullable().optional(),
   revenueM3: z.string().nullable().optional(),
@@ -231,6 +232,8 @@ export const insertMilestoneSchema = z.object({
   completedDate: z.string().nullable().optional(),
   status: z.string().optional().default("pending"),
   amount: z.string().nullable().optional(),
+  milestoneType: z.string().nullable().optional(),
+  invoiceStatus: z.string().nullable().optional(),
 });
 export type InsertMilestone = z.infer<typeof insertMilestoneSchema>;
 export type Milestone = InsertMilestone & { id: number };
@@ -261,9 +264,22 @@ export type OnboardingStep = InsertOnboardingStep & { id: number };
 export const insertUserSchema = z.object({
   username: z.string(),
   password: z.string(),
+  email: z.string().nullable().optional(),
+  role: z.string().optional().default("user"),
+  displayName: z.string().nullable().optional(),
 });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = InsertUser & { id: number };
+
+export const insertReferenceDataSchema = z.object({
+  category: z.string(),
+  key: z.string(),
+  value: z.string(),
+  displayOrder: z.number().nullable().optional(),
+  active: z.boolean().optional().default(true),
+});
+export type InsertReferenceData = z.infer<typeof insertReferenceDataSchema>;
+export type ReferenceData = InsertReferenceData & { id: number };
 
 export const insertConversationSchema = z.object({
   title: z.string(),

@@ -182,6 +182,7 @@ export async function runMigrations() {
     t.text("classification").notNullable();
     t.text("vat");
     t.text("fy_year");
+    t.text("billing_type");
     for (let i = 1; i <= 12; i++) {
       t.decimal(`revenue_m${i}`, 14, 2).defaultTo(0);
     }
@@ -232,6 +233,8 @@ export async function runMigrations() {
     t.date("completed_date");
     t.text("status").notNullable().defaultTo("pending");
     t.decimal("amount", 14, 2);
+    t.text("milestone_type");
+    t.text("invoice_status");
   });
 
   await db.schema.createTable("data_sources", (t) => {
@@ -259,6 +262,18 @@ export async function runMigrations() {
     t.increments("id").primary();
     t.text("username").notNullable().unique();
     t.text("password").notNullable();
+    t.text("role").defaultTo("user");
+    t.text("email");
+    t.text("display_name");
+  });
+
+  await db.schema.createTable("reference_data", (t) => {
+    t.increments("id").primary();
+    t.text("category").notNullable();
+    t.text("key").notNullable();
+    t.text("value").notNullable();
+    t.integer("display_order");
+    t.boolean("active").defaultTo(true);
   });
 
   await db.schema.createTable("conversations", (t) => {
@@ -276,4 +291,44 @@ export async function runMigrations() {
   });
 
   console.log("Database tables created successfully");
+}
+
+export async function runIncrementalMigrations() {
+  const hasBillingType = await db.schema.hasColumn("pipeline_opportunities", "billing_type");
+  if (!hasBillingType) {
+    await db.schema.alterTable("pipeline_opportunities", (t) => {
+      t.text("billing_type");
+    });
+  }
+
+  const hasMilestoneType = await db.schema.hasColumn("milestones", "milestone_type");
+  if (!hasMilestoneType) {
+    await db.schema.alterTable("milestones", (t) => {
+      t.text("milestone_type");
+      t.text("invoice_status");
+    });
+  }
+
+  const hasUserRole = await db.schema.hasColumn("users", "role");
+  if (!hasUserRole) {
+    await db.schema.alterTable("users", (t) => {
+      t.text("role").defaultTo("user");
+      t.text("email");
+      t.text("display_name");
+    });
+  }
+
+  const hasRefData = await db.schema.hasTable("reference_data");
+  if (!hasRefData) {
+    await db.schema.createTable("reference_data", (t) => {
+      t.increments("id").primary();
+      t.text("category").notNullable();
+      t.text("key").notNullable();
+      t.text("value").notNullable();
+      t.integer("display_order");
+      t.boolean("active").defaultTo(true);
+    });
+  }
+
+  console.log("Incremental migrations completed");
 }

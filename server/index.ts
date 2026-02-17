@@ -1,8 +1,9 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { runMigrations } from "./db";
+import { runMigrations, runIncrementalMigrations } from "./db";
 import { seedDatabase } from "./seed";
 
 const app = express();
@@ -11,6 +12,14 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId: number;
+    username: string;
+    role: string;
   }
 }
 
@@ -23,6 +32,19 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "financehub-dev-secret-key",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -63,6 +85,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await runMigrations().catch((err) => console.error("Migration error:", err));
+  await runIncrementalMigrations().catch((err) => console.error("Incremental migration error:", err));
   await seedDatabase().catch((err) => console.error("Seed error:", err));
   await registerRoutes(httpServer, app);
 

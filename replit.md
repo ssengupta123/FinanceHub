@@ -10,19 +10,20 @@ A production-grade financial and project management application that consolidate
 - **Styling**: shadcn/ui components, dark/light theme support
 
 ## Architecture
-- `shared/schema.ts` - Data models: employees, projects, projectMonthly, rateCards, resourcePlans, timesheets, costs, kpis, forecasts, milestones, dataSources, onboardingSteps, pipelineOpportunities, scenarios, scenarioAdjustments, conversations, messages
+- `shared/schema.ts` - Data models: employees, projects, projectMonthly, rateCards, resourcePlans, timesheets, costs, kpis, forecasts, milestones, dataSources, onboardingSteps, pipelineOpportunities, scenarios, scenarioAdjustments, conversations, messages, users, referenceData
 - `shared/models/chat.ts` - Chat/conversation schema for AI integration (conversations + messages tables)
-- `server/routes.ts` - REST API endpoints with query param filtering
+- `server/routes.ts` - REST API endpoints with query param filtering, auth routes, reference data CRUD
 - `server/storage.ts` - Database storage layer with CRUD + aggregation queries
-- `server/seed.ts` - Realistic demo data (5 projects, 9 employees, 15 pipeline opportunities, 2 scenarios, 60 monthly records, KPIs, timesheets, costs, milestones, forecasts, 6 data sources)
-- `client/src/pages/` - 16+ pages across dashboards, management, operations, tracking, pipeline & forecasting
+- `server/seed.ts` - Realistic demo data (5 projects, 9 employees, 15 pipeline opportunities, 2 scenarios, 60 monthly records, KPIs, timesheets, costs, milestones, forecasts, 6 data sources, 16 reference data records, admin user)
+- `client/src/pages/` - 17+ pages across dashboards, management, operations, tracking, pipeline & forecasting, admin
 - `client/src/components/` - AppSidebar, ThemeProvider, ThemeToggle
+- `client/src/hooks/use-auth.tsx` - Auth context/provider with useAuth hook (session-based)
 
 ## Key Concepts
 - **Australian FY**: Financial year runs Jul-Jun, format "25-26" (FY2025-26)
 - **Pipeline Classifications**: C(100%), S(80%), DVF(50%), DF(30%), Q(15%), A(5%) win probabilities
 - **VAT Categories**: Growth, VIC, DAFF, Emerging, DISR, SAU
-- **Billing Types**: Fixed (Fixed Price), T&M (Time & Materials)
+- **Billing Types**: Fixed (Fixed Price), T&M (Time & Materials), LH (Labour Hire)
 - **Monthly Breakdown**: M1=Jul through M12=Jun, with R (revenue), C (cost), P (profit) per month
 
 ## Key Features

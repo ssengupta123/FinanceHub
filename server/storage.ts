@@ -32,6 +32,8 @@ import {
   type InsertScenario,
   type ScenarioAdjustment,
   type InsertScenarioAdjustment,
+  type ReferenceData,
+  type InsertReferenceData,
 } from "@shared/schema";
 
 function toSnakeCase(obj: Record<string, any>): Record<string, any> {
@@ -197,6 +199,12 @@ export interface IStorage {
   getScenarioAdjustments(scenarioId: number): Promise<ScenarioAdjustment[]>;
   createScenarioAdjustment(data: InsertScenarioAdjustment): Promise<ScenarioAdjustment>;
   deleteScenarioAdjustment(id: number): Promise<void>;
+
+  getReferenceData(): Promise<ReferenceData[]>;
+  getReferenceDataByCategory(category: string): Promise<ReferenceData[]>;
+  createReferenceData(data: InsertReferenceData): Promise<ReferenceData>;
+  updateReferenceData(id: number, data: Partial<InsertReferenceData>): Promise<ReferenceData | undefined>;
+  deleteReferenceData(id: number): Promise<void>;
 
   getDashboardSummary(): Promise<{
     totalProjects: number;
@@ -527,6 +535,22 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteScenarioAdjustment(id: number): Promise<void> {
     await db("scenario_adjustments").where("id", id).del();
+  }
+
+  async getReferenceData(): Promise<ReferenceData[]> {
+    return rowsToModels<ReferenceData>(await db("reference_data").select("*").orderBy("category").orderBy("display_order"));
+  }
+  async getReferenceDataByCategory(category: string): Promise<ReferenceData[]> {
+    return rowsToModels<ReferenceData>(await db("reference_data").where("category", category).orderBy("display_order"));
+  }
+  async createReferenceData(data: InsertReferenceData): Promise<ReferenceData> {
+    return insertReturning<ReferenceData>("reference_data", data);
+  }
+  async updateReferenceData(id: number, data: Partial<InsertReferenceData>): Promise<ReferenceData | undefined> {
+    return updateReturning<ReferenceData>("reference_data", id, data);
+  }
+  async deleteReferenceData(id: number): Promise<void> {
+    await db("reference_data").where("id", id).del();
   }
 
   async getDashboardSummary(): Promise<{
