@@ -529,14 +529,24 @@ export async function registerRoutes(
   });
 
   // ─── AI Insights ───
-  const openai = new OpenAI({
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  });
+  let openai: OpenAI | null = null;
+  try {
+    if (process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY) {
+      openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+    }
+  } catch (e) {
+    console.log("OpenAI not configured - AI insights will be unavailable");
+  }
 
   app.post("/api/ai/insights", async (req, res) => {
     try {
       const { type } = req.body;
+      if (!openai) {
+        return res.status(503).json({ message: "AI insights are not available. Configure OPENAI_API_KEY in environment variables." });
+      }
       if (!type || !["pipeline", "projects", "overview"].includes(type)) {
         return res.status(400).json({ message: "Invalid type. Use: pipeline, projects, or overview" });
       }
