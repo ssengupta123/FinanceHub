@@ -1,0 +1,26 @@
+2026-02-17T13:45:23.3189685Z Warning: connect.session() MemoryStore is not
+2026-02-17T13:45:23.3190342Z designed for a production environment, as it will leak
+2026-02-17T13:45:23.3190377Z memory, and will not scale past a single process.
+2026-02-17T13:45:38.3669384Z Migration error: rY [Error]: Failed to connect to financehubserver.database.windows.net:1433 in 15000ms
+2026-02-17T13:45:38.3746476Z     at Timeout.<anonymous> (/home/site/wwwroot/dist/index.cjs:272:312867)
+2026-02-17T13:45:38.3749838Z     at listOnTimeout (node:internal/timers:588:17)
+2026-02-17T13:45:38.3752626Z     at process.processTimers (node:internal/timers:523:7) {
+2026-02-17T13:45:38.3755288Z   code: 'ETIMEOUT'
+2026-02-17T13:45:38.3757915Z }
+2026-02-17T13:45:53.3885805Z Incremental migration error: rY [Error]: Failed to connect to financehubserver.database.windows.net:1433 in 15000ms
+2026-02-17T13:45:53.3886436Z     at Timeout.<anonymous> (/home/site/wwwroot/dist/index.cjs:272:312867)
+2026-02-17T13:45:53.3886472Z     at listOnTimeout (node:internal/timers:588:17)
+2026-02-17T13:45:53.3886498Z     at process.processTimers (node:internal/timers:523:7) {
+2026-02-17T13:45:53.3886521Z   code: 'ETIMEOUT'
+2026-02-17T13:45:53.3886547Z }
+2026-02-17T13:46:03.815704Z Seed error: rY [Error]: Login failed for user ''.
+2026-02-17T13:46:03.8157686Z     at WK.onErrorMessage (/home/site/wwwroot/dist/index.cjs:272:283576)
+2026-02-17T13:46:03.8157719Z     at Readable.<anonymous> (/home/site/wwwroot/dist/index.cjs:272:269735)
+2026-02-17T13:46:03.8157745Z     at Readable.emit (node:events:519:28)
+2026-02-17T13:46:03.8157771Z     at addChunk (node:internal/streams/readable:561:12)
+2026-02-17T13:46:03.8157798Z     at readableAddChunkPushObjectMode (node:internal/streams/readable:538:3)
+2026-02-17T13:46:03.8157823Z     at Readable.push (node:internal/streams/readable:393:5)
+2026-02-17T13:46:03.8157868Z     at nextAsync (node:internal/streams/from:194:22)
+2026-02-17T13:46:03.8157895Z     at process.processTicksAndRejections (node:internal/process/task_queues:105:5) {
+2026-02-17T13:46:03.8157919Z   code: 'ELOGIN'
+2026-02-17T13:46:03.8157946Z }
