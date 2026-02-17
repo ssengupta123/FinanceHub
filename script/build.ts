@@ -49,6 +49,15 @@ async function buildAll() {
   ];
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
 
+  const knexUnusedDrivers = [
+    "sqlite3",
+    "better-sqlite3",
+    "mysql",
+    "mysql2",
+    "oracledb",
+    "pg-query-stream",
+  ];
+
   await esbuild({
     entryPoints: ["server/index.ts"],
     platform: "node",
@@ -59,7 +68,7 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
-    external: externals,
+    external: [...externals, ...knexUnusedDrivers],
     logLevel: "info",
   });
 }
