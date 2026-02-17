@@ -49,10 +49,15 @@ This guide walks you through deploying FinanceHub to your own Azure tenancy usin
    - **Name**: e.g., `financehub` (this becomes your URL: `financehub.azurewebsites.net`)
    - **Publish**: Code
    - **Runtime stack**: **Node 22 LTS**
-   - **Operating System**: Linux (recommended) or Windows
+   - **Operating System**: **Linux** (recommended and lower cost) or Windows
    - **Region**: Same as your database
    - **Pricing plan**: Select **Basic B1** (~$13/month) to start
 3. Click **Review + Create** > **Create**
+4. After creation, go to **Configuration** > **General settings**:
+   - **Startup Command**: `node dist/index.cjs`
+   - This tells Azure how to start your application
+
+> **Note on Linux vs Windows**: Linux is recommended (cheaper and simpler). The included `web.config` file is only used if you choose Windows (for IIS routing). On Linux, the startup command above handles everything.
 
 ---
 
