@@ -27,7 +27,21 @@ export const db = Knex(knexConfig);
 
 export async function runMigrations() {
   const hasEmployees = await db.schema.hasTable("employees");
-  if (hasEmployees) return;
+  if (hasEmployees) {
+    const hasUsers = await db.schema.hasTable("users");
+    if (!hasUsers) {
+      await db.schema.createTable("users", (t) => {
+        t.increments("id").primary();
+        t.string("username", 255).notNullable().unique();
+        t.text("password").notNullable();
+        t.string("role", 50).defaultTo("user");
+        t.string("email", 255);
+        t.string("display_name", 255);
+      });
+      console.log("Created missing users table");
+    }
+    return;
+  }
 
   await db.schema.createTable("employees", (t) => {
     t.increments("id").primary();
@@ -260,11 +274,11 @@ export async function runMigrations() {
 
   await db.schema.createTable("users", (t) => {
     t.increments("id").primary();
-    t.text("username").notNullable().unique();
+    t.string("username", 255).notNullable().unique();
     t.text("password").notNullable();
-    t.text("role").defaultTo("user");
-    t.text("email");
-    t.text("display_name");
+    t.string("role", 50).defaultTo("user");
+    t.string("email", 255);
+    t.string("display_name", 255);
   });
 
   await db.schema.createTable("reference_data", (t) => {
