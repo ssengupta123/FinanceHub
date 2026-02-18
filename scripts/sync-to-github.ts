@@ -47,7 +47,7 @@ async function getUncachableGitHubClient() {
 const WORKSPACE = '/home/runner/workspace';
 
 const IGNORE_PATTERNS = [
-  'node_modules', '.git', '.github', '.cache', '.config', '.local',
+  'node_modules', '.git', '.cache', '.config', '.local',
   'dist', '.replit', 'replit.nix', '.upm',
   'scripts/sync-to-github.ts',
   '.gitignore'
@@ -76,9 +76,32 @@ function getAllFiles(dir: string, base: string = ''): { path: string; fullPath: 
   return results;
 }
 
+function generateBranchName(description: string): string {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const time = now.toISOString().slice(11, 16).replace(':', '');
+  const slug = description
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50);
+  return `feature/${date}-${time}-${slug}`;
+}
+
 async function main() {
+  const description = process.argv[2] || 'general-sync';
+  const commitMessage = process.argv[3] || `Sync: ${description}`;
+
   try {
-    const octokit = await getUncachableGitHubClient();
+    const ghPat = process.env.GITHUB_PAT;
+    let octokit: Octokit;
+    if (ghPat) {
+      octokit = new Octokit({ auth: ghPat });
+      console.log('Using GITHUB_PAT for authentication (supports workflow file updates).');
+    } else {
+      octokit = await getUncachableGitHubClient();
+      console.log('Using GitHub connector token.');
+    }
     
     const { data: user } = await octokit.users.getAuthenticated();
     console.log(`Authenticated as: ${user.login}`);
@@ -137,35 +160,52 @@ async function main() {
     }
     console.log(`  Uploaded ${count}/${files.length} files.`);
 
-    console.log('Creating tree...');
-    const { data: tree } = await octokit.git.createTree({
-      owner: user.login,
-      repo: repoName,
-      tree: blobs as any,
-    });
-
-    let parentSha: string | undefined;
+    let mainSha: string | undefined;
     try {
       const { data: ref } = await octokit.git.getRef({
         owner: user.login,
         repo: repoName,
         ref: 'heads/main',
       });
-      parentSha = ref.object.sha;
+      mainSha = ref.object.sha;
     } catch {}
 
-    console.log('Creating commit...');
+    console.log('Creating tree...');
+    const { data: tree } = await octokit.git.createTree({
+      owner: user.login,
+      repo: repoName,
+      tree: blobs as any,
+      ...(mainSha ? { base_tree: undefined } : {}),
+    });
+
+    const branchName = generateBranchName(description);
+    console.log(`Branch: ${branchName}`);
+    console.log(`Commit message: ${commitMessage}`);
+
     const commitData: any = {
       owner: user.login,
       repo: repoName,
-      message: 'Sync FinanceHub: Auth system, enhanced pipeline/scenarios/forecasts/milestones/utilization views, admin reference data management',
+      message: commitMessage,
       tree: tree.sha,
     };
-    if (parentSha) {
-      commitData.parents = [parentSha];
+    if (mainSha) {
+      commitData.parents = [mainSha];
     }
 
     const { data: commit } = await octokit.git.createCommit(commitData);
+
+    console.log(`Creating branch ${branchName}...`);
+    try {
+      await octokit.git.createRef({
+        owner: user.login,
+        repo: repoName,
+        ref: `refs/heads/${branchName}`,
+        sha: commit.sha,
+      });
+      console.log(`Branch created: ${branchName}`);
+    } catch (branchErr: any) {
+      console.error(`Failed to create branch: ${branchErr.message}`);
+    }
 
     console.log('Updating main branch...');
     try {
@@ -186,53 +226,11 @@ async function main() {
     }
 
     console.log(`\nDone! Code synced to: https://github.com/${user.login}/${repoName}`);
+    console.log(`Branch: ${branchName}`);
+    console.log(`Commit: ${commit.sha.slice(0, 7)} - ${commitMessage}`);
 
-    const ghPat = process.env.GITHUB_PAT;
-    if (ghPat) {
-      const patOctokit = new Octokit({ auth: ghPat });
-
-      console.log('\nSyncing workflow file via PAT...');
-      try {
-        const workflowPath = '.github/workflows/azure-deploy.yml';
-        const workflowFullPath = path.join(WORKSPACE, workflowPath);
-        const workflowContent = fs.readFileSync(workflowFullPath, 'utf-8');
-        const base64 = Buffer.from(workflowContent).toString('base64');
-
-        let existingSha: string | undefined;
-        try {
-          const { data: existing } = await patOctokit.repos.getContent({
-            owner: user.login, repo: repoName, path: workflowPath, ref: 'main',
-          });
-          if ('sha' in existing) existingSha = existing.sha;
-        } catch {}
-
-        await patOctokit.repos.createOrUpdateFileContents({
-          owner: user.login, repo: repoName, path: workflowPath,
-          message: 'Update GitHub Actions workflow',
-          content: base64,
-          ...(existingSha ? { sha: existingSha } : {}),
-          branch: 'main',
-        });
-        console.log('Workflow file synced successfully!');
-      } catch (wfFileErr: any) {
-        console.error('Could not sync workflow file:', wfFileErr.message);
-      }
-
-      console.log('Triggering deployment workflow...');
-      try {
-        await patOctokit.actions.createWorkflowDispatch({
-          owner: user.login, repo: repoName,
-          workflow_id: 'azure-deploy.yml', ref: 'main',
-        });
-        console.log('Deployment workflow triggered successfully!');
-      } catch (wfErr: any) {
-        console.error('Could not trigger workflow:', wfErr.message);
-        console.log('You can manually trigger it from the Actions tab in GitHub.');
-      }
-    } else {
-      console.log('No GITHUB_PAT found — skipping automatic workflow trigger.');
-      console.log('Manually trigger the deployment from the Actions tab in GitHub.');
-    }
+    console.log('\nDeployment will trigger automatically from push to main.');
+    console.log('The .github/workflows/ files are included in the sync, so no separate workflow push is needed.');
   } catch (error: any) {
     console.error('Error:', error.message);
     if (error.response) {
