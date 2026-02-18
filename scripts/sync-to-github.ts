@@ -1,5 +1,4 @@
 import { Octokit } from '@octokit/rest';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -88,16 +87,45 @@ function generateBranchName(description: string): string {
   return `feature/${date}-${time}-${slug}`;
 }
 
+function printUsage() {
+  console.log(`
+Usage: tsx scripts/sync-to-github.ts <description> [commit-message] [options]
+
+Arguments:
+  description      Short description for branch name (e.g. "cx-ratings-import")
+  commit-message   Optional commit message (defaults to "Sync: <description>")
+
+Options:
+  --deploy         Also fast-forward main to the new commit (triggers deployment)
+
+Examples:
+  tsx scripts/sync-to-github.ts "cx-ratings-import"
+    -> Creates feature/20260218-1530-cx-ratings-import branch only
+
+  tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import" --deploy
+    -> Creates feature branch AND updates main (triggers Azure deployment)
+`);
+}
+
 async function main() {
-  const description = process.argv[2] || 'general-sync';
-  const commitMessage = process.argv[3] || `Sync: ${description}`;
+  const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+  const flags = process.argv.slice(2).filter(a => a.startsWith('--'));
+  
+  if (args.length === 0 || flags.includes('--help')) {
+    printUsage();
+    process.exit(args.length === 0 ? 1 : 0);
+  }
+
+  const description = args[0];
+  const commitMessage = args[1] || `Sync: ${description}`;
+  const shouldDeploy = flags.includes('--deploy');
 
   try {
     const ghPat = process.env.GITHUB_PAT;
     let octokit: Octokit;
     if (ghPat) {
       octokit = new Octokit({ auth: ghPat });
-      console.log('Using GITHUB_PAT for authentication (supports workflow file updates).');
+      console.log('Using GITHUB_PAT for authentication.');
     } else {
       octokit = await getUncachableGitHubClient();
       console.log('Using GitHub connector token.');
@@ -107,12 +135,10 @@ async function main() {
     console.log(`Authenticated as: ${user.login}`);
 
     const repoName = 'FinanceHub';
-    let repoExists = false;
 
     try {
       await octokit.repos.get({ owner: user.login, repo: repoName });
-      repoExists = true;
-      console.log(`Repository ${user.login}/${repoName} already exists.`);
+      console.log(`Repository ${user.login}/${repoName} found.`);
     } catch (e: any) {
       if (e.status === 404) {
         console.log(`Creating repository ${repoName}...`);
@@ -175,12 +201,9 @@ async function main() {
       owner: user.login,
       repo: repoName,
       tree: blobs as any,
-      ...(mainSha ? { base_tree: undefined } : {}),
     });
 
     const branchName = generateBranchName(description);
-    console.log(`Branch: ${branchName}`);
-    console.log(`Commit message: ${commitMessage}`);
 
     const commitData: any = {
       owner: user.login,
@@ -194,7 +217,7 @@ async function main() {
 
     const { data: commit } = await octokit.git.createCommit(commitData);
 
-    console.log(`Creating branch ${branchName}...`);
+    console.log(`\nCreating feature branch: ${branchName}`);
     try {
       await octokit.git.createRef({
         owner: user.login,
@@ -204,33 +227,56 @@ async function main() {
       });
       console.log(`Branch created: ${branchName}`);
     } catch (branchErr: any) {
-      console.error(`Failed to create branch: ${branchErr.message}`);
+      if (branchErr.status === 422) {
+        await octokit.git.updateRef({
+          owner: user.login,
+          repo: repoName,
+          ref: `heads/${branchName}`,
+          sha: commit.sha,
+          force: true,
+        });
+        console.log(`Branch updated: ${branchName}`);
+      } else {
+        console.error(`Failed to create branch: ${branchErr.message}`);
+      }
     }
 
-    console.log('Updating main branch...');
-    try {
-      await octokit.git.updateRef({
-        owner: user.login,
-        repo: repoName,
-        ref: 'heads/main',
-        sha: commit.sha,
-        force: true,
-      });
-    } catch {
-      await octokit.git.createRef({
-        owner: user.login,
-        repo: repoName,
-        ref: 'refs/heads/main',
-        sha: commit.sha,
-      });
+    if (shouldDeploy) {
+      console.log('\n--deploy flag set: Updating main branch...');
+      try {
+        await octokit.git.updateRef({
+          owner: user.login,
+          repo: repoName,
+          ref: 'heads/main',
+          sha: commit.sha,
+          force: true,
+        });
+        console.log('Main branch updated. Deployment will trigger automatically.');
+      } catch {
+        await octokit.git.createRef({
+          owner: user.login,
+          repo: repoName,
+          ref: 'refs/heads/main',
+          sha: commit.sha,
+        });
+        console.log('Main branch created. Deployment will trigger automatically.');
+      }
+    } else {
+      console.log('\nMain branch NOT updated (no --deploy flag).');
+      console.log('To deploy, either:');
+      console.log(`  1. Re-run with --deploy flag`);
+      console.log(`  2. Create a PR from ${branchName} -> main on GitHub`);
     }
 
-    console.log(`\nDone! Code synced to: https://github.com/${user.login}/${repoName}`);
-    console.log(`Branch: ${branchName}`);
-    console.log(`Commit: ${commit.sha.slice(0, 7)} - ${commitMessage}`);
-
-    console.log('\nDeployment will trigger automatically from push to main.');
-    console.log('The .github/workflows/ files are included in the sync, so no separate workflow push is needed.');
+    console.log(`\n--- Summary ---`);
+    console.log(`Repository: https://github.com/${user.login}/${repoName}`);
+    console.log(`Branch:     ${branchName}`);
+    console.log(`Commit:     ${commit.sha.slice(0, 7)} - ${commitMessage}`);
+    console.log(`Deployed:   ${shouldDeploy ? 'Yes (main updated)' : 'No (feature branch only)'}`);
+    
+    if (mainSha) {
+      console.log(`\nView changes: https://github.com/${user.login}/${repoName}/compare/main...${branchName}`);
+    }
   } catch (error: any) {
     console.error('Error:', error.message);
     if (error.response) {

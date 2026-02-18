@@ -96,9 +96,30 @@ The upload page (`/upload`) supports importing data from a multi-sheet Excel wor
 | `server/index.ts` | Server entry point |
 | `client/src/App.tsx` | Frontend root with routing and sidebar |
 | `client/src/pages/upload.tsx` | Excel file upload UI with sheet selection and import results |
-| `scripts/sync-to-github.ts` | GitHub sync script for CI/CD |
+| `scripts/sync-to-github.ts` | GitHub sync script with feature branching for CI/CD |
 | `.github/workflows/azure-deploy.yml` | GitHub Actions CI/CD pipeline for Azure deployment |
 | `AZURE-DEPLOY.md` | Azure deployment documentation |
+
+## GitHub Sync & Deployment Workflow
+The sync script (`scripts/sync-to-github.ts`) implements proper feature branching for change tracking and controlled deployments.
+
+**Usage:**
+```bash
+# Sync changes to a feature branch only (no deployment):
+tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import feature"
+
+# Sync AND deploy (updates main, triggers GitHub Actions):
+tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import feature" --deploy
+```
+
+**How it works:**
+- Every sync creates a timestamped feature branch (e.g. `feature/20260218-1530-cx-ratings-import`)
+- Without `--deploy`, only the feature branch is created — main is untouched
+- With `--deploy`, main is also fast-forwarded to the new commit, triggering Azure deployment via GitHub Actions
+- After syncing without `--deploy`, you can review changes on GitHub and create a PR from the feature branch to main
+- Auth: Uses `GITHUB_PAT` (has workflow scope for .github/ files) with fallback to GitHub connector token
+
+**Deployment trigger:** Push to `main` branch triggers `.github/workflows/azure-deploy.yml`. The workflow ignores changes to `.github/workflows/**` to prevent recursive triggers.
 
 ## External Dependencies
 - **PostgreSQL:** Primary database for development and local environments.
