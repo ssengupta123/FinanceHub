@@ -4,7 +4,6 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { runMigrations, runIncrementalMigrations } from "./db";
-import { seedDatabase } from "./seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,7 +92,6 @@ app.use((req, res, next) => {
 (async () => {
   await runMigrations().catch((err) => console.error("Migration error:", err));
   await runIncrementalMigrations().catch((err) => console.error("Incremental migration error:", err));
-  await seedDatabase().catch((err) => console.error("Seed error:", err));
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
