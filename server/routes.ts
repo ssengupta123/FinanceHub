@@ -782,11 +782,12 @@ async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; 
   const existingNames = new Set(existingProjects.map(p => p.name.toLowerCase()));
   let codeCounter = existingProjects.length + 1;
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[3]) continue;
     try {
       const projectName = String(r[3]).trim();
+      if (!projectName || projectName.toLowerCase() === "project" || projectName.toLowerCase() === "project name" || projectName.toLowerCase() === "name") continue;
       if (existingNames.has(projectName.toLowerCase())) {
         errors.push(`Row ${i + 2}: Skipped duplicate project "${projectName}"`);
         continue;
@@ -881,7 +882,7 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
   const existingCodes = new Set(existingEmployees.map(e => e.employeeCode));
   let codeCounter = Date.now() % 100000;
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[0]) continue;
     try {
@@ -1161,19 +1162,18 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
     if (!r || !r[3]) continue;
     try {
       const projectDesc = String(r[3]).trim();
-      const isNonProject = /^\d+$/.test(projectDesc) || /^Reason\s/i.test(projectDesc);
-      if (isNonProject) continue;
+      const isInternal = /^\d+$/.test(projectDesc) || /^Reason\s/i.test(projectDesc);
 
       let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
-        const codeParts = projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
-        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `A${projCounter++}`;
-        while (projCodes.has(pCode)) pCode = `A${projCounter++}`;
+        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
+        while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         match = await storage.createProject({
-          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
-          contractType: "time_materials", billingCategory: null, workType: null, panel: null,
+          contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
           startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
           balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
