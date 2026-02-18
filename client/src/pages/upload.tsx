@@ -24,6 +24,9 @@ const IMPORTABLE_SHEETS: Record<string, string> = {
   "GrossProfit": "Pipeline gross profit by month",
   "Personal Hours - inc non-projec": "Timesheet entries from personal hours",
   "Project Hours": "Project-level KPI summary data",
+  "CX Master List": "Customer experience ratings linked to projects and staff",
+  "Project Resource Cost": "Monthly resource costs per employee (total)",
+  "Project Resource Cost A&F": "Monthly resource costs split by Phase C and Phase DVF",
 };
 
 interface SheetInfo {

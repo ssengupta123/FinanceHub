@@ -521,6 +521,12 @@ export async function registerRoutes(
             results[sheetName] = await importPersonalHours(ws);
           } else if (sheetName === "Project Hours") {
             results[sheetName] = await importProjectHours(ws);
+          } else if (sheetName === "CX Master List") {
+            results[sheetName] = await importCxMasterList(ws);
+          } else if (sheetName === "Project Resource Cost") {
+            results[sheetName] = await importProjectResourceCost(ws);
+          } else if (sheetName === "Project Resource Cost A&F") {
+            results[sheetName] = await importProjectResourceCostAF(ws);
           } else {
             results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
           }
@@ -1200,6 +1206,203 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
         utilization: r[0] ? toNum((Number(r[0]) / 2080) * 100) : "0",
       });
       imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const allProjects = await storage.getProjects();
+  const projMap = new Map<string, number>();
+  for (const p of allProjects) {
+    projMap.set(p.name.toLowerCase(), p.id);
+    if (p.projectCode) projMap.set(p.projectCode.toLowerCase(), p.id);
+  }
+
+  const allEmployees = await storage.getEmployees();
+  const empMap = new Map<string, number>();
+  for (const e of allEmployees) {
+    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
+    empMap.set(fullName, e.id);
+    if (e.lastName) empMap.set(e.lastName.toLowerCase(), e.id);
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    try {
+      const engagementName = String(r[0]).trim();
+      if (!engagementName || engagementName.toLowerCase() === "engagement name") continue;
+
+      let projectId: number | null = null;
+      const codePart = engagementName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})/i);
+      if (codePart) {
+        const codeNorm = codePart[1].replace(/\s+/g, '').toLowerCase();
+        projectId = projMap.get(codeNorm) || null;
+      }
+      if (!projectId) {
+        const entries = Array.from(projMap.entries());
+        for (const [key, id] of entries) {
+          if (engagementName.toLowerCase().includes(key) || key.includes(engagementName.toLowerCase())) {
+            projectId = id;
+            break;
+          }
+        }
+      }
+
+      const resourceName = r[3] ? String(r[3]).trim() : null;
+      let employeeId: number | null = null;
+      if (resourceName) {
+        employeeId = empMap.get(resourceName.toLowerCase()) || null;
+      }
+
+      const checkPointDate = excelDateToString(r[1]);
+      const cxRating = r[2] !== null && r[2] !== undefined ? Number(r[2]) : null;
+
+      await storage.createCxRating({
+        projectId,
+        employeeId,
+        engagementName,
+        checkPointDate,
+        cxRating: isNaN(cxRating as number) ? null : cxRating,
+        resourceName,
+        isClientManager: String(r[4] || "").toUpperCase() === "Y",
+        isDeliveryManager: String(r[5] || "").toUpperCase() === "Y",
+        rationale: r[6] ? String(r[6]).trim() : null,
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const allEmployees = await storage.getEmployees();
+  const empMap = new Map<string, number>();
+  for (const e of allEmployees) {
+    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
+    empMap.set(fullName, e.id);
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    const name = String(r[0]).trim();
+    if (!name || name.toLowerCase() === "name") continue;
+    try {
+      const employeeId = empMap.get(name.toLowerCase()) || null;
+      const staffType = r[1] ? String(r[1]).trim() : null;
+
+      let total = 0;
+      const monthlyCosts: string[] = [];
+      for (let ci = 2; ci <= 13; ci++) {
+        const v = Number(r[ci] || 0);
+        monthlyCosts.push(isNaN(v) ? "0" : v.toFixed(2));
+        total += isNaN(v) ? 0 : v;
+      }
+
+      await storage.createResourceCost({
+        employeeId,
+        employeeName: name,
+        staffType,
+        costPhase: "Total",
+        fyYear: "FY23-24",
+        costM1: monthlyCosts[0], costM2: monthlyCosts[1], costM3: monthlyCosts[2], costM4: monthlyCosts[3],
+        costM5: monthlyCosts[4], costM6: monthlyCosts[5], costM7: monthlyCosts[6], costM8: monthlyCosts[7],
+        costM9: monthlyCosts[8], costM10: monthlyCosts[9], costM11: monthlyCosts[10], costM12: monthlyCosts[11],
+        totalCost: total.toFixed(2),
+        source: "Project Resource Cost",
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const allEmployees = await storage.getEmployees();
+  const empMap = new Map<string, number>();
+  for (const e of allEmployees) {
+    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
+    empMap.set(fullName, e.id);
+  }
+
+  for (let i = 2; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    const name = String(r[0]).trim();
+    if (!name || name.toLowerCase() === "name") continue;
+    try {
+      const employeeId = empMap.get(name.toLowerCase()) || null;
+      const staffType = r[1] ? String(r[1]).trim() : null;
+
+      let totalC = 0;
+      const costC: string[] = [];
+      for (let ci = 2; ci <= 13; ci++) {
+        const v = Number(r[ci] || 0);
+        costC.push(isNaN(v) ? "0" : v.toFixed(2));
+        totalC += isNaN(v) ? 0 : v;
+      }
+
+      await storage.createResourceCost({
+        employeeId,
+        employeeName: name,
+        staffType,
+        costPhase: "Phase C",
+        fyYear: "FY23-24",
+        costM1: costC[0], costM2: costC[1], costM3: costC[2], costM4: costC[3],
+        costM5: costC[4], costM6: costC[5], costM7: costC[6], costM8: costC[7],
+        costM9: costC[8], costM10: costC[9], costM11: costC[10], costM12: costC[11],
+        totalCost: totalC.toFixed(2),
+        source: "Project Resource Cost A&F",
+      });
+      imported++;
+
+      const dvfNameCol = 17;
+      const dvfName = r[dvfNameCol] ? String(r[dvfNameCol]).trim() : null;
+      if (dvfName && dvfName.toLowerCase() !== "name") {
+        const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
+        const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
+        let totalDVF = 0;
+        const costDVF: string[] = [];
+        for (let ci = 19; ci <= 30; ci++) {
+          const v = Number(r[ci] || 0);
+          costDVF.push(isNaN(v) ? "0" : v.toFixed(2));
+          totalDVF += isNaN(v) ? 0 : v;
+        }
+
+        await storage.createResourceCost({
+          employeeId: dvfEmployeeId,
+          employeeName: dvfName,
+          staffType: dvfStaffType,
+          costPhase: "Phase DVF",
+          fyYear: "FY23-24",
+          costM1: costDVF[0], costM2: costDVF[1], costM3: costDVF[2], costM4: costDVF[3],
+          costM5: costDVF[4], costM6: costDVF[5], costM7: costDVF[6], costM8: costDVF[7],
+          costM9: costDVF[8], costM10: costDVF[9], costM11: costDVF[10], costM12: costDVF[11],
+          totalCost: totalDVF.toFixed(2),
+          source: "Project Resource Cost A&F",
+        });
+        imported++;
+      }
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
