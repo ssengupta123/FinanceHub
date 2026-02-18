@@ -1094,17 +1094,16 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       let projectId = projName ? projMap.get(projName) : null;
       if (!projectId && projName) {
         const origName = String(r[9]).trim();
-        const isNonProject = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        if (isNonProject) continue;
 
-        const codeParts = origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
-        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `A${projCounter++}`;
-        while (projCodes.has(pCode)) pCode = `A${projCounter++}`;
+        const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
+        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
+        while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         const newProj = await storage.createProject({
-          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
-          contractType: "time_materials", billingCategory: null, workType: null, panel: null,
+          contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
           startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
           balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
