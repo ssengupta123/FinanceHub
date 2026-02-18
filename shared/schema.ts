@@ -281,6 +281,44 @@ export const insertReferenceDataSchema = z.object({
 export type InsertReferenceData = z.infer<typeof insertReferenceDataSchema>;
 export type ReferenceData = InsertReferenceData & { id: number };
 
+export const insertCxRatingSchema = z.object({
+  projectId: z.number().nullable().optional(),
+  employeeId: z.number().nullable().optional(),
+  engagementName: z.string(),
+  checkPointDate: z.string().nullable().optional(),
+  cxRating: z.number().nullable().optional(),
+  resourceName: z.string().nullable().optional(),
+  isClientManager: z.boolean().nullable().optional(),
+  isDeliveryManager: z.boolean().nullable().optional(),
+  rationale: z.string().nullable().optional(),
+});
+export type InsertCxRating = z.infer<typeof insertCxRatingSchema>;
+export type CxRating = InsertCxRating & { id: number };
+
+export const insertResourceCostSchema = z.object({
+  employeeId: z.number().nullable().optional(),
+  employeeName: z.string(),
+  staffType: z.string().nullable().optional(),
+  costPhase: z.string().nullable().optional(),
+  fyYear: z.string().nullable().optional(),
+  costM1: z.string().nullable().optional(),
+  costM2: z.string().nullable().optional(),
+  costM3: z.string().nullable().optional(),
+  costM4: z.string().nullable().optional(),
+  costM5: z.string().nullable().optional(),
+  costM6: z.string().nullable().optional(),
+  costM7: z.string().nullable().optional(),
+  costM8: z.string().nullable().optional(),
+  costM9: z.string().nullable().optional(),
+  costM10: z.string().nullable().optional(),
+  costM11: z.string().nullable().optional(),
+  costM12: z.string().nullable().optional(),
+  totalCost: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+});
+export type InsertResourceCost = z.infer<typeof insertResourceCostSchema>;
+export type ResourceCost = InsertResourceCost & { id: number };
+
 export const insertConversationSchema = z.object({
   title: z.string(),
 });

@@ -34,6 +34,10 @@ import {
   type InsertScenarioAdjustment,
   type ReferenceData,
   type InsertReferenceData,
+  type CxRating,
+  type InsertCxRating,
+  type ResourceCost,
+  type InsertResourceCost,
 } from "@shared/schema";
 
 const EMPLOYEE_FIELD_MAP_TO_DB: Record<string, string> = {
@@ -211,6 +215,17 @@ export interface IStorage {
   createReferenceData(data: InsertReferenceData): Promise<ReferenceData>;
   updateReferenceData(id: number, data: Partial<InsertReferenceData>): Promise<ReferenceData | undefined>;
   deleteReferenceData(id: number): Promise<void>;
+
+  getCxRatings(): Promise<CxRating[]>;
+  getCxRatingsByProject(projectId: number): Promise<CxRating[]>;
+  createCxRating(data: InsertCxRating): Promise<CxRating>;
+  deleteCxRating(id: number): Promise<void>;
+
+  getResourceCosts(): Promise<ResourceCost[]>;
+  getResourceCostsByEmployee(employeeId: number): Promise<ResourceCost[]>;
+  getResourceCostsByPhase(phase: string): Promise<ResourceCost[]>;
+  createResourceCost(data: InsertResourceCost): Promise<ResourceCost>;
+  deleteResourceCost(id: number): Promise<void>;
 
   getDashboardSummary(): Promise<{
     totalProjects: number;
@@ -557,6 +572,35 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteReferenceData(id: number): Promise<void> {
     await db("reference_data").where("id", id).del();
+  }
+
+  async getCxRatings(): Promise<CxRating[]> {
+    return rowsToModels<CxRating>(await db("cx_ratings").select("*"));
+  }
+  async getCxRatingsByProject(projectId: number): Promise<CxRating[]> {
+    return rowsToModels<CxRating>(await db("cx_ratings").where("project_id", projectId));
+  }
+  async createCxRating(data: InsertCxRating): Promise<CxRating> {
+    return insertReturning<CxRating>("cx_ratings", data);
+  }
+  async deleteCxRating(id: number): Promise<void> {
+    await db("cx_ratings").where("id", id).del();
+  }
+
+  async getResourceCosts(): Promise<ResourceCost[]> {
+    return rowsToModels<ResourceCost>(await db("resource_costs").select("*"));
+  }
+  async getResourceCostsByEmployee(employeeId: number): Promise<ResourceCost[]> {
+    return rowsToModels<ResourceCost>(await db("resource_costs").where("employee_id", employeeId));
+  }
+  async getResourceCostsByPhase(phase: string): Promise<ResourceCost[]> {
+    return rowsToModels<ResourceCost>(await db("resource_costs").where("cost_phase", phase));
+  }
+  async createResourceCost(data: InsertResourceCost): Promise<ResourceCost> {
+    return insertReturning<ResourceCost>("resource_costs", data);
+  }
+  async deleteResourceCost(id: number): Promise<void> {
+    await db("resource_costs").where("id", id).del();
   }
 
   async getDashboardSummary(): Promise<{

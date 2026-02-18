@@ -376,5 +376,40 @@ export async function runIncrementalMigrations() {
     });
   }
 
+  const hasCxRatings = await db.schema.hasTable("cx_ratings");
+  if (!hasCxRatings) {
+    await db.schema.createTable("cx_ratings", (t) => {
+      t.increments("id").primary();
+      t.integer("project_id").references("id").inTable("projects").onDelete("SET NULL");
+      t.integer("employee_id").references("id").inTable("employees").onDelete("SET NULL");
+      t.text("engagement_name").notNullable();
+      t.date("check_point_date");
+      t.integer("cx_rating");
+      t.text("resource_name");
+      t.boolean("is_client_manager").defaultTo(false);
+      t.boolean("is_delivery_manager").defaultTo(false);
+      t.text("rationale");
+    });
+    console.log("Created cx_ratings table");
+  }
+
+  const hasResourceCosts = await db.schema.hasTable("resource_costs");
+  if (!hasResourceCosts) {
+    await db.schema.createTable("resource_costs", (t) => {
+      t.increments("id").primary();
+      t.integer("employee_id").references("id").inTable("employees").onDelete("SET NULL");
+      t.text("employee_name").notNullable();
+      t.text("staff_type");
+      t.text("cost_phase");
+      t.text("fy_year");
+      for (let i = 1; i <= 12; i++) {
+        t.decimal(`cost_m${i}`, 14, 2).defaultTo(0);
+      }
+      t.decimal("total_cost", 14, 2).defaultTo(0);
+      t.text("source");
+    });
+    console.log("Created resource_costs table");
+  }
+
   console.log("Incremental migrations completed");
 }
