@@ -1219,10 +1219,16 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   const errors: string[] = [];
 
   const allProjects = await storage.getProjects();
-  const projMap = new Map<string, number>();
+  const projByName = new Map<string, number>();
+  const projByBaseCode = new Map<string, number>();
   for (const p of allProjects) {
-    projMap.set(p.name.toLowerCase(), p.id);
-    if (p.projectCode) projMap.set(p.projectCode.toLowerCase(), p.id);
+    projByName.set(p.name.toLowerCase(), p.id);
+    if (p.projectCode) projByName.set(p.projectCode.toLowerCase(), p.id);
+    const baseMatch = p.name.match(/^([A-Z]{2,6}\d{2,4})/i);
+    if (baseMatch) {
+      const baseCode = baseMatch[1].toLowerCase();
+      if (!projByBaseCode.has(baseCode)) projByBaseCode.set(baseCode, p.id);
+    }
   }
 
   const allEmployees = await storage.getEmployees();
@@ -1241,13 +1247,18 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       if (!engagementName || engagementName.toLowerCase() === "engagement name") continue;
 
       let projectId: number | null = null;
-      const codePart = engagementName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})/i);
-      if (codePart) {
-        const codeNorm = codePart[1].replace(/\s+/g, '').toLowerCase();
-        projectId = projMap.get(codeNorm) || null;
+      const exactMatch = projByName.get(engagementName.toLowerCase());
+      if (exactMatch) {
+        projectId = exactMatch;
       }
       if (!projectId) {
-        const entries = Array.from(projMap.entries());
+        const codePart = engagementName.match(/^([A-Z]{2,6}\d{2,4})/i);
+        if (codePart) {
+          projectId = projByBaseCode.get(codePart[1].toLowerCase()) || null;
+        }
+      }
+      if (!projectId) {
+        const entries = Array.from(projByName.entries());
         for (const [key, id] of entries) {
           if (engagementName.toLowerCase().includes(key) || key.includes(engagementName.toLowerCase())) {
             projectId = id;
