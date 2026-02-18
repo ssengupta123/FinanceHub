@@ -875,6 +875,11 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
   let imported = 0;
   const errors: string[] = [];
 
+  const existingEmployees = await storage.getEmployees();
+  const existingNames = new Set(existingEmployees.map(e => `${e.firstName} ${e.lastName}`.toLowerCase()));
+  const existingCodes = new Set(existingEmployees.map(e => e.employeeCode));
+  let codeCounter = existingEmployees.length + 100;
+
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[0]) continue;
@@ -883,7 +888,17 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
       const parts = fullName.split(" ");
       const firstName = parts[0] || fullName;
       const lastName = parts.slice(1).join(" ") || "";
-      const empCode = `EMP-${String(imported + 100).padStart(3, "0")}`;
+
+      if (existingNames.has(fullName.toLowerCase())) {
+        continue;
+      }
+
+      let empCode = `EMP-${String(codeCounter++).padStart(3, "0")}`;
+      while (existingCodes.has(empCode)) {
+        empCode = `EMP-${String(codeCounter++).padStart(3, "0")}`;
+      }
+      existingCodes.add(empCode);
+      existingNames.add(fullName.toLowerCase());
 
       await storage.createEmployee({
         employeeCode: empCode,
@@ -1062,6 +1077,10 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       let projectId = projName ? projMap.get(projName) : null;
       if (!projectId && projName) {
         const origName = String(r[4]).trim();
+        const isNonProject = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
+        if (isNonProject) {
+          continue;
+        }
         const codeParts = origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
         const pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `AUTO-${String(projMap.size + i).padStart(3, "0")}`;
         const newProj = await storage.createProject({
@@ -1114,6 +1133,8 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
     if (!r || !r[3]) continue;
     try {
       const projectDesc = String(r[3]).trim();
+      const isNonProject = /^\d+$/.test(projectDesc) || /^Reason\s/i.test(projectDesc);
+      if (isNonProject) continue;
       const allProjects = await storage.getProjects();
       let match = allProjects.find(p => p.name === projectDesc || p.projectCode === projectDesc || p.name.toLowerCase() === projectDesc.toLowerCase() || p.projectCode?.toLowerCase() === projectDesc.toLowerCase());
       if (!match) {
