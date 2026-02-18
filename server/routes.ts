@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import { z } from "zod";
 import multer from "multer";
 import XLSX from "xlsx";
@@ -463,6 +464,55 @@ export async function registerRoutes(
       }
       res.json({ success: true });
     });
+  });
+
+  // ─── Delete All Data ───
+  app.delete("/api/data/all", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      if (req.session.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const deletionOrder = [
+        "messages",
+        "conversations",
+        "onboarding_steps",
+        "cx_ratings",
+        "resource_costs",
+        "scenario_adjustments",
+        "scenarios",
+        "kpis",
+        "forecasts",
+        "resource_plans",
+        "milestones",
+        "costs",
+        "timesheets",
+        "data_sources",
+        "rate_cards",
+        "pipeline_opportunities",
+        "project_monthly",
+        "projects",
+        "employees",
+        "reference_data",
+      ];
+
+      const counts: Record<string, number> = {};
+      await db.transaction(async (trx) => {
+        for (const table of deletionOrder) {
+          const result = await trx(table).del();
+          counts[table] = result;
+        }
+      });
+
+      const totalDeleted = Object.values(counts).reduce((sum, c) => sum + c, 0);
+      res.json({ message: `Deleted ${totalDeleted} records across ${deletionOrder.length} tables`, counts });
+    } catch (err: any) {
+      console.error("Delete all data error:", err);
+      res.status(500).json({ message: err.message || "Failed to delete data" });
+    }
   });
 
   // ─── Excel Upload (KPI Raw Data File) ───
