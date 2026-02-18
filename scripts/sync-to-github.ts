@@ -186,6 +186,53 @@ async function main() {
     }
 
     console.log(`\nDone! Code synced to: https://github.com/${user.login}/${repoName}`);
+
+    const ghPat = process.env.GITHUB_PAT;
+    if (ghPat) {
+      const patOctokit = new Octokit({ auth: ghPat });
+
+      console.log('\nSyncing workflow file via PAT...');
+      try {
+        const workflowPath = '.github/workflows/azure-deploy.yml';
+        const workflowFullPath = path.join(WORKSPACE, workflowPath);
+        const workflowContent = fs.readFileSync(workflowFullPath, 'utf-8');
+        const base64 = Buffer.from(workflowContent).toString('base64');
+
+        let existingSha: string | undefined;
+        try {
+          const { data: existing } = await patOctokit.repos.getContent({
+            owner: user.login, repo: repoName, path: workflowPath, ref: 'main',
+          });
+          if ('sha' in existing) existingSha = existing.sha;
+        } catch {}
+
+        await patOctokit.repos.createOrUpdateFileContents({
+          owner: user.login, repo: repoName, path: workflowPath,
+          message: 'Update GitHub Actions workflow',
+          content: base64,
+          ...(existingSha ? { sha: existingSha } : {}),
+          branch: 'main',
+        });
+        console.log('Workflow file synced successfully!');
+      } catch (wfFileErr: any) {
+        console.error('Could not sync workflow file:', wfFileErr.message);
+      }
+
+      console.log('Triggering deployment workflow...');
+      try {
+        await patOctokit.actions.createWorkflowDispatch({
+          owner: user.login, repo: repoName,
+          workflow_id: 'azure-deploy.yml', ref: 'main',
+        });
+        console.log('Deployment workflow triggered successfully!');
+      } catch (wfErr: any) {
+        console.error('Could not trigger workflow:', wfErr.message);
+        console.log('You can manually trigger it from the Actions tab in GitHub.');
+      }
+    } else {
+      console.log('No GITHUB_PAT found — skipping automatic workflow trigger.');
+      console.log('Manually trigger the deployment from the Actions tab in GitHub.');
+    }
   } catch (error: any) {
     console.error('Error:', error.message);
     if (error.response) {
