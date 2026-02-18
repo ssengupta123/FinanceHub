@@ -494,7 +494,13 @@ export async function registerRoutes(
       const wb = XLSX.read(req.file.buffer, { type: "buffer" });
       const results: Record<string, { imported: number; errors: string[] }> = {};
 
-      for (const sheetName of selectedSheets) {
+      const sheetOrder = ["Job Status", "Staff SOT"];
+      const orderedSheets = [
+        ...sheetOrder.filter(s => selectedSheets.includes(s)),
+        ...selectedSheets.filter(s => !sheetOrder.includes(s)),
+      ];
+
+      for (const sheetName of orderedSheets) {
         const ws = wb.Sheets[sheetName];
         if (!ws) {
           results[sheetName] = { imported: 0, errors: ["Sheet not found in file"] };
@@ -1036,21 +1042,44 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       const firstName = r[10] ? String(r[10]).trim() : "";
       const lastName = r[11] ? String(r[11]).trim() : "";
       const fullName = `${firstName} ${lastName}`.toLowerCase();
-      const employeeId = empMap.get(fullName);
+      let employeeId = empMap.get(fullName);
       if (!employeeId) {
-        errors.push(`Row ${i + 1}: Employee "${firstName} ${lastName}" not found`);
-        continue;
+        const empCode = `EMP-${String(empMap.size + 100).padStart(3, "0")}`;
+        const newEmp = await storage.createEmployee({
+          employeeCode: empCode, firstName, lastName,
+          role: r[12] ? String(r[12]) : "Staff",
+          status: "active",
+        });
+        employeeId = newEmp.id;
+        empMap.set(fullName, employeeId);
+        errors.push(`Row ${i + 1}: Auto-created employee "${firstName} ${lastName}"`);
       }
 
       const weekEnding = excelDateToString(r[0]);
       if (!weekEnding) continue;
 
       const projName = r[4] ? String(r[4]).trim().toLowerCase() : "";
-      const projectId = projName ? projMap.get(projName) : null;
-      if (!projectId) {
-        if (projName) errors.push(`Row ${i + 1}: Project "${r[4]}" not found`);
-        continue;
+      let projectId = projName ? projMap.get(projName) : null;
+      if (!projectId && projName) {
+        const origName = String(r[4]).trim();
+        const codeParts = origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `AUTO-${String(projMap.size + i).padStart(3, "0")}`;
+        const newProj = await storage.createProject({
+          projectCode: pCode, name: origName, client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
+          contractType: "time_materials", billingCategory: null, workType: null, panel: null,
+          recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
+          startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
+          balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
+          varianceAtCompletion: "0", variancePercent: "0", varianceToContractPercent: "0", writeOff: "0",
+          opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
+          gpAtCompletion: "0", forecastGmPercent: "0", description: null,
+        });
+        projectId = newProj.id;
+        projMap.set(projName, projectId);
+        errors.push(`Row ${i + 1}: Auto-created project "${origName}"`);
       }
+      if (!projectId) continue;
 
       await storage.createTimesheet({
         employeeId,
@@ -1086,10 +1115,23 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
     try {
       const projectDesc = String(r[3]).trim();
       const allProjects = await storage.getProjects();
-      const match = allProjects.find(p => p.name === projectDesc || p.projectCode === projectDesc);
+      let match = allProjects.find(p => p.name === projectDesc || p.projectCode === projectDesc || p.name.toLowerCase() === projectDesc.toLowerCase() || p.projectCode?.toLowerCase() === projectDesc.toLowerCase());
       if (!match) {
-        errors.push(`Row ${i + 1}: Project "${projectDesc}" not found`);
-        continue;
+        const codeParts = projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `AUTO-${String(allProjects.length + i).padStart(3, "0")}`;
+        const pName = projectDesc;
+        match = await storage.createProject({
+          projectCode: pCode, name: pName, client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
+          contractType: "time_materials", billingCategory: null, workType: null, panel: null,
+          recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
+          startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
+          balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
+          varianceAtCompletion: "0", variancePercent: "0", varianceToContractPercent: "0", writeOff: "0",
+          opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
+          gpAtCompletion: "0", forecastGmPercent: "0", description: null,
+        });
+        errors.push(`Row ${i + 1}: Auto-created project "${projectDesc}"`);
       }
 
       await storage.createKpi({
