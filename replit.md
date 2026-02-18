@@ -101,22 +101,19 @@ The upload page (`/upload`) supports importing data from a multi-sheet Excel wor
 | `AZURE-DEPLOY.md` | Azure deployment documentation |
 
 ## GitHub Sync & Deployment Workflow
-The sync script (`scripts/sync-to-github.ts`) implements proper feature branching for change tracking and controlled deployments.
+The sync script (`scripts/sync-to-github.ts`) implements automatic feature branching for change tracking with deployment on every sync.
 
 **Usage:**
 ```bash
-# Sync changes to a feature branch only (no deployment):
+# Sync and deploy with branch audit trail:
 tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import feature"
-
-# Sync AND deploy (updates main, triggers GitHub Actions):
-tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import feature" --deploy
 ```
 
 **How it works:**
-- Every sync creates a timestamped feature branch (e.g. `feature/20260218-1530-cx-ratings-import`)
-- Without `--deploy`, only the feature branch is created — main is untouched
-- With `--deploy`, main is also fast-forwarded to the new commit, triggering Azure deployment via GitHub Actions
-- After syncing without `--deploy`, you can review changes on GitHub and create a PR from the feature branch to main
+- Every sync creates a timestamped feature branch (e.g. `feature/20260218-1530-cx-ratings-import`) as an audit trail
+- Main is always updated to the same commit, triggering Azure deployment via GitHub Actions
+- The feature branch is preserved so you can compare what changed between syncs (compare URL provided in output)
+- All feature branches are viewable on GitHub under `branches/all?query=feature/`
 - Auth: Uses `GITHUB_PAT` (has workflow scope for .github/ files) with fallback to GitHub connector token
 
 **Deployment trigger:** Push to `main` branch triggers `.github/workflows/azure-deploy.yml`. The workflow ignores changes to `.github/workflows/**` to prevent recursive triggers.

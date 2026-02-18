@@ -89,21 +89,21 @@ function generateBranchName(description: string): string {
 
 function printUsage() {
   console.log(`
-Usage: tsx scripts/sync-to-github.ts <description> [commit-message] [options]
+Usage: tsx scripts/sync-to-github.ts <description> [commit-message]
 
 Arguments:
   description      Short description for branch name (e.g. "cx-ratings-import")
   commit-message   Optional commit message (defaults to "Sync: <description>")
 
-Options:
-  --deploy         Also fast-forward main to the new commit (triggers deployment)
+Every sync automatically:
+  1. Creates a timestamped feature branch (e.g. feature/20260218-1530-cx-ratings-import)
+  2. Updates main to the same commit (triggers Azure deployment)
+
+The feature branch is kept as an audit trail so you can see what changed per sync.
 
 Examples:
   tsx scripts/sync-to-github.ts "cx-ratings-import"
-    -> Creates feature/20260218-1530-cx-ratings-import branch only
-
-  tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import" --deploy
-    -> Creates feature branch AND updates main (triggers Azure deployment)
+  tsx scripts/sync-to-github.ts "cx-ratings-import" "Add CX ratings import feature"
 `);
 }
 
@@ -118,7 +118,6 @@ async function main() {
 
   const description = args[0];
   const commitMessage = args[1] || `Sync: ${description}`;
-  const shouldDeploy = flags.includes('--deploy');
 
   try {
     const ghPat = process.env.GITHUB_PAT;
@@ -241,42 +240,38 @@ async function main() {
       }
     }
 
-    if (shouldDeploy) {
-      console.log('\n--deploy flag set: Updating main branch...');
-      try {
-        await octokit.git.updateRef({
-          owner: user.login,
-          repo: repoName,
-          ref: 'heads/main',
-          sha: commit.sha,
-          force: true,
-        });
-        console.log('Main branch updated. Deployment will trigger automatically.');
-      } catch {
-        await octokit.git.createRef({
-          owner: user.login,
-          repo: repoName,
-          ref: 'refs/heads/main',
-          sha: commit.sha,
-        });
-        console.log('Main branch created. Deployment will trigger automatically.');
-      }
-    } else {
-      console.log('\nMain branch NOT updated (no --deploy flag).');
-      console.log('To deploy, either:');
-      console.log(`  1. Re-run with --deploy flag`);
-      console.log(`  2. Create a PR from ${branchName} -> main on GitHub`);
+    console.log('Updating main branch...');
+    try {
+      await octokit.git.updateRef({
+        owner: user.login,
+        repo: repoName,
+        ref: 'heads/main',
+        sha: commit.sha,
+        force: true,
+      });
+      console.log('Main branch updated.');
+    } catch {
+      await octokit.git.createRef({
+        owner: user.login,
+        repo: repoName,
+        ref: 'refs/heads/main',
+        sha: commit.sha,
+      });
+      console.log('Main branch created.');
     }
 
     console.log(`\n--- Summary ---`);
-    console.log(`Repository: https://github.com/${user.login}/${repoName}`);
-    console.log(`Branch:     ${branchName}`);
-    console.log(`Commit:     ${commit.sha.slice(0, 7)} - ${commitMessage}`);
-    console.log(`Deployed:   ${shouldDeploy ? 'Yes (main updated)' : 'No (feature branch only)'}`);
+    console.log(`Repository:  https://github.com/${user.login}/${repoName}`);
+    console.log(`Feature:     ${branchName}`);
+    console.log(`Commit:      ${commit.sha.slice(0, 7)} - ${commitMessage}`);
+    console.log(`Main:        Updated (deployment will trigger automatically)`);
     
     if (mainSha) {
-      console.log(`\nView changes: https://github.com/${user.login}/${repoName}/compare/main...${branchName}`);
+      console.log(`\nView changes from previous sync:`);
+      console.log(`  https://github.com/${user.login}/${repoName}/compare/${mainSha.slice(0, 7)}...${commit.sha.slice(0, 7)}`);
     }
+    console.log(`\nFeature branch preserved for audit: ${branchName}`);
+    console.log(`All feature branches: https://github.com/${user.login}/${repoName}/branches/all?query=feature%2F`);
   } catch (error: any) {
     console.error('Error:', error.message);
     if (error.response) {
