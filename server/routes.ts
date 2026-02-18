@@ -5,6 +5,7 @@ import { z } from "zod";
 import multer from "multer";
 import XLSX from "xlsx";
 import OpenAI from "openai";
+import type { Project } from "@shared/schema";
 import {
   insertEmployeeSchema,
   insertProjectSchema,
@@ -878,13 +879,14 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
   const existingEmployees = await storage.getEmployees();
   const existingNames = new Set(existingEmployees.map(e => `${e.firstName} ${e.lastName}`.toLowerCase()));
   const existingCodes = new Set(existingEmployees.map(e => e.employeeCode));
-  let codeCounter = existingEmployees.length + 100;
+  let codeCounter = Date.now() % 100000;
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[0]) continue;
     try {
       const fullName = String(r[0]).trim();
+      if (!fullName || fullName.toLowerCase() === "name") continue;
       const parts = fullName.split(" ");
       const firstName = parts[0] || fullName;
       const lastName = parts.slice(1).join(" ") || "";
@@ -893,9 +895,9 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
         continue;
       }
 
-      let empCode = `EMP-${String(codeCounter++).padStart(3, "0")}`;
+      let empCode = `E${codeCounter++}`;
       while (existingCodes.has(empCode)) {
-        empCode = `EMP-${String(codeCounter++).padStart(3, "0")}`;
+        empCode = `E${codeCounter++}`;
       }
       existingCodes.add(empCode);
       existingNames.add(fullName.toLowerCase());
@@ -906,10 +908,10 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
         lastName,
         email: null,
         role: null,
-        costBandLevel: r[1] ? String(r[1]) : null,
-        staffType: r[2] ? String(r[2]) : null,
+        costBandLevel: r[1] ? String(r[1]).substring(0, 50) : null,
+        staffType: r[2] ? String(r[2]).substring(0, 50) : null,
         grade: null,
-        location: r[12] ? String(r[12]) : null,
+        location: r[12] ? String(r[12]).substring(0, 100) : null,
         costCenter: null,
         securityClearance: null,
         payrollTax: String(r[3] || "").toLowerCase() === "yes",
@@ -923,8 +925,8 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
         scheduleStart: excelDateToString(r[8]),
         scheduleEnd: excelDateToString(r[9]),
         resourceGroup: null,
-        team: r[10] ? String(r[10]) : null,
-        jid: r[7] ? String(r[7]) : null,
+        team: r[10] ? String(r[10]).substring(0, 100) : null,
+        jid: r[7] ? String(r[7]).substring(0, 50) : null,
         onboardingStatus: "completed",
       });
       imported++;
@@ -1039,35 +1041,50 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
 
   const allEmployees = await storage.getEmployees();
   const empMap = new Map<string, number>();
+  const empCodes = new Set<string>();
   for (const e of allEmployees) {
     empMap.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e.id);
+    empCodes.add(e.employeeCode);
   }
+  let empCounter = Date.now() % 100000;
 
   const allProjects = await storage.getProjects();
   const projMap = new Map<string, number>();
+  const projCodes = new Set<string>();
   for (const p of allProjects) {
     projMap.set(p.name.toLowerCase(), p.id);
-    if (p.projectCode) projMap.set(p.projectCode.toLowerCase(), p.id);
+    if (p.projectCode) {
+      projMap.set(p.projectCode.toLowerCase(), p.id);
+      projCodes.add(p.projectCode);
+    }
   }
+  let projCounter = Date.now() % 100000;
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[0]) continue;
     try {
-      const firstName = r[10] ? String(r[10]).trim() : "";
-      const lastName = r[11] ? String(r[11]).trim() : "";
+      const firstName = r[10] ? String(r[10]).trim().substring(0, 100) : "";
+      const lastName = r[11] ? String(r[11]).trim().substring(0, 100) : "";
+      if (!firstName && !lastName) continue;
       const fullName = `${firstName} ${lastName}`.toLowerCase();
       let employeeId = empMap.get(fullName);
       if (!employeeId) {
-        const empCode = `EMP-${String(empMap.size + 100).padStart(3, "0")}`;
+        let empCode = `E${empCounter++}`;
+        while (empCodes.has(empCode)) empCode = `E${empCounter++}`;
+        empCodes.add(empCode);
         const newEmp = await storage.createEmployee({
           employeeCode: empCode, firstName, lastName,
-          role: r[12] ? String(r[12]) : "Staff",
-          status: "active",
+          email: null, role: r[12] ? String(r[12]).substring(0, 100) : "Staff",
+          costBandLevel: null, staffType: null, grade: null, location: null,
+          costCenter: null, securityClearance: null, payrollTax: false, payrollTaxRate: null,
+          baseCost: "0", grossCost: "0", baseSalary: null,
+          status: "active", startDate: null, endDate: null,
+          scheduleStart: null, scheduleEnd: null, resourceGroup: null,
+          team: null, jid: null, onboardingStatus: "completed",
         });
         employeeId = newEmp.id;
         empMap.set(fullName, employeeId);
-        errors.push(`Row ${i + 1}: Auto-created employee "${firstName} ${lastName}"`);
       }
 
       const weekEnding = excelDateToString(r[0]);
@@ -1078,13 +1095,14 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       if (!projectId && projName) {
         const origName = String(r[4]).trim();
         const isNonProject = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        if (isNonProject) {
-          continue;
-        }
+        if (isNonProject) continue;
+
         const codeParts = origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
-        const pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `AUTO-${String(projMap.size + i).padStart(3, "0")}`;
+        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `A${projCounter++}`;
+        while (projCodes.has(pCode)) pCode = `A${projCounter++}`;
+        projCodes.add(pCode);
         const newProj = await storage.createProject({
-          projectCode: pCode, name: origName, client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -1096,7 +1114,6 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         });
         projectId = newProj.id;
         projMap.set(projName, projectId);
-        errors.push(`Row ${i + 1}: Auto-created project "${origName}"`);
       }
       if (!projectId) continue;
 
@@ -1109,7 +1126,7 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         costValue: toNum(r[3]),
         daysWorked: null,
         billable: String(r[16] || "").toLowerCase() !== "leave",
-        activityType: r[16] ? String(r[16]) : null,
+        activityType: r[16] ? String(r[16]).substring(0, 100) : null,
         source: "excel-import",
         status: "submitted",
         fyMonth: r[13] ? Number(r[13]) : null,
@@ -1128,6 +1145,18 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   let imported = 0;
   const errors: string[] = [];
 
+  const allProjects = await storage.getProjects();
+  const projMap = new Map<string, Project>();
+  const projCodes = new Set<string>();
+  for (const p of allProjects) {
+    projMap.set(p.name.toLowerCase(), p);
+    if (p.projectCode) {
+      projMap.set(p.projectCode.toLowerCase(), p);
+      projCodes.add(p.projectCode);
+    }
+  }
+  let projCounter = Date.now() % 100000;
+
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || !r[3]) continue;
@@ -1135,14 +1164,15 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       const projectDesc = String(r[3]).trim();
       const isNonProject = /^\d+$/.test(projectDesc) || /^Reason\s/i.test(projectDesc);
       if (isNonProject) continue;
-      const allProjects = await storage.getProjects();
-      let match = allProjects.find(p => p.name === projectDesc || p.projectCode === projectDesc || p.name.toLowerCase() === projectDesc.toLowerCase() || p.projectCode?.toLowerCase() === projectDesc.toLowerCase());
+
+      let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
         const codeParts = projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
-        const pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `AUTO-${String(allProjects.length + i).padStart(3, "0")}`;
-        const pName = projectDesc;
+        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `A${projCounter++}`;
+        while (projCodes.has(pCode)) pCode = `A${projCounter++}`;
+        projCodes.add(pCode);
         match = await storage.createProject({
-          projectCode: pCode, name: pName, client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
+          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : "Unknown",
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -1152,7 +1182,7 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
           opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
           gpAtCompletion: "0", forecastGmPercent: "0", description: null,
         });
-        errors.push(`Row ${i + 1}: Auto-created project "${projectDesc}"`);
+        projMap.set(projectDesc.toLowerCase(), match);
       }
 
       await storage.createKpi({
