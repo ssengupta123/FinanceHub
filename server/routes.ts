@@ -1090,10 +1090,10 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       const weekEnding = excelDateToString(r[0]);
       if (!weekEnding) continue;
 
-      const projName = r[4] ? String(r[4]).trim().toLowerCase() : "";
+      const projName = r[9] ? String(r[9]).trim().toLowerCase() : "";
       let projectId = projName ? projMap.get(projName) : null;
       if (!projectId && projName) {
-        const origName = String(r[4]).trim();
+        const origName = String(r[9]).trim();
         const isNonProject = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
         if (isNonProject) continue;
 

@@ -36,10 +36,19 @@ import {
   type InsertReferenceData,
 } from "@shared/schema";
 
-function toSnakeCase(obj: Record<string, any>): Record<string, any> {
+const EMPLOYEE_FIELD_MAP_TO_DB: Record<string, string> = {
+  grossCost: "gross_cost_rate",
+};
+const EMPLOYEE_FIELD_MAP_FROM_DB: Record<string, string> = {
+  gross_cost_rate: "grossCost",
+};
+
+function toSnakeCase(obj: Record<string, any>, table?: string): Record<string, any> {
+  const fieldMap = table === "employees" ? EMPLOYEE_FIELD_MAP_TO_DB : {};
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const snakeKey = key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+    const mappedKey = fieldMap[key];
+    const snakeKey = mappedKey || key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
     result[snakeKey] = value;
   }
   return result;
@@ -48,7 +57,8 @@ function toSnakeCase(obj: Record<string, any>): Record<string, any> {
 function toCamelCase(obj: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const mappedKey = EMPLOYEE_FIELD_MAP_FROM_DB[key];
+    const camelKey = mappedKey || key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     result[camelKey] = value === null ? null : value;
   }
   return result;
@@ -56,10 +66,6 @@ function toCamelCase(obj: Record<string, any>): Record<string, any> {
 
 function rowToModel<T>(row: Record<string, any>): T {
   const camel = toCamelCase(row);
-  if (camel.grossCostRate !== undefined) {
-    camel.grossCost = camel.grossCostRate;
-    delete camel.grossCostRate;
-  }
   for (const key of Object.keys(camel)) {
     const val = camel[key];
     if (val !== null && val !== undefined) {
@@ -79,14 +85,14 @@ function rowsToModels<T>(rows: Record<string, any>[]): T[] {
 }
 
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
-  const snakeData = toSnakeCase(data);
+  const snakeData = toSnakeCase(data, table);
   delete snakeData.id;
   const [row] = await db(table).insert(snakeData).returning("*");
   return rowToModel<T>(row);
 }
 
 async function updateReturning<T>(table: string, id: number, data: Record<string, any>): Promise<T | undefined> {
-  const snakeData = toSnakeCase(data);
+  const snakeData = toSnakeCase(data, table);
   delete snakeData.id;
   const [row] = await db(table).where("id", id).update(snakeData).returning("*");
   if (!row) return undefined;
