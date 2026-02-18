@@ -12,9 +12,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, FileUp, Trash2 } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, FileUp, Trash2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 const IMPORTABLE_SHEETS: Record<string, string> = {
   "Job Status": "Projects with monthly R/C/P breakdown",
@@ -49,8 +50,31 @@ export default function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<Record<string, ImportResult> | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<{ message: string; counts: Record<string, number> } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
+
+  async function handleDeleteAll() {
+    setDeleting(true);
+    try {
+      const res = await apiRequest("DELETE", "/api/data/all");
+      const data = await res.json();
+      setDeleteResult(data);
+      setShowDeleteConfirm(false);
+      toast({
+        title: "Data Deleted",
+        description: data.message,
+      });
+      queryClient.invalidateQueries();
+    } catch (err: any) {
+      toast({ title: "Delete Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -147,7 +171,81 @@ export default function UploadPage() {
           <h1 className="text-2xl font-bold" data-testid="text-upload-title">Data Upload</h1>
           <p className="text-muted-foreground text-sm">Upload the raw KPI Excel file to import data into the system</p>
         </div>
+        {isAdmin && (
+          <Button
+            variant="destructive"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={deleting}
+            data-testid="button-delete-all-data"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete All Data
+          </Button>
+        )}
       </div>
+
+      {showDeleteConfirm && (
+        <Card className="border-destructive">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="font-medium text-destructive">Are you sure you want to delete all data?</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This will permanently remove all imported data including projects, employees, timesheets, pipeline opportunities, CX ratings, resource costs, and all related records. User accounts will not be affected.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteAll}
+                    disabled={deleting}
+                    data-testid="button-confirm-delete"
+                  >
+                    {deleting ? "Deleting..." : "Yes, Delete Everything"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={deleting}
+                    data-testid="button-cancel-delete"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {deleteResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              Data Deleted Successfully
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">{deleteResult.message}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {Object.entries(deleteResult.counts)
+                .filter(([, count]) => count > 0)
+                .map(([table, count]) => (
+                  <div key={table} className="flex items-center justify-between gap-2 p-2 rounded-md border text-sm">
+                    <span className="truncate">{table.replace(/_/g, " ")}</span>
+                    <Badge variant="secondary">{count}</Badge>
+                  </div>
+                ))}
+            </div>
+            {Object.values(deleteResult.counts).every(c => c === 0) && (
+              <p className="text-sm text-muted-foreground">All tables were already empty.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
