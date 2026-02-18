@@ -40,6 +40,38 @@ export async function runMigrations() {
       });
       console.log("Created missing users table");
     }
+    const hasReferenceData = await db.schema.hasTable("reference_data");
+    if (!hasReferenceData) {
+      await db.schema.createTable("reference_data", (t) => {
+        t.increments("id").primary();
+        t.text("category").notNullable();
+        t.text("key").notNullable();
+        t.text("value").notNullable();
+        t.integer("display_order");
+        t.boolean("active").defaultTo(true);
+      });
+      console.log("Created missing reference_data table");
+    }
+    const hasConversations = await db.schema.hasTable("conversations");
+    if (!hasConversations) {
+      await db.schema.createTable("conversations", (t) => {
+        t.increments("id").primary();
+        t.text("title").notNullable();
+        t.timestamp("created_at").defaultTo(db.fn.now()).notNullable();
+      });
+      console.log("Created missing conversations table");
+    }
+    const hasMessages = await db.schema.hasTable("messages");
+    if (!hasMessages) {
+      await db.schema.createTable("messages", (t) => {
+        t.increments("id").primary();
+        t.integer("conversation_id").notNullable().references("id").inTable("conversations").onDelete("CASCADE");
+        t.text("role").notNullable();
+        t.text("content").notNullable();
+        t.timestamp("created_at").defaultTo(db.fn.now()).notNullable();
+      });
+      console.log("Created missing messages table");
+    }
     return;
   }
 
