@@ -224,9 +224,9 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={220} data-testid="chart-billing-pie">
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-billing-pie">
                 <RechartsPie>
-                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={65} innerRadius={35} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
+                  <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} innerRadius={35} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {billingPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
@@ -260,9 +260,9 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : (
-              <ResponsiveContainer width="100%" height={220} data-testid="chart-classification-pie">
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-classification-pie">
                 <RechartsPie>
-                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={65} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
+                  <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
                     {classificationPieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
