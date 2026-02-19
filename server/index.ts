@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -38,8 +39,14 @@ if (isProduction) {
   app.set("trust proxy", 1);
 }
 
+const PgStore = connectPgSimple(session);
+
 app.use(
   session({
+    store: new PgStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true,
+    }),
     secret: process.env.SESSION_SECRET || "financehub-dev-secret-key",
     resave: false,
     saveUninitialized: false,
