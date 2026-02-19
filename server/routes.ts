@@ -333,6 +333,166 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  app.post("/api/milestones/seed", async (req, res) => {
+    if (!(req.session as any)?.user || (req.session as any).user.role !== "admin") {
+      return res.status(403).json({ message: "Admin only" });
+    }
+    const existing = await storage.getMilestones();
+    if (existing.length > 0) {
+      return res.json({ message: "Milestones already exist", count: existing.length });
+    }
+    const projects = await storage.getProjects();
+    const projectLookup: Record<string, number> = {};
+    projects.forEach(p => { projectLookup[p.name] = p.id; });
+
+    function findProject(partial: string): number | null {
+      for (const name of Object.keys(projectLookup)) {
+        if (name.includes(partial)) return projectLookup[name];
+      }
+      return null;
+    }
+
+    const seedData: { projectPartial: string; milestones: { name: string; dueDate: string; status: string; amount: number; milestoneType: string; invoiceStatus: string | null }[] }[] = [
+      {
+        projectPartial: "AGD001 Case Management",
+        milestones: [
+          { name: "Phase 1 - Requirements & Design", dueDate: "2025-08-15", status: "completed", amount: 85000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Phase 1 Invoice - Design Deliverables", dueDate: "2025-08-31", status: "completed", amount: 85000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Phase 2 - Development Sprint 1-3", dueDate: "2025-11-30", status: "completed", amount: 120000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Phase 2 Invoice - Development", dueDate: "2025-12-15", status: "completed", amount: 120000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Phase 3 - UAT & Go-Live", dueDate: "2026-03-31", status: "pending", amount: 95000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Phase 3 Invoice - UAT & Go-Live", dueDate: "2026-04-15", status: "pending", amount: 95000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "DAF079-02",
+        milestones: [
+          { name: "Q3 FY25 Delivery Report", dueDate: "2025-09-30", status: "completed", amount: 45000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Q3 FY25 Invoice", dueDate: "2025-10-15", status: "completed", amount: 45000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Q4 FY25 Delivery Report", dueDate: "2025-12-31", status: "completed", amount: 45000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Q4 FY25 Invoice", dueDate: "2026-01-15", status: "completed", amount: 45000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Q1 FY26 Delivery Report", dueDate: "2026-03-31", status: "pending", amount: 48000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Q1 FY26 Invoice", dueDate: "2026-04-15", status: "pending", amount: 48000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "DAF079-03",
+        milestones: [
+          { name: "Strategic Roadmap Delivery", dueDate: "2025-10-31", status: "completed", amount: 65000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Strategic Roadmap Invoice", dueDate: "2025-11-15", status: "completed", amount: 65000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Quarterly Advisory Report - Q1", dueDate: "2026-03-31", status: "pending", amount: 32000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Quarterly Advisory Invoice - Q1", dueDate: "2026-04-15", status: "pending", amount: 32000, milestoneType: "payment", invoiceStatus: "sent" },
+        ],
+      },
+      {
+        projectPartial: "FWO001 Digital Transformation",
+        milestones: [
+          { name: "Discovery Phase Completion", dueDate: "2025-09-30", status: "completed", amount: 55000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Discovery Phase Invoice", dueDate: "2025-10-15", status: "completed", amount: 55000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "CPBC Draft Submission", dueDate: "2026-01-31", status: "completed", amount: 78000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "CPBC Draft Invoice", dueDate: "2026-02-15", status: "pending", amount: 78000, milestoneType: "payment", invoiceStatus: "sent" },
+          { name: "Final CPBC Delivery", dueDate: "2026-04-30", status: "pending", amount: 92000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Final CPBC Invoice", dueDate: "2026-05-15", status: "pending", amount: 92000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "EUS001 AFP Roadmap",
+        milestones: [
+          { name: "Current State Assessment", dueDate: "2025-11-30", status: "completed", amount: 38000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Current State Invoice", dueDate: "2025-12-15", status: "completed", amount: 38000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Target Architecture & Roadmap", dueDate: "2026-02-28", status: "overdue", amount: 52000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Target Architecture Invoice", dueDate: "2026-03-15", status: "pending", amount: 52000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "IND005 ServiceNow",
+        milestones: [
+          { name: "Sprint 1-2 Deliverables", dueDate: "2025-10-31", status: "completed", amount: 42000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Sprint 1-2 Invoice", dueDate: "2025-11-15", status: "completed", amount: 42000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Sprint 3-4 Deliverables", dueDate: "2026-01-31", status: "completed", amount: 42000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Sprint 3-4 Invoice", dueDate: "2026-02-15", status: "completed", amount: 42000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Sprint 5-6 & UAT", dueDate: "2026-03-31", status: "pending", amount: 46000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Sprint 5-6 Invoice", dueDate: "2026-04-15", status: "pending", amount: 46000, milestoneType: "payment", invoiceStatus: "draft" },
+          { name: "Go-Live & Hypercare", dueDate: "2026-05-31", status: "pending", amount: 35000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Go-Live Invoice", dueDate: "2026-06-15", status: "pending", amount: 35000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "DCC001-05",
+        milestones: [
+          { name: "Monthly Delivery - Oct 2025", dueDate: "2025-10-31", status: "completed", amount: 22000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Invoice - Oct 2025", dueDate: "2025-11-15", status: "completed", amount: 22000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Monthly Delivery - Nov 2025", dueDate: "2025-11-30", status: "completed", amount: 22000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Invoice - Nov 2025", dueDate: "2025-12-15", status: "completed", amount: 22000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Monthly Delivery - Dec 2025", dueDate: "2025-12-31", status: "completed", amount: 22000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Invoice - Dec 2025", dueDate: "2026-01-15", status: "completed", amount: 22000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Monthly Delivery - Jan 2026", dueDate: "2026-01-31", status: "completed", amount: 22000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Invoice - Jan 2026", dueDate: "2026-02-15", status: "completed", amount: 22000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Monthly Delivery - Feb 2026", dueDate: "2026-02-28", status: "pending", amount: 22000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Invoice - Feb 2026", dueDate: "2026-03-15", status: "pending", amount: 22000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "DHA002-01",
+        milestones: [
+          { name: "Module 1 - Claims Processing", dueDate: "2025-12-31", status: "completed", amount: 36000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Module 1 Invoice", dueDate: "2026-01-15", status: "completed", amount: 36000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Module 2 - Workflow Automation", dueDate: "2026-03-31", status: "pending", amount: 38000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Module 2 Invoice", dueDate: "2026-04-15", status: "pending", amount: 38000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "ISY010",
+        milestones: [
+          { name: "T3 Deliverable Pack", dueDate: "2026-02-28", status: "overdue", amount: 72000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "T3 Invoice", dueDate: "2026-03-15", status: "pending", amount: 72000, milestoneType: "payment", invoiceStatus: "draft" },
+        ],
+      },
+      {
+        projectPartial: "IND004 Portfolio",
+        milestones: [
+          { name: "Portfolio Framework Design", dueDate: "2025-11-30", status: "completed", amount: 28000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Framework Invoice", dueDate: "2025-12-15", status: "completed", amount: 28000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Implementation & Training", dueDate: "2026-03-31", status: "pending", amount: 34000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Implementation Invoice", dueDate: "2026-04-15", status: "pending", amount: 34000, milestoneType: "payment", invoiceStatus: "sent" },
+        ],
+      },
+      {
+        projectPartial: "SAU045-03",
+        milestones: [
+          { name: "Architecture Review Phase 1", dueDate: "2025-12-31", status: "completed", amount: 44000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Phase 1 Invoice", dueDate: "2026-01-15", status: "completed", amount: 44000, milestoneType: "payment", invoiceStatus: "paid" },
+          { name: "Architecture Review Phase 2", dueDate: "2026-03-31", status: "pending", amount: 44000, milestoneType: "delivery", invoiceStatus: null },
+          { name: "Phase 2 Invoice", dueDate: "2026-04-15", status: "pending", amount: 44000, milestoneType: "payment", invoiceStatus: "sent" },
+        ],
+      },
+    ];
+
+    let created = 0;
+    let skipped = 0;
+    for (const group of seedData) {
+      const projectId = findProject(group.projectPartial);
+      if (!projectId) {
+        skipped += group.milestones.length;
+        continue;
+      }
+      for (const ms of group.milestones) {
+        await storage.createMilestone({
+          projectId,
+          name: ms.name,
+          dueDate: ms.dueDate,
+          status: ms.status,
+          amount: String(ms.amount),
+          milestoneType: ms.milestoneType,
+          invoiceStatus: ms.invoiceStatus,
+        });
+        created++;
+      }
+    }
+
+    res.json({ message: "Milestones seeded", created, skipped });
+  });
+
   // ─── Data Sources ───
   app.get("/api/data-sources", async (_req, res) => {
     const data = await storage.getDataSources();
