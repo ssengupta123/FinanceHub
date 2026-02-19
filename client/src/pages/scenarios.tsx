@@ -87,7 +87,7 @@ export default function Scenarios() {
   const { data: scenarios, isLoading: loadingScenarios } = useQuery<Scenario[]>({ queryKey: ["/api/scenarios"] });
   const { data: refData } = useQuery<ReferenceData[]>({ queryKey: ["/api/reference-data"] });
 
-  const [selectedFY, setSelectedFY] = useState("25-26");
+  const [selectedFY, setSelectedFY] = useState("open_opps");
   const [winRates, setWinRates] = useState<Record<string, number>>({ ...DEFAULT_WIN_RATES });
   const [revenueGoal, setRevenueGoal] = useState(30000000);
   const [marginGoal, setMarginGoal] = useState(40);
@@ -112,11 +112,27 @@ export default function Scenarios() {
     },
   });
 
+  const getOppValue = (opp: PipelineOpportunity) => {
+    const v = parseFloat(opp.value || "0");
+    return isNaN(v) ? 0 : v;
+  };
+  const getOppMargin = (opp: PipelineOpportunity) => {
+    const m = parseFloat(opp.marginPercent || "0");
+    return isNaN(m) ? 0 : m;
+  };
+  const getOppGP = (opp: PipelineOpportunity) => getOppValue(opp) * getOppMargin(opp);
   const getMonthlyRevenue = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`revenueM${month}`] || "0");
   const getMonthlyGP = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`grossProfitM${month}`] || "0");
+  const hasMonthlyData = (opp: PipelineOpportunity) => {
+    for (let m = 1; m <= 12; m++) {
+      if (getMonthlyRevenue(opp, m) > 0) return true;
+    }
+    return false;
+  };
 
   const filteredPipeline = useMemo(() => {
     if (!pipeline) return [];
+    if (selectedFY === "open_opps") return pipeline.filter(o => o.fyYear === "open_opps");
     return pipeline.filter(o => o.fyYear === selectedFY);
   }, [pipeline, selectedFY]);
 
@@ -131,6 +147,8 @@ export default function Scenarios() {
     const classSet = new Set(filteredPipeline.map(o => o.classification));
     return CLASSIFICATIONS.filter(cls => classSet.has(cls));
   }, [filteredPipeline]);
+
+  const isOpenOpps = selectedFY === "open_opps";
 
   const scenarioResults = useMemo(() => {
     if (!pipeline) return null;
@@ -148,23 +166,38 @@ export default function Scenarios() {
       let rawGP = 0;
 
       for (const opp of opps) {
-        for (let m = 1; m <= 12; m++) {
-          const rev = getMonthlyRevenue(opp, m);
-          const gp = getMonthlyGP(opp, m);
-          monthlyRevenue[m - 1] += rev * rate;
-          monthlyGP[m - 1] += gp * rate;
-          clsRev += rev * rate;
-          clsGP += gp * rate;
-          rawRev += rev;
+        if (isOpenOpps || !hasMonthlyData(opp)) {
+          const val = getOppValue(opp);
+          const gp = getOppGP(opp);
+          rawRev += val;
           rawGP += gp;
+          clsRev += val * rate;
+          clsGP += gp * rate;
+          const perMonth = val / 12;
+          const gpPerMonth = gp / 12;
+          for (let m = 0; m < 12; m++) {
+            monthlyRevenue[m] += perMonth * rate;
+            monthlyGP[m] += gpPerMonth * rate;
+          }
+        } else {
+          for (let m = 1; m <= 12; m++) {
+            const rev = getMonthlyRevenue(opp, m);
+            const gp = getMonthlyGP(opp, m);
+            monthlyRevenue[m - 1] += rev * rate;
+            monthlyGP[m - 1] += gp * rate;
+            clsRev += rev * rate;
+            clsGP += gp * rate;
+            rawRev += rev;
+            rawGP += gp;
+          }
         }
       }
 
       classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length };
     }
 
-    const totalRev = monthlyRevenue.reduce((a, b) => a + b, 0);
-    const totalGP = monthlyGP.reduce((a, b) => a + b, 0);
+    const totalRev = Object.values(classBreakdown).reduce((s, b) => s + b.revenue, 0);
+    const totalGP = Object.values(classBreakdown).reduce((s, b) => s + b.gp, 0);
     const totalMargin = totalRev > 0 ? (totalGP / totalRev) * 100 : 0;
 
     const cumulativeRev: number[] = [];
@@ -187,7 +220,7 @@ export default function Scenarios() {
       meetsMarginGoal: totalMargin >= marginGoal,
       pipelineCount: filteredPipeline.length,
     };
-  }, [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal]);
+  }, [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps]);
 
   const isLoading = loadingPipeline || loadingScenarios;
 
@@ -212,7 +245,7 @@ export default function Scenarios() {
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
             Sales Pipeline Financial Forecast
-            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in FY ${selectedFY}`}
+            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${selectedFY === "open_opps" ? "Open Opps" : `FY ${selectedFY}`}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -224,7 +257,7 @@ export default function Scenarios() {
               </SelectTrigger>
               <SelectContent>
                 {availableFYs.map(fy => (
-                  <SelectItem key={fy} value={fy}>FY {fy}</SelectItem>
+                  <SelectItem key={fy} value={fy}>{fy === "open_opps" ? "Open Opps" : `FY ${fy}`}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -440,7 +473,7 @@ export default function Scenarios() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Monthly Forecast — FY {selectedFY} (Cumulative Weighted Revenue)</CardTitle>
+          <CardTitle className="text-base">Monthly Forecast — {selectedFY === "open_opps" ? "Open Opps" : `FY ${selectedFY}`} (Cumulative Weighted Revenue)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (

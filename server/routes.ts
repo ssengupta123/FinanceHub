@@ -671,6 +671,8 @@ export async function registerRoutes(
             results[sheetName] = await importProjectResourceCost(ws);
           } else if (sheetName === "Project Resource Cost A&F") {
             results[sheetName] = await importProjectResourceCostAF(ws);
+          } else if (sheetName === "query") {
+            results[sheetName] = await importOpenOpps(ws);
           } else {
             results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
           }
@@ -1560,6 +1562,98 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
       }
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+function excelDateToISOString(serial: any): string | null {
+  if (!serial || serial === "") return null;
+  const num = Number(serial);
+  if (isNaN(num)) {
+    if (typeof serial === "string" && serial.includes("-")) return serial;
+    return null;
+  }
+  const utcDays = Math.floor(num - 25569);
+  const date = new Date(utcDays * 86400000);
+  return date.toISOString().split("T")[0];
+}
+
+async function importOpenOpps(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  await db("pipeline_opportunities").where("fy_year", "open_opps").del();
+
+  const phaseToClassification: Record<string, string> = {
+    "1.A - Activity": "A",
+    "2.Q - Qualified": "Q",
+    "3.DF - Submitted": "DF",
+    "4.DVF - Shortlisted": "DVF",
+    "5.S - Selected": "S",
+  };
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+
+    const name = String(r[0]).trim();
+    const phase = String(r[1] || "").trim();
+    const itemType = String(r[21] || "").trim();
+
+    if (itemType !== "Folder") continue;
+    if (!phase || !phaseToClassification[phase]) continue;
+
+    try {
+      const classification = phaseToClassification[phase];
+      const rawValue = r[3];
+      const value = rawValue !== "" && rawValue != null && !isNaN(Number(rawValue)) ? String(Number(rawValue).toFixed(2)) : null;
+      const rawMargin = r[4];
+      const marginPercent = rawMargin !== "" && rawMargin != null && !isNaN(Number(rawMargin)) ? String(Number(rawMargin).toFixed(3)) : null;
+      const workType = r[5] ? String(r[5]).trim() : null;
+      const startDate = excelDateToISOString(r[6]);
+      const expiryDate = excelDateToISOString(r[7]);
+
+      let vat = r[8] ? String(r[8]).trim() : null;
+      if (vat) {
+        vat = vat.replace(/;#/g, "").replace(/\|.*$/, "").trim();
+        if (vat.toLowerCase() === "growth") vat = "GROWTH";
+      }
+
+      const status = r[9] ? String(r[9]).trim() : null;
+      const comment = r[10] ? String(r[10]).trim() : null;
+      const casLead = r[11] ? String(r[11]).trim() : null;
+      const csdLead = r[12] ? String(r[12]).replace(/;#\d+;#/g, "; ").replace(/;#/g, "; ").trim() : null;
+      const category = r[13] ? String(r[13]).replace(/;#/g, ", ").trim() : null;
+      const partner = r[14] ? String(r[14]).replace(/;#/g, ", ").trim() : null;
+      const clientContact = r[15] ? String(r[15]).trim() : null;
+      const clientCode = r[16] ? String(r[16]).trim() : null;
+      const dueDate = excelDateToISOString(r[2]);
+
+      await storage.createPipelineOpportunity({
+        name,
+        classification,
+        vat,
+        fyYear: "open_opps",
+        value,
+        marginPercent,
+        workType,
+        status,
+        dueDate,
+        startDate,
+        expiryDate,
+        comment,
+        casLead,
+        csdLead,
+        category,
+        partner,
+        clientContact,
+        clientCode,
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1} (${name}): ${err.message}`);
     }
   }
   return { imported, errors };
