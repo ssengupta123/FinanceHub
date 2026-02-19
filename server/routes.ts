@@ -495,7 +495,61 @@ export async function registerRoutes(
 
   // ─── Data Sources ───
   app.get("/api/data-sources", async (_req, res) => {
-    const data = await storage.getDataSources();
+    let data = await storage.getDataSources();
+    if (data.length === 0) {
+      const defaultSources = [
+        {
+          name: "Open Opps (SharePoint)",
+          type: "SharePoint API",
+          connectionInfo: JSON.stringify({
+            description: "SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads",
+            endpoint: "https://{tenant}.sharepoint.com/sites/{site}/_api/web/lists/getbytitle('Open Opps')/items",
+            authMethod: "Azure AD OAuth2 (Client Credentials)",
+            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+            sheetName: "query",
+            syncTarget: "pipeline_opportunities",
+            frequency: "Hourly",
+          }),
+          status: "configured",
+          recordsProcessed: 300,
+          syncFrequency: "hourly",
+        },
+        {
+          name: "iTimesheets",
+          type: "REST API",
+          connectionInfo: JSON.stringify({
+            description: "Employee timesheet entries — hours worked per project, leave, and internal operations",
+            endpoint: "https://api.itimesheets.com.au/v1/timesheets",
+            authMethod: "API Key",
+            requiredSecrets: ["ITIMESHEETS_API_KEY"],
+            syncTarget: "timesheets",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
+        {
+          name: "Employment Hero",
+          type: "REST API",
+          connectionInfo: JSON.stringify({
+            description: "Employee records — staff details, cost bands, schedules, and contact information",
+            endpoint: "https://api.employmenthero.com/api/v1/organisations/{org_id}/employees",
+            authMethod: "OAuth2 Bearer Token",
+            requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
+            syncTarget: "employees",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
+      ];
+      for (const src of defaultSources) {
+        await storage.createDataSource(src as any);
+      }
+      data = await storage.getDataSources();
+    }
     res.json(data);
   });
   app.post("/api/data-sources", async (req, res) => {
@@ -505,9 +559,119 @@ export async function registerRoutes(
     res.json(data);
   });
   app.patch("/api/data-sources/:id", async (req, res) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     const data = await storage.updateDataSource(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
+  });
+
+  app.post("/api/data-sources/:id/sync", async (req, res) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const id = Number(req.params.id);
+    const ds = await storage.getDataSource(id);
+    if (!ds) return res.status(404).json({ message: "Data source not found" });
+
+    await storage.updateDataSource(id, { status: "syncing", lastSyncAt: new Date().toISOString() });
+
+    try {
+      let result: { imported: number; errors: string[]; message: string };
+
+      const connInfo = ds.connectionInfo ? JSON.parse(ds.connectionInfo) : {};
+      const syncTarget = connInfo.syncTarget || "";
+
+      if (syncTarget === "pipeline_opportunities" || ds.name?.includes("SharePoint") || ds.name?.includes("Open Opps")) {
+        const { syncSharePointOpenOpps } = await import("./sharepoint-sync");
+        result = await syncSharePointOpenOpps();
+      } else {
+        await storage.updateDataSource(id, { status: "configured" });
+        return res.json({
+          message: `Sync for "${ds.name}" is not yet implemented. Configure the API connection first.`,
+          status: "configured",
+        });
+      }
+
+      await storage.updateDataSource(id, {
+        status: result.errors.length > 0 ? "error" : "active",
+        recordsProcessed: result.imported,
+        lastSyncAt: new Date().toISOString(),
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      await storage.updateDataSource(id, {
+        status: "error",
+        lastSyncAt: new Date().toISOString(),
+      });
+      res.status(500).json({ message: err.message, status: "error" });
+    }
+  });
+
+  app.post("/api/data-sources/seed", async (req, res) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const existing = await storage.getDataSources();
+    if (existing.length > 0) {
+      return res.json({ message: "Data sources already exist", count: existing.length });
+    }
+    const sources = [
+      {
+        name: "Open Opps (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads",
+          endpoint: "https://{tenant}.sharepoint.com/sites/{site}/_api/web/lists/getbytitle('Open Opps')/items",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          sheetName: "query",
+          syncTarget: "pipeline_opportunities",
+          frequency: "Hourly",
+        }),
+        status: "configured",
+        recordsProcessed: 300,
+        syncFrequency: "hourly",
+      },
+      {
+        name: "iTimesheets",
+        type: "REST API",
+        connectionInfo: JSON.stringify({
+          description: "Employee timesheet entries — hours worked per project, leave, and internal operations",
+          endpoint: "https://api.itimesheets.com.au/v1/timesheets",
+          authMethod: "API Key",
+          requiredSecrets: ["ITIMESHEETS_API_KEY"],
+          syncTarget: "timesheets",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Employment Hero",
+        type: "REST API",
+        connectionInfo: JSON.stringify({
+          description: "Employee records — staff details, cost bands, schedules, and contact information",
+          endpoint: "https://api.employmenthero.com/api/v1/organisations/{org_id}/employees",
+          authMethod: "OAuth2 Bearer Token",
+          requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
+          syncTarget: "employees",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+    ];
+    const created = [];
+    for (const src of sources) {
+      const ds = await storage.createDataSource(src as any);
+      created.push(ds);
+    }
+    res.json({ message: "Data sources created", count: created.length, sources: created });
   });
 
   // ─── Onboarding Steps ───
