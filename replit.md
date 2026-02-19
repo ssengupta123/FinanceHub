@@ -4,6 +4,11 @@
 FinanceHub is a production-grade financial and project management application designed to consolidate data from various sources (manual and automated). Its primary purpose is to track project burn rates, resource utilization, financial forecasts, customer experience ratings, and resource costs with robust workflows. The application is tailored to match Excel data structures, including pipeline classifications, VAT categories, billing types, and the Australian Financial Year format (Jul-Jun). It is engineered for deployment on Azure, aiming to provide a comprehensive solution for financial oversight and project management.
 
 ## Recent Changes
+- **Feb 2026:** Added Open Opps pipeline import:
+  - New **Open Opps** Excel import (`importOpenOpps`) reads SharePoint-exported pipeline file with "query" sheet. Imports Folder-type rows with Phase set (A/Q/DF/DVF/S), parsing value, margin, work type, RAG status, dates, leads, categories, partners, and client codes. 300 opportunities imported with $136.7M total pipeline value.
+  - Extended `pipeline_opportunities` table with 14 new columns: value, margin_percent, work_type, status, due_date, start_date, expiry_date, comment, cas_lead, csd_lead, category, partner, client_contact, client_code.
+  - Rewrote Sales Pipeline page to display Open Opps data with search, multi-filter (phase/VAT/work type/status), sortable columns, column visibility toggles, phase/VAT summary tables, and FY selector.
+  - Updated What-If Scenarios page to support value-based (non-monthly) pipeline data — defaults to "Open Opps" view, distributes total value evenly across 12 months for forecast view.
 - **Feb 2026:** Added three new Excel import sheets:
   - **CX Master List** — Imports customer experience (CX) ratings into `cx_ratings` table. Cross-references engagement names to existing projects (via project code prefix and name substring matching) and resource names to existing employees (by full name). Captures checkpoint dates, CX ratings (1-10), CM/DM flags, and rationale text.
   - **Project Resource Cost** — Imports monthly employee costs (total) into `resource_costs` table. Maps employee names to existing employee records. Stores 12 monthly cost columns (Jul-Jun Australian FY) plus calculated totals. Tracks staff type classification.
@@ -55,7 +60,7 @@ The application is built with a React + Vite frontend using Tailwind CSS and sha
 ## Excel Import System
 The upload page (`/upload`) supports importing data from a multi-sheet Excel workbook. Sheets are imported in a defined order (Job Status and Staff SOT first, then others) to ensure foreign key references resolve correctly.
 
-**Supported Sheets (10 total):**
+**Supported Sheets (11 total):**
 | Sheet Name | Import Function | Description |
 |------------|----------------|-------------|
 | Job Status | `importJobStatus` | Projects with monthly R/C/P breakdown |
@@ -68,6 +73,7 @@ The upload page (`/upload`) supports importing data from a multi-sheet Excel wor
 | CX Master List | `importCxMasterList` | CX ratings with project/employee cross-referencing |
 | Project Resource Cost | `importProjectResourceCost` | Monthly resource costs per employee (total) |
 | Project Resource Cost A&F | `importProjectResourceCostAF` | Monthly costs split by Phase C and Phase DVF |
+| Open Opps (query sheet) | `importOpenOpps` | SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads |
 
 **Cross-Referencing Logic:**
 - CX Master List matches engagement names to projects via project code prefix regex (`/^[A-Z]{2,6}\d{2,4}/`) and fallback name substring matching

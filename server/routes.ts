@@ -104,6 +104,37 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  app.get("/api/rate-cards/derived", async (_req, res) => {
+    try {
+      const result = await db.raw(`
+        SELECT
+          COALESCE(NULLIF(e.role, ''), 'Unassigned') as role,
+          COALESCE(NULLIF(e.grade, ''), '') as grade,
+          COALESCE(NULLIF(e.location, ''), '') as location,
+          COALESCE(NULLIF(e.cost_band_level, ''), '') as cost_band,
+          COUNT(DISTINCT e.id) as employee_count,
+          ROUND(SUM(CAST(t.hours_worked AS NUMERIC)), 0) as total_hours,
+          CASE WHEN SUM(CAST(t.hours_worked AS NUMERIC)) > 0
+            THEN ROUND(SUM(CAST(t.cost_value AS NUMERIC)) / SUM(CAST(t.hours_worked AS NUMERIC)), 2)
+            ELSE 0 END as avg_cost_rate,
+          CASE WHEN SUM(CAST(t.hours_worked AS NUMERIC)) > 0
+            THEN ROUND(SUM(CAST(t.sale_value AS NUMERIC)) / SUM(CAST(t.hours_worked AS NUMERIC)), 2)
+            ELSE 0 END as avg_sell_rate,
+          CASE WHEN SUM(CAST(t.sale_value AS NUMERIC)) > 0
+            THEN ROUND((SUM(CAST(t.sale_value AS NUMERIC)) - SUM(CAST(t.cost_value AS NUMERIC))) / SUM(CAST(t.sale_value AS NUMERIC)) * 100, 1)
+            ELSE 0 END as margin_pct
+        FROM employees e
+        JOIN timesheets t ON t.employee_id = e.id
+        WHERE CAST(t.hours_worked AS NUMERIC) > 0
+        GROUP BY e.role, e.grade, e.location, e.cost_band_level
+        ORDER BY avg_sell_rate DESC
+      `);
+      res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ─── Resource Plans ───
   app.get("/api/resource-plans", async (req, res) => {
     if (req.query.projectId) {
@@ -180,6 +211,69 @@ export async function registerRoutes(
   app.delete("/api/costs/:id", async (req, res) => {
     await storage.deleteCost(Number(req.params.id));
     res.json({ success: true });
+  });
+
+  app.get("/api/costs/summary", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.project_id")
+        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
+        .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .count({ entry_count: "*" })
+        .leftJoin("projects", "timesheets.project_id", "projects.id")
+        .groupBy("timesheets.project_id", db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`), "projects.name")
+        .orderBy([{ column: "month", order: "desc" }, { column: "total_cost", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/resource-allocations", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.employee_id", "timesheets.project_id")
+        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
+        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .count({ entry_count: "*" })
+        .leftJoin("projects", "timesheets.project_id", "projects.id")
+        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .groupBy("timesheets.employee_id", "timesheets.project_id",
+          db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`),
+          "projects.name", "employees.first_name", "employees.last_name")
+        .orderBy([{ column: "month", order: "desc" }, { column: "total_hours", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/utilization/weekly", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.employee_id")
+        .select(db.raw(`timesheets.week_ending`))
+        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .select(db.raw(`COALESCE(employees.role, '') as employee_role`))
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .sum({ billable_hours: db.raw("CASE WHEN timesheets.billable = true THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END") })
+        .sum({ cost_value: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ sale_value: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .groupBy("timesheets.employee_id", "timesheets.week_ending",
+          "employees.first_name", "employees.last_name", "employees.role")
+        .orderBy([{ column: "week_ending", order: "desc" }, { column: "total_hours", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // ─── KPIs ───
@@ -577,6 +671,8 @@ export async function registerRoutes(
             results[sheetName] = await importProjectResourceCost(ws);
           } else if (sheetName === "Project Resource Cost A&F") {
             results[sheetName] = await importProjectResourceCostAF(ws);
+          } else if (sheetName === "query") {
+            results[sheetName] = await importOpenOpps(ws);
           } else {
             results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
           }
@@ -1466,6 +1562,98 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
       }
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { imported, errors };
+}
+
+function excelDateToISOString(serial: any): string | null {
+  if (!serial || serial === "") return null;
+  const num = Number(serial);
+  if (isNaN(num)) {
+    if (typeof serial === "string" && serial.includes("-")) return serial;
+    return null;
+  }
+  const utcDays = Math.floor(num - 25569);
+  const date = new Date(utcDays * 86400000);
+  return date.toISOString().split("T")[0];
+}
+
+async function importOpenOpps(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  await db("pipeline_opportunities").where("fy_year", "open_opps").del();
+
+  const phaseToClassification: Record<string, string> = {
+    "1.A - Activity": "A",
+    "2.Q - Qualified": "Q",
+    "3.DF - Submitted": "DF",
+    "4.DVF - Shortlisted": "DVF",
+    "5.S - Selected": "S",
+  };
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+
+    const name = String(r[0]).trim();
+    const phase = String(r[1] || "").trim();
+    const itemType = String(r[21] || "").trim();
+
+    if (itemType !== "Folder") continue;
+    if (!phase || !phaseToClassification[phase]) continue;
+
+    try {
+      const classification = phaseToClassification[phase];
+      const rawValue = r[3];
+      const value = rawValue !== "" && rawValue != null && !isNaN(Number(rawValue)) ? String(Number(rawValue).toFixed(2)) : null;
+      const rawMargin = r[4];
+      const marginPercent = rawMargin !== "" && rawMargin != null && !isNaN(Number(rawMargin)) ? String(Number(rawMargin).toFixed(3)) : null;
+      const workType = r[5] ? String(r[5]).trim() : null;
+      const startDate = excelDateToISOString(r[6]);
+      const expiryDate = excelDateToISOString(r[7]);
+
+      let vat = r[8] ? String(r[8]).trim() : null;
+      if (vat) {
+        vat = vat.replace(/;#/g, "").replace(/\|.*$/, "").trim();
+        if (vat.toLowerCase() === "growth") vat = "GROWTH";
+      }
+
+      const status = r[9] ? String(r[9]).trim() : null;
+      const comment = r[10] ? String(r[10]).trim() : null;
+      const casLead = r[11] ? String(r[11]).trim() : null;
+      const csdLead = r[12] ? String(r[12]).replace(/;#\d+;#/g, "; ").replace(/;#/g, "; ").trim() : null;
+      const category = r[13] ? String(r[13]).replace(/;#/g, ", ").trim() : null;
+      const partner = r[14] ? String(r[14]).replace(/;#/g, ", ").trim() : null;
+      const clientContact = r[15] ? String(r[15]).trim() : null;
+      const clientCode = r[16] ? String(r[16]).trim() : null;
+      const dueDate = excelDateToISOString(r[2]);
+
+      await storage.createPipelineOpportunity({
+        name,
+        classification,
+        vat,
+        fyYear: "open_opps",
+        value,
+        marginPercent,
+        workType,
+        status,
+        dueDate,
+        startDate,
+        expiryDate,
+        comment,
+        casLead,
+        csdLead,
+        category,
+        partner,
+        clientContact,
+        clientCode,
+      });
+      imported++;
+    } catch (err: any) {
+      errors.push(`Row ${i + 1} (${name}): ${err.message}`);
     }
   }
   return { imported, errors };

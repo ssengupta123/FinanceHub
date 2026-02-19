@@ -67,7 +67,7 @@ export default function Milestones() {
     const map = new Map<number, { totalHours: number; count: number }>();
     (timesheets || []).forEach(ts => {
       const existing = map.get(ts.projectId) || { totalHours: 0, count: 0 };
-      existing.totalHours += parseNum(ts.hours);
+      existing.totalHours += parseNum(ts.hoursWorked);
       existing.count += 1;
       map.set(ts.projectId, existing);
     });
@@ -77,13 +77,13 @@ export default function Milestones() {
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
     if (activeTab === "all") return milestones;
-    return milestones.filter(m => (m as any).milestoneType === activeTab);
+    return milestones.filter(m => m.milestoneType === activeTab);
   }, [milestones, activeTab]);
 
   const milestoneSummary = useMemo(() => {
     if (!milestones) return { paymentCount: 0, deliveryCount: 0, paymentTotal: 0, deliveryTotal: 0, pendingCount: 0, overdueCount: 0 };
-    const payment = milestones.filter(m => (m as any).milestoneType === "payment");
-    const delivery = milestones.filter(m => (m as any).milestoneType === "delivery");
+    const payment = milestones.filter(m => m.milestoneType === "payment");
+    const delivery = milestones.filter(m => m.milestoneType === "delivery");
     return {
       paymentCount: payment.length,
       deliveryCount: delivery.length,
@@ -327,8 +327,8 @@ export default function Milestones() {
                 filteredMilestones.map(ms => {
                   const proj = projectMap.get(ms.projectId);
                   const tsData = timesheetsByProject.get(ms.projectId);
-                  const msType = (ms as any).milestoneType || "payment";
-                  const invStatus = (ms as any).invoiceStatus || "draft";
+                  const msType = ms.milestoneType || "payment";
+                  const invStatus = ms.invoiceStatus || "draft";
                   return (
                     <TableRow key={ms.id} data-testid={`row-milestone-${ms.id}`}>
                       <TableCell>{proj?.name || `Project #${ms.projectId}`}</TableCell>

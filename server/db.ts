@@ -411,5 +411,26 @@ export async function runIncrementalMigrations() {
     console.log("Created resource_costs table");
   }
 
+  const hasPipelineValue = await db.schema.hasColumn("pipeline_opportunities", "value");
+  if (!hasPipelineValue) {
+    await db.schema.alterTable("pipeline_opportunities", (t) => {
+      t.decimal("value", 14, 2);
+      t.decimal("margin_percent", 5, 3);
+      t.text("work_type");
+      t.text("status");
+      t.text("due_date");
+      t.text("start_date");
+      t.text("expiry_date");
+      t.text("comment");
+      t.text("cas_lead");
+      t.text("csd_lead");
+      t.text("category");
+      t.text("partner");
+      t.text("client_contact");
+      t.text("client_code");
+    });
+    console.log("Added new pipeline_opportunities columns");
+  }
+
   console.log("Incremental migrations completed");
 }

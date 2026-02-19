@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -23,37 +24,51 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { GitBranch, Filter, Settings2, AlertTriangle } from "lucide-react";
+import { GitBranch, Filter, Settings2, AlertTriangle, Search, ArrowUpDown } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { PipelineOpportunity } from "@shared/schema";
 
-const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-
-type PipelineColumnKey = "name" | "classification" | "vat" | "billingType" | "gmDollar" | "gmPercent" | "m1" | "m2" | "m3" | "m4" | "m5" | "m6" | "m7" | "m8" | "m9" | "m10" | "m11" | "m12" | "fyTotal";
+type PipelineColumnKey = "name" | "classification" | "vat" | "workType" | "value" | "margin" | "status" | "dueDate" | "casLead" | "csdLead" | "category" | "partner" | "clientCode" | "weightedValue";
 
 const ALL_PIPELINE_COLUMNS: { key: PipelineColumnKey; label: string }[] = [
   { key: "name", label: "Opportunity" },
-  { key: "classification", label: "Status" },
+  { key: "classification", label: "Phase" },
   { key: "vat", label: "VAT" },
-  { key: "billingType", label: "Billing Type" },
-  { key: "gmDollar", label: "GM $" },
-  { key: "gmPercent", label: "GM %" },
-  ...FY_MONTHS.map((m, i) => ({ key: `m${i + 1}` as PipelineColumnKey, label: m })),
-  { key: "fyTotal", label: "FY Total" },
+  { key: "workType", label: "Work Type" },
+  { key: "value", label: "Value ($)" },
+  { key: "margin", label: "Margin %" },
+  { key: "weightedValue", label: "Weighted $" },
+  { key: "status", label: "RAG Status" },
+  { key: "dueDate", label: "Due Date" },
+  { key: "casLead", label: "CAS Lead" },
+  { key: "csdLead", label: "CSD Lead" },
+  { key: "category", label: "Category" },
+  { key: "partner", label: "Partner" },
+  { key: "clientCode", label: "Client" },
 ];
 
 const CLASSIFICATIONS = [
-  { value: "all", label: "All Classifications" },
-  { value: "C", label: "Contracted" },
-  { value: "S", label: "Selected" },
+  { value: "all", label: "All Phases" },
+  { value: "S", label: "Selected (S)" },
   { value: "DVF", label: "Shortlisted (DVF)" },
   { value: "DF", label: "Submitted (DF)" },
-  { value: "Q", label: "Qualified" },
-  { value: "A", label: "Activity" },
+  { value: "Q", label: "Qualified (Q)" },
+  { value: "A", label: "Activity (A)" },
 ];
 
 const WIN_RATES: Record<string, number> = { C: 1.0, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
+
+const STATUS_COLORS: Record<string, string> = {
+  Good: "bg-green-500",
+  Fair: "bg-amber-500",
+  Risk: "bg-red-500",
+};
 
 function formatCurrency(val: number) {
   if (Math.abs(val) >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
@@ -64,39 +79,42 @@ function formatCurrency(val: number) {
 function classificationColor(c: string): "default" | "secondary" | "outline" | "destructive" {
   switch (c) {
     case "C": return "default";
-    case "S": return "secondary";
-    case "DVF": case "DF": return "outline";
+    case "S": return "default";
+    case "DVF": return "secondary";
+    case "DF": return "outline";
     case "Q": case "A": return "secondary";
     default: return "outline";
   }
 }
 
-function getMonthlyRevenue(opp: PipelineOpportunity, month: number) {
-  return parseFloat((opp as any)[`revenueM${month}`] || "0");
+function getOppValue(opp: PipelineOpportunity): number {
+  const v = parseFloat(opp.value || "0");
+  return isNaN(v) ? 0 : v;
 }
 
-function getMonthlyGP(opp: PipelineOpportunity, month: number) {
-  return parseFloat((opp as any)[`grossProfitM${month}`] || "0");
+function getOppMargin(opp: PipelineOpportunity): number {
+  const m = parseFloat(opp.marginPercent || "0");
+  return isNaN(m) ? 0 : m;
 }
 
-function getTotalRevenue(opp: PipelineOpportunity) {
-  let t = 0;
-  for (let i = 1; i <= 12; i++) t += getMonthlyRevenue(opp, i);
-  return t;
+function getOppGP(opp: PipelineOpportunity): number {
+  return getOppValue(opp) * getOppMargin(opp);
 }
 
-function getTotalGP(opp: PipelineOpportunity) {
-  let t = 0;
-  for (let i = 1; i <= 12; i++) t += getMonthlyGP(opp, i);
-  return t;
-}
+type SortField = "name" | "value" | "margin" | "classification" | "status" | "dueDate";
+type SortDir = "asc" | "desc";
+
+const defaultVisible = new Set<PipelineColumnKey>(["name", "classification", "vat", "workType", "value", "margin", "weightedValue", "status", "dueDate", "casLead", "clientCode"]);
 
 export default function Pipeline() {
   const [classFilter, setClassFilter] = useState("all");
   const [vatFilter, setVatFilter] = useState("all");
-  const [visibleColumns, setVisibleColumns] = useState<Set<PipelineColumnKey>>(
-    new Set(ALL_PIPELINE_COLUMNS.map(c => c.key))
-  );
+  const [workTypeFilter, setWorkTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortField, setSortField] = useState<SortField>("value");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [visibleColumns, setVisibleColumns] = useState<Set<PipelineColumnKey>>(new Set(defaultVisible));
 
   const toggleColumn = (key: PipelineColumnKey) => {
     setVisibleColumns(prev => {
@@ -110,78 +128,155 @@ export default function Pipeline() {
   const isCol = (key: PipelineColumnKey) => visibleColumns.has(key);
   const { data: pipeline, isLoading } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
 
-  const vatCategories = useMemo(() => {
-    if (!pipeline) return [];
-    const cats = [...new Set(pipeline.map(o => o.vat).filter(Boolean))];
-    return cats.sort();
+  const [selectedFY, setSelectedFY] = useState("open_opps");
+
+  const availableFYs = useMemo(() => {
+    if (!pipeline) return ["open_opps"];
+    const fys = Array.from(new Set(pipeline.map(o => o.fyYear).filter((v): v is string => !!v)));
+    return fys.sort((a, b) => {
+      if (a === "open_opps") return -1;
+      if (b === "open_opps") return 1;
+      return a.localeCompare(b);
+    });
   }, [pipeline]);
 
+  const openOpps = useMemo(() => (pipeline || []).filter(o => o.fyYear === selectedFY), [pipeline, selectedFY]);
+
+  const vatCategories = useMemo(() => {
+    const cats = Array.from(new Set(openOpps.map(o => o.vat).filter((v): v is string => !!v)));
+    return cats.sort();
+  }, [openOpps]);
+
+  const workTypes = useMemo(() => {
+    const wt = Array.from(new Set(openOpps.map(o => o.workType).filter((v): v is string => !!v)));
+    return wt.sort();
+  }, [openOpps]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  };
+
   const filtered = useMemo(() => {
-    let result = pipeline || [];
+    let result = openOpps;
     if (classFilter !== "all") result = result.filter(o => o.classification === classFilter);
     if (vatFilter !== "all") result = result.filter(o => o.vat === vatFilter);
-    return result;
-  }, [pipeline, classFilter, vatFilter]);
+    if (workTypeFilter !== "all") result = result.filter(o => o.workType === workTypeFilter);
+    if (statusFilter !== "all") {
+      if (statusFilter === "unset") {
+        result = result.filter(o => !o.status);
+      } else {
+        result = result.filter(o => o.status === statusFilter);
+      }
+    }
+    if (searchTerm) {
+      const lc = searchTerm.toLowerCase();
+      result = result.filter(o =>
+        o.name.toLowerCase().includes(lc) ||
+        (o.casLead || "").toLowerCase().includes(lc) ||
+        (o.clientCode || "").toLowerCase().includes(lc) ||
+        (o.partner || "").toLowerCase().includes(lc)
+      );
+    }
 
-  const classOrder = ["C", "S", "DVF", "DF", "Q", "A"];
+    const classOrder = ["S", "DVF", "DF", "Q", "A"];
+    result = [...result].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "value": cmp = getOppValue(a) - getOppValue(b); break;
+        case "margin": cmp = getOppMargin(a) - getOppMargin(b); break;
+        case "name": cmp = a.name.localeCompare(b.name); break;
+        case "classification": cmp = classOrder.indexOf(a.classification) - classOrder.indexOf(b.classification); break;
+        case "status": cmp = (a.status || "").localeCompare(b.status || ""); break;
+        case "dueDate": cmp = (a.dueDate || "").localeCompare(b.dueDate || ""); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [openOpps, classFilter, vatFilter, workTypeFilter, statusFilter, searchTerm, sortField, sortDir]);
+
+  const classOrder = ["S", "DVF", "DF", "Q", "A"];
   const summaryByClass = useMemo(() => classOrder.map(cls => {
-    const opps = (pipeline || []).filter(o => o.classification === cls);
-    const rev = opps.reduce((s, o) => s + getTotalRevenue(o), 0);
-    const gp = opps.reduce((s, o) => s + getTotalGP(o), 0);
-    const weightedRev = rev * (WIN_RATES[cls] || 0);
-    const weightedGP = gp * (WIN_RATES[cls] || 0);
-    return { classification: cls, count: opps.length, revenue: rev, grossProfit: gp, margin: rev > 0 ? gp / rev : 0, weightedRev, weightedGP };
-  }), [pipeline]);
+    const opps = openOpps.filter(o => o.classification === cls);
+    const totalValue = opps.reduce((s, o) => s + getOppValue(o), 0);
+    const totalGP = opps.reduce((s, o) => s + getOppGP(o), 0);
+    const winRate = WIN_RATES[cls] || 0;
+    return {
+      classification: cls,
+      label: CLASSIFICATIONS.find(c => c.value === cls)?.label || cls,
+      count: opps.length,
+      totalValue,
+      totalGP,
+      margin: totalValue > 0 ? totalGP / totalValue : 0,
+      winRate,
+      weightedValue: totalValue * winRate,
+      weightedGP: totalGP * winRate,
+    };
+  }), [openOpps]);
 
   const summaryByVat = useMemo(() => {
-    if (!pipeline) return [];
-    const vatMap = new Map<string, { revenue: number; gp: number; count: number; weightedRev: number }>();
-    pipeline.forEach(opp => {
+    const vatMap = new Map<string, { value: number; gp: number; count: number; weightedValue: number }>();
+    openOpps.forEach(opp => {
       const vat = opp.vat || "Other";
-      const existing = vatMap.get(vat) || { revenue: 0, gp: 0, count: 0, weightedRev: 0 };
-      const rev = getTotalRevenue(opp);
-      const gp = getTotalGP(opp);
-      existing.revenue += rev;
+      const existing = vatMap.get(vat) || { value: 0, gp: 0, count: 0, weightedValue: 0 };
+      const val = getOppValue(opp);
+      const gp = getOppGP(opp);
+      existing.value += val;
       existing.gp += gp;
       existing.count += 1;
-      existing.weightedRev += rev * (WIN_RATES[opp.classification] || 0);
+      existing.weightedValue += val * (WIN_RATES[opp.classification] || 0);
       vatMap.set(vat, existing);
     });
     return Array.from(vatMap.entries()).map(([vat, d]) => ({
-      vat, ...d, margin: d.revenue > 0 ? d.gp / d.revenue : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
-  }, [pipeline]);
+      vat, ...d, margin: d.value > 0 ? d.gp / d.value : 0,
+    })).sort((a, b) => b.value - a.value);
+  }, [openOpps]);
 
-  const riskStatusTable = useMemo(() => {
-    if (!pipeline) return [];
-    return classOrder.map(cls => {
-      const opps = (pipeline || []).filter(o => o.classification === cls);
-      const rev = opps.reduce((s, o) => s + getTotalRevenue(o), 0);
-      const gp = opps.reduce((s, o) => s + getTotalGP(o), 0);
-      const winRate = WIN_RATES[cls] || 0;
-      return {
-        classification: cls,
-        label: CLASSIFICATIONS.find(c => c.value === cls)?.label || cls,
-        winRate,
-        count: opps.length,
-        rawRevenue: rev,
-        weightedRevenue: rev * winRate,
-        rawGP: gp,
-        weightedGP: gp * winRate,
-        margin: rev > 0 ? gp / rev : 0,
-      };
+  const statusSummary = useMemo(() => {
+    const map = new Map<string, number>();
+    openOpps.forEach(o => {
+      const s = o.status || "Unset";
+      map.set(s, (map.get(s) || 0) + 1);
     });
-  }, [pipeline]);
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [openOpps]);
 
-  const totalPipelineRev = summaryByClass.reduce((s, c) => s + c.revenue, 0);
-  const totalWeightedRev = summaryByClass.reduce((s, c) => s + c.weightedRev, 0);
-  const totalGP = summaryByClass.reduce((s, c) => s + c.grossProfit, 0);
+  const totalValue = summaryByClass.reduce((s, c) => s + c.totalValue, 0);
+  const totalWeightedValue = summaryByClass.reduce((s, c) => s + c.weightedValue, 0);
+  const totalGP = summaryByClass.reduce((s, c) => s + c.totalGP, 0);
+  const totalWeightedGP = summaryByClass.reduce((s, c) => s + c.weightedGP, 0);
+
+  const SortButton = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+    <button onClick={() => toggleSort(field)} className="inline-flex items-center gap-1 hover:text-foreground transition-colors" data-testid={`sort-${field}`}>
+      {children}
+      <ArrowUpDown className="h-3 w-3" />
+    </button>
+  );
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold" data-testid="text-pipeline-title">Sales Pipeline</h1>
-        <p className="text-sm text-muted-foreground">FY 25-26 Pipeline opportunities by classification and VAT</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold" data-testid="text-pipeline-title">Sales Pipeline</h1>
+          <p className="text-sm text-muted-foreground">{selectedFY === "open_opps" ? "Open Opportunities" : `FY ${selectedFY}`} — {openOpps.length} pipeline items</p>
+        </div>
+        {availableFYs.length > 1 && (
+          <Select value={selectedFY} onValueChange={setSelectedFY}>
+            <SelectTrigger className="w-[150px]" data-testid="select-pipeline-fy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableFYs.map(fy => (
+                <SelectItem key={fy} value={fy}>{fy === "open_opps" ? "Open Opps" : `FY ${fy}`}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -191,8 +286,8 @@ export default function Pipeline() {
             <GitBranch className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-pipeline">{formatCurrency(totalPipelineRev)}</div>
-            <p className="text-xs text-muted-foreground">{pipeline?.length || 0} opportunities</p>
+            <div className="text-2xl font-bold" data-testid="text-total-pipeline">{formatCurrency(totalValue)}</div>
+            <p className="text-xs text-muted-foreground">{openOpps.length} opportunities</p>
           </CardContent>
         </Card>
         <Card>
@@ -200,7 +295,7 @@ export default function Pipeline() {
             <CardTitle className="text-sm font-medium">Weighted Pipeline</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-weighted-pipeline">{formatCurrency(totalWeightedRev)}</div>
+            <div className="text-2xl font-bold" data-testid="text-weighted-pipeline">{formatCurrency(totalWeightedValue)}</div>
             <p className="text-xs text-muted-foreground">Risk-adjusted value</p>
           </CardContent>
         </Card>
@@ -215,18 +310,25 @@ export default function Pipeline() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg GM %</CardTitle>
+            <CardTitle className="text-sm font-medium">RAG Status</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-avg-gm-pct">{totalPipelineRev > 0 ? ((totalGP / totalPipelineRev) * 100).toFixed(1) : "0"}%</div>
-            <p className="text-xs text-muted-foreground">Gross margin percentage</p>
+            <div className="flex items-center gap-3" data-testid="text-rag-summary">
+              {statusSummary.map(([status, count]) => (
+                <div key={status} className="flex items-center gap-1.5">
+                  <span className={`inline-block w-2.5 h-2.5 rounded-full ${STATUS_COLORS[status] || "bg-muted-foreground"}`} />
+                  <span className="text-sm font-medium">{count}</span>
+                  <span className="text-xs text-muted-foreground">{status}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-          <CardTitle className="text-base">Risk Status Aggregation</CardTitle>
+          <CardTitle className="text-base">Pipeline by Phase</CardTitle>
           <AlertTriangle className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
@@ -234,18 +336,18 @@ export default function Pipeline() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Classification</TableHead>
+                  <TableHead>Phase</TableHead>
                   <TableHead className="text-right">Win Rate</TableHead>
                   <TableHead className="text-right">Count</TableHead>
-                  <TableHead className="text-right">Raw Revenue</TableHead>
-                  <TableHead className="text-right">Weighted Revenue</TableHead>
+                  <TableHead className="text-right">Raw Value</TableHead>
+                  <TableHead className="text-right">Weighted Value</TableHead>
                   <TableHead className="text-right">Raw GM $</TableHead>
                   <TableHead className="text-right">Weighted GM $</TableHead>
-                  <TableHead className="text-right">GM %</TableHead>
+                  <TableHead className="text-right">Avg Margin</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {riskStatusTable.map(row => (
+                {summaryByClass.map(row => (
                   <TableRow key={row.classification} data-testid={`row-risk-${row.classification}`}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -255,9 +357,9 @@ export default function Pipeline() {
                     </TableCell>
                     <TableCell className="text-right">{(row.winRate * 100).toFixed(0)}%</TableCell>
                     <TableCell className="text-right">{row.count}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.rawRevenue)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(row.weightedRevenue)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.rawGP)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(row.totalValue)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(row.weightedValue)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(row.totalGP)}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(row.weightedGP)}</TableCell>
                     <TableCell className="text-right">{(row.margin * 100).toFixed(1)}%</TableCell>
                   </TableRow>
@@ -265,12 +367,12 @@ export default function Pipeline() {
                 <TableRow className="font-bold border-t-2">
                   <TableCell>Total</TableCell>
                   <TableCell />
-                  <TableCell className="text-right">{pipeline?.length || 0}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(totalPipelineRev)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(totalWeightedRev)}</TableCell>
+                  <TableCell className="text-right">{openOpps.length}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totalValue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totalWeightedValue)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totalGP)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(summaryByClass.reduce((s, c) => s + c.weightedGP, 0))}</TableCell>
-                  <TableCell className="text-right">{totalPipelineRev > 0 ? ((totalGP / totalPipelineRev) * 100).toFixed(1) : "0"}%</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totalWeightedGP)}</TableCell>
+                  <TableCell className="text-right">{totalValue > 0 ? ((totalGP / totalValue) * 100).toFixed(1) : "0"}%</TableCell>
                 </TableRow>
               </TableBody>
             </Table>
@@ -289,8 +391,8 @@ export default function Pipeline() {
                 <TableRow>
                   <TableHead>VAT Category</TableHead>
                   <TableHead className="text-right">Count</TableHead>
-                  <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right">Weighted Revenue</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                  <TableHead className="text-right">Weighted Value</TableHead>
                   <TableHead className="text-right">GM $</TableHead>
                   <TableHead className="text-right">GM %</TableHead>
                 </TableRow>
@@ -302,8 +404,8 @@ export default function Pipeline() {
                       <Badge variant="outline">{row.vat}</Badge>
                     </TableCell>
                     <TableCell className="text-right">{row.count}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(row.weightedRev)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(row.value)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(row.weightedValue)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.gp)}</TableCell>
                     <TableCell className="text-right">{(row.margin * 100).toFixed(1)}%</TableCell>
                   </TableRow>
@@ -315,12 +417,25 @@ export default function Pipeline() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 flex-wrap">
-          <CardTitle className="text-base">Opportunity Details</CardTitle>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base">Opportunity Details</CardTitle>
+            <span className="text-sm text-muted-foreground">{filtered.length} of {openOpps.length} shown</span>
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search opportunities..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="pl-9 w-[220px]"
+                data-testid="input-search-pipeline"
+              />
+            </div>
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={classFilter} onValueChange={setClassFilter}>
-              <SelectTrigger className="w-[200px]" data-testid="select-classification-filter">
+              <SelectTrigger className="w-[160px]" data-testid="select-classification-filter">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -330,14 +445,37 @@ export default function Pipeline() {
               </SelectContent>
             </Select>
             <Select value={vatFilter} onValueChange={setVatFilter}>
-              <SelectTrigger className="w-[160px]" data-testid="select-vat-filter">
+              <SelectTrigger className="w-[140px]" data-testid="select-vat-filter">
                 <SelectValue placeholder="All VAT" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All VAT</SelectItem>
                 {vatCategories.map(v => (
-                  <SelectItem key={v} value={v!}>{v}</SelectItem>
+                  <SelectItem key={v} value={v}>{v}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select value={workTypeFilter} onValueChange={setWorkTypeFilter}>
+              <SelectTrigger className="w-[160px]" data-testid="select-worktype-filter">
+                <SelectValue placeholder="All Work Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Work Types</SelectItem>
+                {workTypes.map(wt => (
+                  <SelectItem key={wt} value={wt}>{wt}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[130px]" data-testid="select-status-filter">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Good">Good</SelectItem>
+                <SelectItem value="Fair">Fair</SelectItem>
+                <SelectItem value="Risk">Risk</SelectItem>
+                <SelectItem value="unset">Unset</SelectItem>
               </SelectContent>
             </Select>
             <DropdownMenu>
@@ -369,62 +507,118 @@ export default function Pipeline() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {isCol("name") && <TableHead className="min-w-[250px]">Opportunity</TableHead>}
-                    {isCol("classification") && <TableHead>Status</TableHead>}
+                    {isCol("name") && <TableHead className="min-w-[250px]"><SortButton field="name">Opportunity</SortButton></TableHead>}
+                    {isCol("classification") && <TableHead><SortButton field="classification">Phase</SortButton></TableHead>}
                     {isCol("vat") && <TableHead>VAT</TableHead>}
-                    {isCol("billingType") && <TableHead>Billing</TableHead>}
-                    {isCol("gmDollar") && <TableHead className="text-right">GM $</TableHead>}
-                    {isCol("gmPercent") && <TableHead className="text-right">GM %</TableHead>}
-                    {FY_MONTHS.map((m, i) => (
-                      isCol(`m${i + 1}` as PipelineColumnKey) && <TableHead key={m} className="text-right min-w-[70px]">{m}</TableHead>
-                    ))}
-                    {isCol("fyTotal") && <TableHead className="text-right min-w-[90px]">FY Total</TableHead>}
+                    {isCol("workType") && <TableHead>Work Type</TableHead>}
+                    {isCol("value") && <TableHead className="text-right"><SortButton field="value">Value ($)</SortButton></TableHead>}
+                    {isCol("margin") && <TableHead className="text-right"><SortButton field="margin">Margin %</SortButton></TableHead>}
+                    {isCol("weightedValue") && <TableHead className="text-right">Weighted $</TableHead>}
+                    {isCol("status") && <TableHead><SortButton field="status">RAG</SortButton></TableHead>}
+                    {isCol("dueDate") && <TableHead><SortButton field="dueDate">Due Date</SortButton></TableHead>}
+                    {isCol("casLead") && <TableHead>CAS Lead</TableHead>}
+                    {isCol("csdLead") && <TableHead>CSD Lead</TableHead>}
+                    {isCol("category") && <TableHead>Category</TableHead>}
+                    {isCol("partner") && <TableHead>Partner</TableHead>}
+                    {isCol("clientCode") && <TableHead>Client</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map(opp => {
-                    const total = getTotalRevenue(opp);
-                    const gp = getTotalGP(opp);
-                    const margin = total > 0 ? (gp / total) * 100 : 0;
-                    const ragColor = total > 500000 ? "bg-green-500" : total >= 200000 ? "bg-amber-500" : "bg-red-500";
+                    const val = getOppValue(opp);
+                    const margin = getOppMargin(opp);
+                    const gp = val * margin;
+                    const weighted = val * (WIN_RATES[opp.classification] || 0);
+                    const ragColor = STATUS_COLORS[opp.status || ""] || "";
                     return (
                       <TableRow key={opp.id} data-testid={`row-opp-${opp.id}`}>
                         {isCol("name") && (
                           <TableCell className="font-medium text-sm">
                             <div className="flex items-center gap-2">
-                              <span className={`inline-block w-2 h-2 rounded-full ${ragColor}`} data-testid={`rag-indicator-${opp.id}`} />
-                              {opp.name}
+                              {ragColor && <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${ragColor}`} data-testid={`rag-indicator-${opp.id}`} />}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate max-w-[300px] cursor-default">{opp.name}</span>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-md">
+                                  <p className="font-medium">{opp.name}</p>
+                                  {opp.comment && <p className="text-xs mt-1 text-muted-foreground">{opp.comment}</p>}
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
                           </TableCell>
                         )}
-                        {isCol("classification") && <TableCell><Badge variant={classificationColor(opp.classification)}>{opp.classification}</Badge></TableCell>}
-                        {isCol("vat") && <TableCell className="text-sm text-muted-foreground">{opp.vat || "-"}</TableCell>}
-                        {isCol("billingType") && (
+                        {isCol("classification") && (
                           <TableCell>
-                            <Badge variant="outline" className="text-xs">{(opp as any).billingType || "-"}</Badge>
+                            <Badge variant={classificationColor(opp.classification)}>{opp.classification}</Badge>
                           </TableCell>
                         )}
-                        {isCol("gmDollar") && <TableCell className="text-right text-sm font-medium">{formatCurrency(gp)}</TableCell>}
-                        {isCol("gmPercent") && (
+                        {isCol("vat") && <TableCell className="text-sm text-muted-foreground">{opp.vat || "-"}</TableCell>}
+                        {isCol("workType") && (
+                          <TableCell>
+                            <span className="text-sm">{opp.workType || "-"}</span>
+                          </TableCell>
+                        )}
+                        {isCol("value") && (
+                          <TableCell className="text-right text-sm font-medium">
+                            {val > 0 ? formatCurrency(val) : "-"}
+                          </TableCell>
+                        )}
+                        {isCol("margin") && (
                           <TableCell className="text-right text-sm">
-                            <span className={margin >= 30 ? "text-green-600 dark:text-green-400" : margin >= 20 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
-                              {margin.toFixed(1)}%
-                            </span>
+                            {margin > 0 ? (
+                              <span className={margin >= 0.3 ? "text-green-600 dark:text-green-400" : margin >= 0.2 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
+                                {(margin * 100).toFixed(1)}%
+                              </span>
+                            ) : "-"}
                           </TableCell>
                         )}
-                        {Array.from({ length: 12 }, (_, i) => {
-                          if (!isCol(`m${i + 1}` as PipelineColumnKey)) return null;
-                          const val = getMonthlyRevenue(opp, i + 1);
-                          return (
-                            <TableCell key={i} className="text-right text-sm">
-                              {val > 0 ? formatCurrency(val) : "-"}
-                            </TableCell>
-                          );
-                        })}
-                        {isCol("fyTotal") && <TableCell className="text-right font-medium">{formatCurrency(total)}</TableCell>}
+                        {isCol("weightedValue") && (
+                          <TableCell className="text-right text-sm">
+                            {val > 0 ? formatCurrency(weighted) : "-"}
+                          </TableCell>
+                        )}
+                        {isCol("status") && (
+                          <TableCell>
+                            {opp.status ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className={`inline-block w-2 h-2 rounded-full ${STATUS_COLORS[opp.status] || "bg-muted-foreground"}`} />
+                                <span className="text-sm">{opp.status}</span>
+                              </div>
+                            ) : <span className="text-sm text-muted-foreground">-</span>}
+                          </TableCell>
+                        )}
+                        {isCol("dueDate") && (
+                          <TableCell className="text-sm text-muted-foreground">
+                            {opp.dueDate || "-"}
+                          </TableCell>
+                        )}
+                        {isCol("casLead") && <TableCell className="text-sm">{opp.casLead || "-"}</TableCell>}
+                        {isCol("csdLead") && <TableCell className="text-sm truncate max-w-[150px]">{opp.csdLead || "-"}</TableCell>}
+                        {isCol("category") && <TableCell className="text-sm truncate max-w-[120px]">{opp.category || "-"}</TableCell>}
+                        {isCol("partner") && <TableCell className="text-sm">{opp.partner || "-"}</TableCell>}
+                        {isCol("clientCode") && <TableCell className="text-sm font-medium">{opp.clientCode || "-"}</TableCell>}
                       </TableRow>
                     );
                   })}
+                  {filtered.length > 0 && (
+                    <TableRow className="font-bold border-t-2">
+                      {isCol("name") && <TableCell>Total ({filtered.length})</TableCell>}
+                      {isCol("classification") && <TableCell />}
+                      {isCol("vat") && <TableCell />}
+                      {isCol("workType") && <TableCell />}
+                      {isCol("value") && <TableCell className="text-right">{formatCurrency(filtered.reduce((s, o) => s + getOppValue(o), 0))}</TableCell>}
+                      {isCol("margin") && <TableCell />}
+                      {isCol("weightedValue") && <TableCell className="text-right">{formatCurrency(filtered.reduce((s, o) => s + getOppValue(o) * (WIN_RATES[o.classification] || 0), 0))}</TableCell>}
+                      {isCol("status") && <TableCell />}
+                      {isCol("dueDate") && <TableCell />}
+                      {isCol("casLead") && <TableCell />}
+                      {isCol("csdLead") && <TableCell />}
+                      {isCol("category") && <TableCell />}
+                      {isCol("partner") && <TableCell />}
+                      {isCol("clientCode") && <TableCell />}
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
