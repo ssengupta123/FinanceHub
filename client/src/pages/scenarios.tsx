@@ -115,6 +115,23 @@ export default function Scenarios() {
   const getMonthlyRevenue = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`revenueM${month}`] || "0");
   const getMonthlyGP = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`grossProfitM${month}`] || "0");
 
+  const filteredPipeline = useMemo(() => {
+    if (!pipeline) return [];
+    return pipeline.filter(o => o.fyYear === selectedFY);
+  }, [pipeline, selectedFY]);
+
+  const availableFYs = useMemo(() => {
+    if (!pipeline) return fyPeriods;
+    const fromData = Array.from(new Set(pipeline.map(o => o.fyYear).filter(Boolean) as string[])).sort();
+    const merged = Array.from(new Set([...fyPeriods, ...fromData])).sort();
+    return merged.length > 0 ? merged : FY_PERIODS;
+  }, [pipeline, fyPeriods]);
+
+  const activeClassifications = useMemo(() => {
+    const classSet = new Set(filteredPipeline.map(o => o.classification));
+    return CLASSIFICATIONS.filter(cls => classSet.has(cls));
+  }, [filteredPipeline]);
+
   const scenarioResults = useMemo(() => {
     if (!pipeline) return null;
 
@@ -124,7 +141,7 @@ export default function Scenarios() {
 
     for (const cls of CLASSIFICATIONS) {
       const rate = (winRates[cls] || 0) / 100;
-      const opps = pipeline.filter(o => o.classification === cls);
+      const opps = filteredPipeline.filter(o => o.classification === cls);
       let clsRev = 0;
       let clsGP = 0;
       let rawRev = 0;
@@ -168,8 +185,9 @@ export default function Scenarios() {
       marginGap: marginGoal - totalMargin,
       meetsRevenueGoal: totalRev >= revenueGoal,
       meetsMarginGoal: totalMargin >= marginGoal,
+      pipelineCount: filteredPipeline.length,
     };
-  }, [pipeline, winRates, revenueGoal, marginGoal]);
+  }, [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal]);
 
   const isLoading = loadingPipeline || loadingScenarios;
 
@@ -192,7 +210,10 @@ export default function Scenarios() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
-          <p className="text-sm text-muted-foreground">Sales Pipeline Financial Forecast</p>
+          <p className="text-sm text-muted-foreground">
+            Sales Pipeline Financial Forecast
+            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in FY ${selectedFY}`}
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2">
@@ -202,7 +223,7 @@ export default function Scenarios() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {fyPeriods.map(fy => (
+                {availableFYs.map(fy => (
                   <SelectItem key={fy} value={fy}>FY {fy}</SelectItem>
                 ))}
               </SelectContent>
@@ -400,7 +421,7 @@ export default function Scenarios() {
                     <TableRow className="font-bold border-t-2">
                       <TableCell>Total</TableCell>
                       <TableCell />
-                      <TableCell className="text-right">{pipeline?.length || 0}</TableCell>
+                      <TableCell className="text-right">{scenarioResults?.pipelineCount || 0}</TableCell>
                       <TableCell />
                       <TableCell className="text-right text-muted-foreground">
                         {scenarioResults ? formatCurrency(Object.values(scenarioResults.classBreakdown).reduce((s, b) => s + b.rawRevenue, 0)) : "$0"}
