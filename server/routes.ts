@@ -495,7 +495,61 @@ export async function registerRoutes(
 
   // ─── Data Sources ───
   app.get("/api/data-sources", async (_req, res) => {
-    const data = await storage.getDataSources();
+    let data = await storage.getDataSources();
+    if (data.length === 0) {
+      const defaultSources = [
+        {
+          name: "Open Opps (SharePoint)",
+          type: "SharePoint API",
+          connectionInfo: JSON.stringify({
+            description: "SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads",
+            endpoint: "https://{tenant}.sharepoint.com/sites/{site}/_api/web/lists/getbytitle('Open Opps')/items",
+            authMethod: "Azure AD OAuth2 (Client Credentials)",
+            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+            sheetName: "query",
+            syncTarget: "pipeline_opportunities",
+            frequency: "Hourly",
+          }),
+          status: "configured",
+          recordsProcessed: 300,
+          syncFrequency: "hourly",
+        },
+        {
+          name: "iTimesheets",
+          type: "REST API",
+          connectionInfo: JSON.stringify({
+            description: "Employee timesheet entries — hours worked per project, leave, and internal operations",
+            endpoint: "https://api.itimesheets.com.au/v1/timesheets",
+            authMethod: "API Key",
+            requiredSecrets: ["ITIMESHEETS_API_KEY"],
+            syncTarget: "timesheets",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
+        {
+          name: "Employment Hero",
+          type: "REST API",
+          connectionInfo: JSON.stringify({
+            description: "Employee records — staff details, cost bands, schedules, and contact information",
+            endpoint: "https://api.employmenthero.com/api/v1/organisations/{org_id}/employees",
+            authMethod: "OAuth2 Bearer Token",
+            requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
+            syncTarget: "employees",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
+      ];
+      for (const src of defaultSources) {
+        await storage.createDataSource(src as any);
+      }
+      data = await storage.getDataSources();
+    }
     res.json(data);
   });
   app.post("/api/data-sources", async (req, res) => {
