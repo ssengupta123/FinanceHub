@@ -104,6 +104,37 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  app.get("/api/rate-cards/derived", async (_req, res) => {
+    try {
+      const result = await db.raw(`
+        SELECT
+          COALESCE(NULLIF(e.role, ''), 'Unassigned') as role,
+          COALESCE(NULLIF(e.grade, ''), '') as grade,
+          COALESCE(NULLIF(e.location, ''), '') as location,
+          COALESCE(NULLIF(e.cost_band_level, ''), '') as cost_band,
+          COUNT(DISTINCT e.id) as employee_count,
+          ROUND(SUM(CAST(t.hours_worked AS NUMERIC)), 0) as total_hours,
+          CASE WHEN SUM(CAST(t.hours_worked AS NUMERIC)) > 0
+            THEN ROUND(SUM(CAST(t.cost_value AS NUMERIC)) / SUM(CAST(t.hours_worked AS NUMERIC)), 2)
+            ELSE 0 END as avg_cost_rate,
+          CASE WHEN SUM(CAST(t.hours_worked AS NUMERIC)) > 0
+            THEN ROUND(SUM(CAST(t.sale_value AS NUMERIC)) / SUM(CAST(t.hours_worked AS NUMERIC)), 2)
+            ELSE 0 END as avg_sell_rate,
+          CASE WHEN SUM(CAST(t.sale_value AS NUMERIC)) > 0
+            THEN ROUND((SUM(CAST(t.sale_value AS NUMERIC)) - SUM(CAST(t.cost_value AS NUMERIC))) / SUM(CAST(t.sale_value AS NUMERIC)) * 100, 1)
+            ELSE 0 END as margin_pct
+        FROM employees e
+        JOIN timesheets t ON t.employee_id = e.id
+        WHERE CAST(t.hours_worked AS NUMERIC) > 0
+        GROUP BY e.role, e.grade, e.location, e.cost_band_level
+        ORDER BY avg_sell_rate DESC
+      `);
+      res.json(result.rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ─── Resource Plans ───
   app.get("/api/resource-plans", async (req, res) => {
     if (req.query.projectId) {
