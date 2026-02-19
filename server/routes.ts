@@ -564,6 +564,49 @@ export async function registerRoutes(
     res.json(data);
   });
 
+  app.post("/api/data-sources/:id/sync", async (req, res) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const id = Number(req.params.id);
+    const ds = await storage.getDataSource(id);
+    if (!ds) return res.status(404).json({ message: "Data source not found" });
+
+    await storage.updateDataSource(id, { status: "syncing", lastSyncAt: new Date().toISOString() });
+
+    try {
+      let result: { imported: number; errors: string[]; message: string };
+
+      const connInfo = ds.connectionInfo ? JSON.parse(ds.connectionInfo) : {};
+      const syncTarget = connInfo.syncTarget || "";
+
+      if (syncTarget === "pipeline_opportunities" || ds.name?.includes("SharePoint") || ds.name?.includes("Open Opps")) {
+        const { syncSharePointOpenOpps } = await import("./sharepoint-sync");
+        result = await syncSharePointOpenOpps();
+      } else {
+        await storage.updateDataSource(id, { status: "configured" });
+        return res.json({
+          message: `Sync for "${ds.name}" is not yet implemented. Configure the API connection first.`,
+          status: "configured",
+        });
+      }
+
+      await storage.updateDataSource(id, {
+        status: result.errors.length > 0 ? "error" : "active",
+        recordsProcessed: result.imported,
+        lastSyncAt: new Date().toISOString(),
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      await storage.updateDataSource(id, {
+        status: "error",
+        lastSyncAt: new Date().toISOString(),
+      });
+      res.status(500).json({ message: err.message, status: "error" });
+    }
+  });
+
   app.post("/api/data-sources/seed", async (req, res) => {
     if (!(req.session as any)?.userId) {
       return res.status(401).json({ message: "Not authenticated" });

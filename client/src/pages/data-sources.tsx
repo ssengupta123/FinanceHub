@@ -57,16 +57,22 @@ export default function DataSources() {
 
   const syncMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("PATCH", `/api/data-sources/${id}`, {
-        status: "syncing",
-        lastSyncAt: new Date().toISOString(),
-      });
+      const resp = await apiRequest("POST", `/api/data-sources/${id}/sync`, {});
+      return resp.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      toast({ title: "Sync started", description: "Data source sync has been initiated." });
+      if (data?.imported != null) {
+        toast({
+          title: "Sync complete",
+          description: `${data.imported} records imported. ${data.errors?.length || 0} errors.`,
+        });
+      } else {
+        toast({ title: "Sync result", description: data?.message || "Sync completed." });
+      }
     },
     onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
     },
   });
