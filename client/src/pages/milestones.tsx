@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, FileText, Receipt, Clock } from "lucide-react";
+import { Plus, FileText, Receipt, Clock, Database } from "lucide-react";
 import type { Milestone, Project, Timesheet } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined) {
@@ -103,6 +103,19 @@ export default function Milestones() {
       toast({ title: "Milestone created" });
       resetForm();
       setOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/milestones/seed", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/milestones"] });
+      toast({ title: "Milestones seeded successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -320,7 +333,21 @@ export default function Milestones() {
               ) : !filteredMilestones?.length ? (
                 <TableRow>
                   <TableCell colSpan={activeTab === "delivery" ? 8 : 7} className="text-center text-muted-foreground py-8">
-                    No milestones found
+                    <div className="space-y-3">
+                      <p>No milestones found</p>
+                      {(!milestones || milestones.length === 0) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => seedMutation.mutate()}
+                          disabled={seedMutation.isPending}
+                          data-testid="button-seed-milestones"
+                        >
+                          <Database className="mr-1 h-4 w-4" />
+                          {seedMutation.isPending ? "Generating..." : "Generate Sample Milestones"}
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
