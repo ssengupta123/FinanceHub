@@ -165,6 +165,18 @@ export default function Milestones() {
           <h1 className="text-2xl font-semibold" data-testid="text-milestones-title">Milestones & Invoices</h1>
           <p className="text-sm text-muted-foreground">Payment invoices, delivery milestones, and timesheet integration</p>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(!milestones || milestones.length === 0) && (
+            <Button
+              variant="outline"
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              data-testid="button-seed-milestones-header"
+            >
+              <Database className="mr-1 h-4 w-4" />
+              {seedMutation.isPending ? "Generating..." : "Generate Milestones"}
+            </Button>
+          )}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-milestone"><Plus className="mr-1 h-4 w-4" /> Add Milestone</Button>
@@ -248,6 +260,7 @@ export default function Milestones() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -344,7 +357,7 @@ export default function Milestones() {
                           data-testid="button-seed-milestones"
                         >
                           <Database className="mr-1 h-4 w-4" />
-                          {seedMutation.isPending ? "Generating..." : "Generate Sample Milestones"}
+                          {seedMutation.isPending ? "Generating..." : "Generate Milestones"}
                         </Button>
                       )}
                     </div>
