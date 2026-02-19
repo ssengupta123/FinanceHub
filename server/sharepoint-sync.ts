@@ -72,8 +72,7 @@ async function getSharePointToken(): Promise<SharePointToken> {
   });
 
   if (!resp.ok) {
-    const errorText = await resp.text();
-    throw new Error(`Failed to get Azure AD token: ${resp.status} ${errorText}`);
+    throw new Error(`Failed to get Azure AD token (HTTP ${resp.status}). Check Azure credentials and tenant configuration.`);
   }
 
   return resp.json();
@@ -130,7 +129,7 @@ export async function syncSharePointOpenOpps(): Promise<{
   let nextUrl: string | null = listUrl;
 
   while (nextUrl) {
-    const resp = await fetch(nextUrl, {
+    const resp: Response = await fetch(nextUrl, {
       headers: {
         Authorization: `Bearer ${token.access_token}`,
         Accept: "application/json;odata=nometadata",
@@ -138,19 +137,17 @@ export async function syncSharePointOpenOpps(): Promise<{
     });
 
     if (!resp.ok) {
-      const errorText = await resp.text();
-      throw new Error(`SharePoint API error: ${resp.status} ${errorText}`);
+      throw new Error(`SharePoint API error (HTTP ${resp.status}). Check SharePoint domain, site path, and list name configuration.`);
     }
 
-    const data = await resp.json();
+    const data: any = await resp.json();
     const items = data.value || [];
     allItems.push(...items);
 
     nextUrl = data["odata.nextLink"] || data["@odata.nextLink"] || null;
   }
 
-  await db("pipeline_opportunities").where("fy_year", "open_opps").del();
-
+  const staged: any[] = [];
   for (let i = 0; i < allItems.length; i++) {
     const item = allItems[i];
 
@@ -190,7 +187,7 @@ export async function syncSharePointOpenOpps(): Promise<{
       const startDate = parseSharePointDate(item.StartDate || item.OppStartDate);
       const expiryDate = parseSharePointDate(item.ExpiryDate || item.OppExpiryDate);
 
-      await storage.createPipelineOpportunity({
+      staged.push({
         name,
         classification,
         vat,
@@ -210,11 +207,18 @@ export async function syncSharePointOpenOpps(): Promise<{
         clientContact,
         clientCode,
       });
-      imported++;
     } catch (err: any) {
       errors.push(`Item "${name}": ${err.message}`);
     }
   }
+
+  await db.transaction(async (trx) => {
+    await trx("pipeline_opportunities").where("fy_year", "open_opps").del();
+    for (const record of staged) {
+      await trx("pipeline_opportunities").insert(record);
+      imported++;
+    }
+  });
 
   return {
     imported,

@@ -559,6 +559,9 @@ export async function registerRoutes(
     res.json(data);
   });
   app.patch("/api/data-sources/:id", async (req, res) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     const data = await storage.updateDataSource(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
