@@ -334,8 +334,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/milestones/seed", async (req, res) => {
-    if (!(req.session as any)?.user || (req.session as any).user.role !== "admin") {
-      return res.status(403).json({ message: "Admin only" });
+    if (!(req.session as any)?.user) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
     const existing = await storage.getMilestones();
     if (existing.length > 0) {
