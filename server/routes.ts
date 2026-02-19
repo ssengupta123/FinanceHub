@@ -334,7 +334,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/milestones/seed", async (req, res) => {
-    if (!(req.session as any)?.user) {
+    if (!(req.session as any)?.userId) {
       return res.status(401).json({ message: "Not authenticated" });
     }
     const existing = await storage.getMilestones();
