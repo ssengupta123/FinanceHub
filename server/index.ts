@@ -1,10 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
+import { ConnectSessionKnexStore } from "connect-session-knex";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { runMigrations, runIncrementalMigrations } from "./db";
+import { db } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -39,14 +40,15 @@ if (isProduction) {
   app.set("trust proxy", 1);
 }
 
-const PgStore = connectPgSimple(session);
+const sessionStore = new ConnectSessionKnexStore({
+  knex: db as any,
+  createtable: true,
+  tablename: "sessions",
+});
 
 app.use(
   session({
-    store: new PgStore({
-      conString: process.env.DATABASE_URL,
-      createTableIfMissing: true,
-    }),
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || "financehub-dev-secret-key",
     resave: false,
     saveUninitialized: false,
