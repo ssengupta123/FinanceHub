@@ -6,7 +6,18 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Clock, Target, Users } from "lucide-react";
-import type { Kpi, Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
+import type { Employee, Timesheet, Project } from "@shared/schema";
+
+interface WeeklyUtilData {
+  employee_id: number;
+  week_ending: string;
+  employee_name: string;
+  employee_role: string;
+  total_hours: string;
+  billable_hours: string;
+  cost_value: string;
+  sale_value: string;
+}
 
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
@@ -14,38 +25,38 @@ function parseNum(val: string | null | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-function getWeekLabel(weekOffset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + weekOffset * 7);
-  const month = date.toLocaleString("en-US", { month: "short" });
-  const day = date.getDate();
-  return `${month} ${day}`;
+function getWeekStart(dateStr: string): Date {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
 }
 
-function getWeekKey(weekOffset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + weekOffset * 7);
-  return `${date.getFullYear()}-W${String(Math.ceil((date.getDate() + new Date(date.getFullYear(), date.getMonth(), 1).getDay()) / 7)).padStart(2, "0")}`;
+function formatWeekLabel(date: Date): string {
+  return date.toLocaleDateString("en-AU", { month: "short", day: "numeric" });
+}
+
+function getISOWeekKey(dateStr: string): string {
+  const ws = getWeekStart(dateStr);
+  const year = ws.getFullYear();
+  const jan1 = new Date(year, 0, 1);
+  const days = Math.floor((ws.getTime() - jan1.getTime()) / 86400000);
+  const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
+  return `${year}-W${String(weekNum).padStart(2, "0")}`;
 }
 
 export default function UtilizationDashboard() {
-  const { data: kpis, isLoading: loadingKpis } = useQuery<Kpi[]>({ queryKey: ["/api/kpis"] });
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-  const { data: resourcePlans } = useQuery<ResourcePlan[]>({ queryKey: ["/api/resource-plans"] });
+  const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: ["/api/utilization/weekly"] });
 
-  const isLoading = loadingKpis || loadingEmployees || loadingTimesheets || loadingProjects;
-
-  const overallUtilization = kpis && kpis.length > 0
-    ? kpis.reduce((sum, k) => sum + parseNum(k.utilization), 0) / kpis.length
-    : 0;
+  const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
 
   const totalHours = (timesheets || []).reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
-  const billableCount = (timesheets || []).filter(t => t.billable).length;
-  const billableRatio = timesheets && timesheets.length > 0
-    ? (billableCount / timesheets.length) * 100
-    : 0;
+  const billableTimesheets = (timesheets || []).filter(t => t.billable);
+  const billableHoursTotal = billableTimesheets.reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
+  const billableRatio = totalHours > 0 ? (billableHoursTotal / totalHours) * 100 : 0;
 
   const employeeStats = useMemo(() => (employees || []).map(emp => {
     const empTimesheets = (timesheets || []).filter(t => t.employeeId === emp.id);
@@ -53,7 +64,7 @@ export default function UtilizationDashboard() {
     const billableHrs = empTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const util = totalHrs > 0 ? (billableHrs / totalHrs) * 100 : 0;
     return { employee: emp, totalHrs, billableHrs, util };
-  }).filter(e => e.totalHrs > 0), [employees, timesheets]);
+  }).filter(e => e.totalHrs > 0).sort((a, b) => b.util - a.util), [employees, timesheets]);
 
   const projectHours = useMemo(() => (projects || []).map(project => {
     const projTimesheets = (timesheets || []).filter(t => t.projectId === project.id);
@@ -61,45 +72,82 @@ export default function UtilizationDashboard() {
     const billableHrs = projTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const ratio = totalHrs > 0 ? (billableHrs / totalHrs) * 100 : 0;
     return { project, totalHrs, billableHrs, ratio };
-  }).filter(p => p.totalHrs > 0), [projects, timesheets]);
+  }).filter(p => p.totalHrs > 0).sort((a, b) => b.totalHrs - a.totalHrs), [projects, timesheets]);
 
-  const weekLabels = useMemo(() => Array.from({ length: 13 }, (_, i) => ({
-    label: getWeekLabel(i),
-    key: getWeekKey(i),
-    offset: i,
-  })), []);
-
-  const rollingView = useMemo(() => {
+  const { weekColumns, rollingView, benchSummary } = useMemo(() => {
     const standardWeeklyHours = 38;
-    const empList = employees || [];
-    const plans = resourcePlans || [];
+    const data = weeklyData || [];
+    if (data.length === 0) return { weekColumns: [], rollingView: [], benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 } };
 
-    return empList.map(emp => {
-      const empPlans = plans.filter(rp => rp.employeeId === emp.id);
-      const weeks = weekLabels.map(w => {
-        const allocatedHours = empPlans.length > 0
-          ? Math.min(empPlans.reduce((s, rp) => s + parseNum(rp.allocation) * standardWeeklyHours / 100, 0), standardWeeklyHours)
-          : 0;
-        const benchHours = standardWeeklyHours - allocatedHours;
-        const utilPct = (allocatedHours / standardWeeklyHours) * 100;
-        return { allocated: allocatedHours, bench: benchHours, utilization: utilPct };
+    const allWeekKeys = new Map<string, { label: string; date: Date }>();
+    data.forEach(row => {
+      const ws = getWeekStart(row.week_ending);
+      const key = getISOWeekKey(row.week_ending);
+      if (!allWeekKeys.has(key)) {
+        allWeekKeys.set(key, { label: formatWeekLabel(ws), date: ws });
+      }
+    });
+
+    const sortedWeeks = Array.from(allWeekKeys.entries())
+      .sort((a, b) => b[1].date.getTime() - a[1].date.getTime())
+      .slice(0, 13)
+      .reverse();
+
+    const weekCols = sortedWeeks.map(([key, info]) => ({ key, label: info.label }));
+    const weekKeySet = new Set(weekCols.map(w => w.key));
+
+    const empGroups = new Map<number, { name: string; role: string; weeks: Map<string, { totalHours: number; billableHours: number }> }>();
+    data.forEach(row => {
+      const weekKey = getISOWeekKey(row.week_ending);
+      if (!weekKeySet.has(weekKey)) return;
+
+      if (!empGroups.has(row.employee_id)) {
+        empGroups.set(row.employee_id, { name: row.employee_name, role: row.employee_role, weeks: new Map() });
+      }
+      const emp = empGroups.get(row.employee_id)!;
+      const existing = emp.weeks.get(weekKey) || { totalHours: 0, billableHours: 0 };
+      existing.totalHours += parseNum(row.total_hours);
+      existing.billableHours += parseNum(row.billable_hours);
+      emp.weeks.set(weekKey, existing);
+    });
+
+    const rolling = Array.from(empGroups.entries()).map(([empId, empData]) => {
+      const weeks = weekCols.map(w => {
+        const weekData = empData.weeks.get(w.key);
+        const worked = weekData?.totalHours || 0;
+        const billable = weekData?.billableHours || 0;
+        const utilPct = standardWeeklyHours > 0 ? Math.min((worked / standardWeeklyHours) * 100, 100) : 0;
+        const bench = Math.max(standardWeeklyHours - worked, 0);
+        return { worked, billable, bench, utilization: utilPct };
       });
 
-      const avgUtil = weeks.reduce((s, w) => s + w.utilization, 0) / weeks.length;
+      const weeksWithData = weeks.filter(w => w.worked > 0);
+      const avgUtil = weeksWithData.length > 0
+        ? weeksWithData.reduce((s, w) => s + w.utilization, 0) / weeksWithData.length
+        : 0;
       const totalBench = weeks.reduce((s, w) => s + w.bench, 0);
+      const totalWorked = weeks.reduce((s, w) => s + w.worked, 0);
 
-      return { employee: emp, weeks, avgUtil, totalBench };
-    });
-  }, [employees, resourcePlans, weekLabels]);
+      return { employeeId: empId, name: empData.name, role: empData.role, weeks, avgUtil, totalBench, totalWorked };
+    }).sort((a, b) => b.avgUtil - a.avgUtil);
 
-  const benchSummary = useMemo(() => {
-    const totalCapacity = (employees?.length || 0) * 38 * 13;
-    const totalAllocated = rollingView.reduce((s, r) => s + r.weeks.reduce((ws, w) => ws + w.allocated, 0), 0);
-    const totalBench = rollingView.reduce((s, r) => s + r.totalBench, 0);
+    const totalCapacity = rolling.length * standardWeeklyHours * weekCols.length;
+    const totalWorked = rolling.reduce((s, r) => s + r.totalWorked, 0);
+    const totalBench = rolling.reduce((s, r) => s + r.totalBench, 0);
     const benchPct = totalCapacity > 0 ? (totalBench / totalCapacity) * 100 : 0;
-    const onBenchCount = rollingView.filter(r => r.avgUtil < 50).length;
-    return { totalCapacity, totalAllocated, totalBench, benchPct, onBenchCount };
-  }, [rollingView, employees]);
+    const onBenchCount = rolling.filter(r => r.avgUtil < 50).length;
+
+    return {
+      weekColumns: weekCols,
+      rollingView: rolling,
+      benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
+    };
+  }, [weeklyData]);
+
+  const overallUtilization = useMemo(() => {
+    if (rollingView.length === 0) return 0;
+    return rollingView.reduce((s, r) => s + r.avgUtil, 0) / rollingView.length;
+  }, [rollingView]);
 
   function utilColor(pct: number): string {
     if (pct >= 80) return "bg-green-500";
@@ -111,7 +159,7 @@ export default function UtilizationDashboard() {
     <div className="flex-1 overflow-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilization Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Resource utilization, time tracking, and 13-week forward view</p>
+        <p className="text-sm text-muted-foreground">Resource utilization, time tracking, and 13-week rolling view</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -124,7 +172,7 @@ export default function UtilizationDashboard() {
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
               <div className="text-2xl font-bold" data-testid="text-overall-utilization">{overallUtilization.toFixed(1)}%</div>
             )}
-            <p className="text-xs text-muted-foreground">Average across all KPIs</p>
+            <p className="text-xs text-muted-foreground">Average across active resources</p>
           </CardContent>
         </Card>
         <Card>
@@ -148,7 +196,7 @@ export default function UtilizationDashboard() {
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
               <div className="text-2xl font-bold" data-testid="text-billable-ratio">{billableRatio.toFixed(1)}%</div>
             )}
-            <p className="text-xs text-muted-foreground">{billableCount} of {timesheets?.length || 0} entries billable</p>
+            <p className="text-xs text-muted-foreground">{billableHoursTotal.toFixed(0)}h billable of {totalHours.toFixed(0)}h total</p>
           </CardContent>
         </Card>
         <Card>
@@ -169,13 +217,13 @@ export default function UtilizationDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Rolling 13-Week Resource Utilization (Based on Resource Plan Allocations)</CardTitle>
+          <CardTitle className="text-base">Rolling 13-Week Resource Utilization (Actual Timesheet Data)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <Skeleton className="h-60 w-full" />
           ) : rollingView.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No employee data available</p>
+            <p className="text-sm text-muted-foreground">No timesheet data available for utilization view</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -184,18 +232,18 @@ export default function UtilizationDashboard() {
                     <TableHead className="min-w-[160px] sticky left-0 bg-background z-10">Resource</TableHead>
                     <TableHead className="text-right min-w-[60px]">Avg %</TableHead>
                     <TableHead className="text-right min-w-[70px]">Bench (h)</TableHead>
-                    {weekLabels.map(w => (
-                      <TableHead key={w.offset} className="text-center min-w-[60px] text-xs">{w.label}</TableHead>
+                    {weekColumns.map(w => (
+                      <TableHead key={w.key} className="text-center min-w-[60px] text-xs">{w.label}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rollingView.map(row => (
-                    <TableRow key={row.employee.id} data-testid={`row-rolling-${row.employee.id}`}>
+                    <TableRow key={row.employeeId} data-testid={`row-rolling-${row.employeeId}`}>
                       <TableCell className="font-medium sticky left-0 bg-background z-10">
                         <div className="flex items-center gap-2">
                           <span className={`inline-block w-2 h-2 rounded-full ${utilColor(row.avgUtil)}`} />
-                          {row.employee.firstName} {row.employee.lastName}
+                          {row.name}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -216,25 +264,26 @@ export default function UtilizationDashboard() {
                                 ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                 : "bg-muted text-muted-foreground"
                             }`}
+                            title={`${week.worked.toFixed(1)}h worked, ${week.bench.toFixed(1)}h bench`}
                           >
-                            {week.utilization.toFixed(0)}%
+                            {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
                           </div>
                         </TableCell>
                       ))}
                     </TableRow>
                   ))}
                   <TableRow className="font-bold border-t-2">
-                    <TableCell className="sticky left-0 bg-background z-10">Total Capacity</TableCell>
+                    <TableCell className="sticky left-0 bg-background z-10">Total</TableCell>
                     <TableCell className="text-right">
                       {benchSummary.totalCapacity > 0
-                        ? ((benchSummary.totalAllocated / benchSummary.totalCapacity) * 100).toFixed(0)
+                        ? ((benchSummary.totalWorked / benchSummary.totalCapacity) * 100).toFixed(0)
                         : 0}%
                     </TableCell>
                     <TableCell className="text-right">{benchSummary.totalBench.toFixed(0)}</TableCell>
-                    {weekLabels.map((_, wi) => {
-                      const weekAlloc = rollingView.reduce((s, r) => s + r.weeks[wi].allocated, 0);
-                      const weekCap = (employees?.length || 0) * 38;
-                      const weekUtil = weekCap > 0 ? (weekAlloc / weekCap) * 100 : 0;
+                    {weekColumns.map((_, wi) => {
+                      const weekWorked = rollingView.reduce((s, r) => s + r.weeks[wi].worked, 0);
+                      const weekCap = rollingView.length * 38;
+                      const weekUtil = weekCap > 0 ? (weekWorked / weekCap) * 100 : 0;
                       return (
                         <TableCell key={wi} className="text-center p-1">
                           <div className="text-xs font-medium">{weekUtil.toFixed(0)}%</div>
@@ -273,7 +322,7 @@ export default function UtilizationDashboard() {
                 {employeeStats.map(({ employee, totalHrs, billableHrs, util }) => (
                   <TableRow key={employee.id} data-testid={`row-employee-util-${employee.id}`}>
                     <TableCell className="font-medium">{employee.firstName} {employee.lastName}</TableCell>
-                    <TableCell className="text-muted-foreground">{employee.role || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{employee.role || "\u2014"}</TableCell>
                     <TableCell className="text-right">{totalHrs.toFixed(1)}</TableCell>
                     <TableCell className="text-right">{billableHrs.toFixed(1)}</TableCell>
                     <TableCell>

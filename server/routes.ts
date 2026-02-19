@@ -182,6 +182,69 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  app.get("/api/costs/summary", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.project_id")
+        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
+        .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .count({ entry_count: "*" })
+        .leftJoin("projects", "timesheets.project_id", "projects.id")
+        .groupBy("timesheets.project_id", db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`), "projects.name")
+        .orderBy([{ column: "month", order: "desc" }, { column: "total_cost", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/resource-allocations", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.employee_id", "timesheets.project_id")
+        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
+        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .count({ entry_count: "*" })
+        .leftJoin("projects", "timesheets.project_id", "projects.id")
+        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .groupBy("timesheets.employee_id", "timesheets.project_id",
+          db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`),
+          "projects.name", "employees.first_name", "employees.last_name")
+        .orderBy([{ column: "month", order: "desc" }, { column: "total_hours", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/utilization/weekly", async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select("timesheets.employee_id")
+        .select(db.raw(`timesheets.week_ending`))
+        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .select(db.raw(`COALESCE(employees.role, '') as employee_role`))
+        .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
+        .sum({ billable_hours: db.raw("CASE WHEN timesheets.billable = true THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END") })
+        .sum({ cost_value: db.raw("CAST(timesheets.cost_value AS numeric)") })
+        .sum({ sale_value: db.raw("CAST(timesheets.sale_value AS numeric)") })
+        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .groupBy("timesheets.employee_id", "timesheets.week_ending",
+          "employees.first_name", "employees.last_name", "employees.role")
+        .orderBy([{ column: "week_ending", order: "desc" }, { column: "total_hours", order: "desc" }]);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ─── KPIs ───
   app.get("/api/kpis", async (req, res) => {
     if (req.query.projectId) {
