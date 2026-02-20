@@ -91,17 +91,23 @@ function rowsToModels<T>(rows: Record<string, any>[]): T[] {
 const DATE_COLUMNS = new Set([
   "start_date", "end_date", "schedule_start", "schedule_end",
   "check_point_date", "week_ending", "effective_from", "effective_to",
-  "due_date", "start_date_str", "expiry_date", "completed_at",
+  "due_date", "start_date_str", "expiry_date", "completed_at", "completed_date",
 ]);
+
+const TEXT_DATE_COLUMNS_BY_TABLE: Record<string, Set<string>> = {
+  pipeline_opportunities: new Set(["due_date", "start_date", "expiry_date"]),
+};
 
 function isReasonableDate(d: Date): boolean {
   const year = d.getFullYear();
   return year >= 1900 && year <= 2100;
 }
 
-function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
+function sanitizeDateFields(data: Record<string, any>, table?: string): Record<string, any> {
+  const textDateCols = table ? TEXT_DATE_COLUMNS_BY_TABLE[table] : undefined;
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {
+      if (textDateCols && textDateCols.has(key)) continue;
       const val = data[key];
       if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
         data[key] = null;
@@ -139,7 +145,7 @@ function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
 }
 
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
-  const snakeData = sanitizeDateFields(toSnakeCase(data, table));
+  const snakeData = sanitizeDateFields(toSnakeCase(data, table), table);
   delete snakeData.id;
   try {
     const [row] = await db(table).insert(snakeData).returning("*");
@@ -159,7 +165,7 @@ async function insertReturning<T>(table: string, data: Record<string, any>): Pro
 }
 
 async function updateReturning<T>(table: string, id: number, data: Record<string, any>): Promise<T | undefined> {
-  const snakeData = sanitizeDateFields(toSnakeCase(data, table));
+  const snakeData = sanitizeDateFields(toSnakeCase(data, table), table);
   delete snakeData.id;
   const [row] = await db(table).where("id", id).update(snakeData).returning("*");
   if (!row) return undefined;
