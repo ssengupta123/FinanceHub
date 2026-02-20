@@ -258,7 +258,7 @@ export default function Forecasts() {
                     <Input type="number" step="0.01" value={formData.forecastMargin} onChange={(e) => setFormData(prev => ({ ...prev, forecastMargin: e.target.value }))} data-testid="input-forecast-margin" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Utilization %</Label>
+                    <Label>Utilisation %</Label>
                     <Input type="number" step="0.01" value={formData.forecastUtilization} onChange={(e) => setFormData(prev => ({ ...prev, forecastUtilization: e.target.value }))} data-testid="input-forecast-utilization" />
                   </div>
                   <div className="space-y-2">
@@ -432,7 +432,7 @@ export default function Forecasts() {
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Margin</TableHead>
-                    <TableHead className="text-right">Utilization</TableHead>
+                    <TableHead className="text-right">Utilisation</TableHead>
                     <TableHead className="text-right">Burn Rate</TableHead>
                     <TableHead>Notes</TableHead>
                   </TableRow>

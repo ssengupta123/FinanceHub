@@ -39,7 +39,7 @@ const navGroups = [
     items: [
       { title: "Dashboard", icon: LayoutDashboard, path: "/" },
       { title: "Finance", icon: TrendingUp, path: "/finance" },
-      { title: "Utilization", icon: BarChart3, path: "/utilization" },
+      { title: "Utilisation", icon: BarChart3, path: "/utilization" },
     ],
   },
   {

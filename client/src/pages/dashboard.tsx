@@ -260,7 +260,7 @@ export default function Dashboard() {
 
         <Card className={`border ${ragBg(avgUtilization, UTILIZATION_TARGET)}`}>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
-            <CardTitle className="text-xs sm:text-sm font-medium">Utilization</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Utilisation</CardTitle>
             <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
@@ -479,7 +479,7 @@ export default function Dashboard() {
                   { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * 0.3, format: "currency" as const },
                   { label: "Contract Pipeline", actual: totalContracted, target: REVENUE_TARGET, format: "currency" as const },
                   { label: "Gross Margin", actual: marginPercent, target: MARGIN_TARGET, format: "percent" as const },
-                  { label: "Utilization", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
+                  { label: "Utilisation", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
                 ].map((item) => {
                   const pctComplete = item.target > 0 ? Math.min(item.actual / item.target, 1) : 0;
                   return (

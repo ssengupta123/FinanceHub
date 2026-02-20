@@ -179,8 +179,8 @@ export default function UtilizationDashboard() {
     <div className="flex-1 overflow-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilization Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Resource utilization, time tracking, and 13-week rolling view</p>
+          <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilisation Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Resource utilisation, time tracking, and 13-week rolling view</p>
         </div>
         <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
       </div>
@@ -188,7 +188,7 @@ export default function UtilizationDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overall Utilization</CardTitle>
+            <CardTitle className="text-sm font-medium">Overall Utilisation</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -240,13 +240,13 @@ export default function UtilizationDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Rolling 13-Week Resource Utilization (Actual Timesheet Data)</CardTitle>
+          <CardTitle className="text-base">Rolling 13-Week Resource Utilisation (Actual Timesheet Data)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <Skeleton className="h-60 w-full" />
           ) : rollingView.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No timesheet data available for utilization view</p>
+            <p className="text-sm text-muted-foreground">No timesheet data available for utilisation view</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -323,7 +323,7 @@ export default function UtilizationDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Resource Utilization (Actuals)</CardTitle>
+          <CardTitle className="text-base">Resource Utilisation (Actuals)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -338,7 +338,7 @@ export default function UtilizationDashboard() {
                   <TableHead>Role</TableHead>
                   <TableHead className="text-right">Total Hours</TableHead>
                   <TableHead className="text-right">Billable Hours</TableHead>
-                  <TableHead className="w-[180px]">Utilization</TableHead>
+                  <TableHead className="w-[180px]">Utilisation</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

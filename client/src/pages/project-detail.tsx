@@ -176,7 +176,7 @@ export default function ProjectDetail() {
                       <TableHead className="text-right">Unbilled</TableHead>
                       <TableHead className="text-right">Gross Cost</TableHead>
                       <TableHead className="text-right">Margin</TableHead>
-                      <TableHead className="text-right">Utilization</TableHead>
+                      <TableHead className="text-right">Utilisation</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
