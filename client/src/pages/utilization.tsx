@@ -220,14 +220,14 @@ export default function UtilizationDashboard() {
   }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects]);
 
   function utilColor(pct: number): string {
-    if (pct > 100) return "bg-purple-500";
+    if (pct > 100) return "bg-red-500";
     if (pct >= 80) return "bg-green-500";
     if (pct >= 50) return "bg-amber-500";
     return "bg-red-500";
   }
 
   function ragLabel(pct: number): { text: string; bg: string; fg: string } {
-    if (pct > 100) return { text: "Over", bg: "bg-purple-100 dark:bg-purple-900/40", fg: "text-purple-700 dark:text-purple-300" };
+    if (pct > 100) return { text: "Risk", bg: "bg-red-100 dark:bg-red-900/40", fg: "text-red-700 dark:text-red-300" };
     if (pct >= 80) return { text: "Good", bg: "bg-green-100 dark:bg-green-900/40", fg: "text-green-700 dark:text-green-300" };
     if (pct >= 50) return { text: "Fair", bg: "bg-amber-100 dark:bg-amber-900/40", fg: "text-amber-700 dark:text-amber-300" };
     return { text: "Risk", bg: "bg-red-100 dark:bg-red-900/40", fg: "text-red-700 dark:text-red-300" };
@@ -235,7 +235,7 @@ export default function UtilizationDashboard() {
 
   function utilCellClass(pct: number, isProjected: boolean): string {
     const opacity = isProjected ? "opacity-70" : "";
-    if (pct > 100) return `bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 ${opacity}`;
+    if (pct > 100) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
     if (pct >= 80) return `bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 ${opacity}`;
     if (pct >= 50) return `bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 ${opacity}`;
     if (pct > 0) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
@@ -252,16 +252,13 @@ export default function UtilizationDashboard() {
           </p>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Good (&ge;80%)
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Good (80-100%)
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" /> Fair (50-79%)
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> Risk (&lt;50%)
-            </span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500" /> Over (&gt;100%)
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> Risk (&lt;50% or &gt;100%)
             </span>
           </div>
         </div>
@@ -288,14 +285,14 @@ export default function UtilizationDashboard() {
             <p className="text-xs text-muted-foreground">{allocatedPermanent.length} / {permanentEmployees.length} perm staff on active projects</p>
           </CardContent>
         </Card>
-        <Card className={!isLoading && overutilisedList.length > 0 ? "border-purple-500/50" : ""}>
+        <Card className={!isLoading && overutilisedList.length > 0 ? "border-red-500/50" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Overutilised Resources</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className={`text-2xl font-bold ${overutilisedList.length > 0 ? "text-purple-600 dark:text-purple-400" : ""}`} data-testid="text-overutilised-count">
+              <div className={`text-2xl font-bold ${overutilisedList.length > 0 ? "text-red-600 dark:text-red-400" : ""}`} data-testid="text-overutilised-count">
                 {overutilisedList.length}
               </div>
             )}
@@ -350,10 +347,10 @@ export default function UtilizationDashboard() {
       </div>
 
       {overutilisedList.length > 0 && (
-        <Card className="border-purple-500/50">
+        <Card className="border-red-500/50">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-purple-500" />
+              <AlertTriangle className="h-4 w-4 text-red-500" />
               Overutilised Resources (Allocation &gt; 100%)
             </CardTitle>
           </CardHeader>
@@ -374,7 +371,7 @@ export default function UtilizationDashboard() {
                     <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
                     <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
                     <TableCell className="text-right">
-                      <Badge variant="outline" className="text-purple-600 dark:text-purple-400 border-purple-500/50">
+                      <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
                         {emp.pct.toFixed(0)}%
                       </Badge>
                     </TableCell>
@@ -439,7 +436,7 @@ export default function UtilizationDashboard() {
                       </TableCell>
                       <TableCell className="text-right">
                         <span className={
-                          row.avgUtil > 100 ? "text-purple-600 dark:text-purple-400" :
+                          row.avgUtil > 100 ? "text-red-600 dark:text-red-400" :
                           row.avgUtil >= 80 ? "text-green-600 dark:text-green-400" :
                           row.avgUtil >= 50 ? "text-amber-600 dark:text-amber-400" :
                           "text-red-600 dark:text-red-400"
