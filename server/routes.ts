@@ -1402,9 +1402,23 @@ function excelDateToString(val: any): string | null {
   if (!val) return null;
   if (typeof val === "number") {
     const d = XLSX.SSF.parse_date_code(val);
+    if (!d || !d.y) return null;
     return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
   }
-  return String(val);
+  const s = String(val).trim();
+  if (!s || s.toLowerCase() === "n/a" || s === "-" || s === "") return null;
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+  }
+  const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+  const auMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (auMatch) {
+    const yr = auMatch[3].length === 2 ? 2000 + parseInt(auMatch[3]) : parseInt(auMatch[3]);
+    return `${yr}-${auMatch[2].padStart(2, "0")}-${auMatch[1].padStart(2, "0")}`;
+  }
+  return null;
 }
 
 function toNum(val: any): string {
