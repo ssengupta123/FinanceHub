@@ -94,21 +94,33 @@ const DATE_COLUMNS = new Set([
   "due_date", "start_date_str", "expiry_date", "completed_at",
 ]);
 
+function isReasonableDate(d: Date): boolean {
+  const year = d.getFullYear();
+  return year >= 1900 && year <= 2100;
+}
+
 function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {
       const val = data[key];
       if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
         data[key] = null;
+      } else if (val instanceof Date) {
+        if (!isReasonableDate(val)) {
+          data[key] = null;
+        }
       } else if (typeof val === "string") {
         const isoMatch = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (isoMatch) {
-          if (isMSSQL) {
-            data[key] = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+          const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+          if (!isReasonableDate(d)) {
+            data[key] = null;
+          } else if (isMSSQL) {
+            data[key] = d;
           }
         } else {
           const d = new Date(val);
-          if (!isNaN(d.getTime())) {
+          if (!isNaN(d.getTime()) && isReasonableDate(d)) {
             if (isMSSQL) {
               data[key] = d;
             } else {

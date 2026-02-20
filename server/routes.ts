@@ -1409,13 +1409,20 @@ function excelDateToString(val: any): string | null {
   if (!s || s.toLowerCase() === "n/a" || s === "-" || s === "") return null;
   const parsed = new Date(s);
   if (!isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+    const yr = parsed.getFullYear();
+    if (yr < 1900 || yr > 2100) return null;
+    return `${yr}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
   }
   const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+  if (isoMatch) {
+    const yr = parseInt(isoMatch[1]);
+    if (yr < 1900 || yr > 2100) return null;
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
+  }
   const auMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (auMatch) {
     const yr = auMatch[3].length === 2 ? 2000 + parseInt(auMatch[3]) : parseInt(auMatch[3]);
+    if (yr < 1900 || yr > 2100) return null;
     return `${yr}-${auMatch[2].padStart(2, "0")}-${auMatch[1].padStart(2, "0")}`;
   }
   return null;
