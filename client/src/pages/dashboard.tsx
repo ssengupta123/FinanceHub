@@ -125,32 +125,41 @@ export default function Dashboard() {
     return projectMonthly.filter(m => m.fyYear === selectedFY);
   }, [projectMonthly, selectedFY]);
 
-  const fyKpis = useMemo(() => {
-    if (!kpis) return [];
-    return kpis.filter(k => fyProjectIds.has(k.projectId));
-  }, [kpis, fyProjectIds]);
-
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
+  const activeProjectIds = new Set(activeProjects.map(p => p.id));
   const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
   const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
-  const totalBudgeted = fyProjects.reduce((sum, p) => sum + parseFloat(p.budgetAmount || "0"), 0);
-  const totalRevenue = fyKpis.reduce((sum, k) => sum + parseFloat(k.revenue || "0"), 0);
-  const totalCosts = fyKpis.reduce((sum, k) => sum + parseFloat(k.grossCost || "0"), 0);
+  const totalRevenue = fyProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
+  const totalCosts = fyProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
-  const avgUtilization = fyKpis.length > 0
-    ? fyKpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / fyKpis.length / 100
+
+  const activeKpis = useMemo(() => {
+    if (!kpis) return [];
+    return kpis.filter(k => activeProjectIds.has(k.projectId));
+  }, [kpis, activeProjectIds]);
+
+  const avgUtilization = activeKpis.length > 0
+    ? activeKpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / activeKpis.length / 100
     : 0;
 
-  const fixedPriceProjects = fyProjects.filter(p => p.billingCategory === "Fixed");
-  const tmProjects = fyProjects.filter(p => p.billingCategory === "T&M");
-  const fixedIds = new Set(fixedPriceProjects.map(p => p.id));
-  const tmIds = new Set(tmProjects.map(p => p.id));
+  const projectBillingMap = new Map(fyProjects.map(p => [p.id, p.billingCategory || "Other"]));
 
-  const fixedRevenue = fyKpis.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
-  const fixedCost = fyKpis.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
-  const tmRevenue = fyKpis.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
-  const tmCost = fyKpis.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
+  const billingBreakdown = useMemo(() => {
+    const result: Record<string, { revenue: number; cost: number }> = {};
+    fyProjectMonthly.forEach(m => {
+      const billing = projectBillingMap.get(m.projectId) || "Other";
+      if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
+      result[billing].revenue += parseFloat(m.revenue || "0");
+      result[billing].cost += parseFloat(m.cost || "0");
+    });
+    return result;
+  }, [fyProjectMonthly, projectBillingMap]);
+
+  const fixedRevenue = billingBreakdown["Fixed"]?.revenue || 0;
+  const fixedCost = billingBreakdown["Fixed"]?.cost || 0;
+  const tmRevenue = billingBreakdown["T&M"]?.revenue || 0;
+  const tmCost = billingBreakdown["T&M"]?.cost || 0;
 
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
   const pipelineByClass = classificationOrder.map(cls => {
@@ -286,12 +295,14 @@ export default function Dashboard() {
             )}
             <div className="mt-2 grid grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
               <div>
-                <p className="text-muted-foreground">Fixed GP</p>
-                <p className="font-medium">{formatCurrency(fixedRevenue - fixedCost)} ({fixedRevenue > 0 ? formatPercent((fixedRevenue - fixedCost) / fixedRevenue) : "0%"})</p>
+                <p className="text-muted-foreground">Fixed Revenue</p>
+                <p className="font-medium">{formatCurrency(fixedRevenue)}</p>
+                <p className="text-muted-foreground mt-1">GP: {formatCurrency(fixedRevenue - fixedCost)} ({fixedRevenue > 0 ? formatPercent((fixedRevenue - fixedCost) / fixedRevenue) : "0%"})</p>
               </div>
               <div>
-                <p className="text-muted-foreground">T&M GP</p>
-                <p className="font-medium">{formatCurrency(tmRevenue - tmCost)} ({tmRevenue > 0 ? formatPercent((tmRevenue - tmCost) / tmRevenue) : "0%"})</p>
+                <p className="text-muted-foreground">T&M Revenue</p>
+                <p className="font-medium">{formatCurrency(tmRevenue)}</p>
+                <p className="text-muted-foreground mt-1">GP: {formatCurrency(tmRevenue - tmCost)} ({tmRevenue > 0 ? formatPercent((tmRevenue - tmCost) / tmRevenue) : "0%"})</p>
               </div>
             </div>
           </CardContent>
