@@ -189,6 +189,14 @@ export default function FinanceDashboard() {
     };
   });
 
+  const statusOrder = (s: string) => {
+    const lower = s?.toLowerCase() || "";
+    if (lower === "active") return 0;
+    if (lower === "closed" || lower === "completed") return 2;
+    return 1;
+  };
+  clientRows.sort((a, b) => statusOrder(a.status) - statusOrder(b.status) || a.client.localeCompare(b.client));
+
   const totalRevenue = clientRows.reduce((s, r) => s + r.ytdRevenue, 0);
   const totalCost = clientRows.reduce((s, r) => s + r.ytdCost, 0);
   const totalGP = totalRevenue - totalCost;
@@ -276,7 +284,7 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={!isLoading ? (totalGP > 0 ? "border-green-500/50" : "border-red-500/50") : ""}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -285,7 +293,7 @@ export default function FinanceDashboard() {
               {isLoading ? (
                 <Skeleton className="h-8 w-24" />
               ) : (
-                <div className="text-2xl font-bold" data-testid="text-finance-gp">
+                <div className={`text-2xl font-bold ${totalGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-finance-gp">
                   {formatCurrency(totalGP)}
                 </div>
               )}
@@ -307,6 +315,135 @@ export default function FinanceDashboard() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">Overall gross profit margin</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle className="text-base">VAT Category Breakdown</CardTitle>
+              <Layers className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                ))
+              ) : (
+                <div className="space-y-3">
+                  {vatBreakdown.map(({ vat, revenue }) => (
+                    <div
+                      key={vat}
+                      className="flex items-center justify-between gap-2"
+                      data-testid={`vat-row-${vat.toLowerCase()}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs min-w-[70px] justify-center">
+                          {vat}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium" data-testid={`text-vat-revenue-${vat.toLowerCase()}`}>
+                          {formatCurrency(revenue)}
+                        </span>
+                        {totalRevenue > 0 && (
+                          <span className="text-xs text-muted-foreground w-12 text-right">
+                            {((revenue / totalRevenue) * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="border-t pt-3 flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Total</span>
+                    <span className="text-sm font-bold" data-testid="text-vat-total">
+                      {formatCurrency(totalRevenue)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle className="text-base">Billing Type Split</CardTitle>
+              <SplitSquareHorizontal className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                ))
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Fixed Price</span>
+                      <span className="text-sm font-medium" data-testid="text-fixed-revenue">
+                        {formatCurrency(fixedRevenue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">Cost</span>
+                      <span className="text-sm" data-testid="text-fixed-cost">
+                        {formatCurrency(fixedCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP</span>
+                      <span className={`text-sm font-medium ${(fixedRevenue - fixedCost) > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-fixed-gp">
+                        {formatCurrency(fixedRevenue - fixedCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP%</span>
+                      <span className="text-sm font-medium" data-testid="text-fixed-gp-percent">
+                        {fixedRevenue > 0
+                          ? ((fixedRevenue - fixedCost) / fixedRevenue * 100).toFixed(1)
+                          : "0.0"}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Time & Materials</span>
+                      <span className="text-sm font-medium" data-testid="text-tm-revenue">
+                        {formatCurrency(tmRevenue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">Cost</span>
+                      <span className="text-sm" data-testid="text-tm-cost">
+                        {formatCurrency(tmCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP</span>
+                      <span className={`text-sm font-medium ${(tmRevenue - tmCost) > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-tm-gp">
+                        {formatCurrency(tmRevenue - tmCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP%</span>
+                      <span className="text-sm font-medium" data-testid="text-tm-gp-percent">
+                        {tmRevenue > 0
+                          ? ((tmRevenue - tmCost) / tmRevenue * 100).toFixed(1)
+                          : "0.0"}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3 flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Combined Revenue</span>
+                    <span className="text-sm font-bold" data-testid="text-billing-total">
+                      {formatCurrency(fixedRevenue + tmRevenue)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -437,7 +574,10 @@ export default function FinanceDashboard() {
                           </TableCell>
                         )}
                         {isCol("ytdGP") && (
-                          <TableCell className="text-right" data-testid={`text-ytd-gp-${row.projectId}`}>
+                          <TableCell
+                            className={`text-right font-medium ${row.ytdGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                            data-testid={`text-ytd-gp-${row.projectId}`}
+                          >
                             {formatCurrency(row.ytdGP)}
                           </TableCell>
                         )}
@@ -499,7 +639,10 @@ export default function FinanceDashboard() {
                         </TableCell>
                       )}
                       {isCol("ytdGP") && (
-                        <TableCell className="text-right font-bold" data-testid="text-total-ytd-gp">
+                        <TableCell
+                          className={`text-right font-bold ${totalGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                          data-testid="text-total-ytd-gp"
+                        >
                           {formatCurrency(totalGP)}
                         </TableCell>
                       )}
@@ -517,134 +660,6 @@ export default function FinanceDashboard() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle className="text-base">VAT Category Breakdown</CardTitle>
-              <Layers className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
-                ))
-              ) : (
-                <div className="space-y-3">
-                  {vatBreakdown.map(({ vat, revenue }) => (
-                    <div
-                      key={vat}
-                      className="flex items-center justify-between gap-2"
-                      data-testid={`vat-row-${vat.toLowerCase()}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs min-w-[70px] justify-center">
-                          {vat}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium" data-testid={`text-vat-revenue-${vat.toLowerCase()}`}>
-                          {formatCurrency(revenue)}
-                        </span>
-                        {totalRevenue > 0 && (
-                          <span className="text-xs text-muted-foreground w-12 text-right">
-                            {((revenue / totalRevenue) * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="border-t pt-3 flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Total</span>
-                    <span className="text-sm font-bold" data-testid="text-vat-total">
-                      {formatCurrency(totalRevenue)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle className="text-base">Billing Type Split</CardTitle>
-              <SplitSquareHorizontal className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
-                ))
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">Fixed Price</span>
-                      <span className="text-sm font-medium" data-testid="text-fixed-revenue">
-                        {formatCurrency(fixedRevenue)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">Cost</span>
-                      <span className="text-sm" data-testid="text-fixed-cost">
-                        {formatCurrency(fixedCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP</span>
-                      <span className="text-sm" data-testid="text-fixed-gp">
-                        {formatCurrency(fixedRevenue - fixedCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP%</span>
-                      <span className="text-sm font-medium" data-testid="text-fixed-gp-percent">
-                        {fixedRevenue > 0
-                          ? ((fixedRevenue - fixedCost) / fixedRevenue * 100).toFixed(1)
-                          : "0.0"}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">Time & Materials</span>
-                      <span className="text-sm font-medium" data-testid="text-tm-revenue">
-                        {formatCurrency(tmRevenue)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">Cost</span>
-                      <span className="text-sm" data-testid="text-tm-cost">
-                        {formatCurrency(tmCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP</span>
-                      <span className="text-sm" data-testid="text-tm-gp">
-                        {formatCurrency(tmRevenue - tmCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP%</span>
-                      <span className="text-sm font-medium" data-testid="text-tm-gp-percent">
-                        {tmRevenue > 0
-                          ? ((tmRevenue - tmCost) / tmRevenue * 100).toFixed(1)
-                          : "0.0"}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-3 flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Combined Revenue</span>
-                    <span className="text-sm font-bold" data-testid="text-billing-total">
-                      {formatCurrency(fixedRevenue + tmRevenue)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );
