@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,11 +51,19 @@ function getISOWeekKey(dateStr: string): string {
 
 export default function UtilizationDashboard() {
   const searchString = useSearch();
-  const urlParams = new URLSearchParams(searchString);
-  const filterParam = urlParams.get("filter");
 
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
-  const [showFilter, setShowFilter] = useState<"all" | "bench">(filterParam === "bench" ? "bench" : "all");
+  const [showFilter, setShowFilter] = useState<"all" | "bench">(() => {
+    const params = new URLSearchParams(searchString || window.location.search);
+    return params.get("filter") === "bench" ? "bench" : "all";
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString || window.location.search);
+    if (params.get("filter") === "bench") {
+      setShowFilter("bench");
+    }
+  }, [searchString]);
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
