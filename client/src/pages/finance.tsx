@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getElapsedFyMonths } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -145,6 +145,8 @@ export default function FinanceDashboard() {
 
   const isCol = (key: FinanceColumnKey) => visibleColumns.has(key);
 
+  const elapsedMonths = getElapsedFyMonths(selectedFY);
+
   const monthlyByProject = new Map<number, ProjectMonthly[]>();
   fyMonthlyData.forEach((m) => {
     const list = monthlyByProject.get(m.projectId) || [];
@@ -157,7 +159,7 @@ export default function FinanceDashboard() {
 
     const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
       rows
-        .filter((r) => r.month >= start && r.month <= end)
+        .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
         .reduce((s, r) => s + parseNum(r[field]), 0);
 
     const q1Rev = sumRange(1, 3, "revenue");
@@ -165,7 +167,7 @@ export default function FinanceDashboard() {
     const q3Rev = sumRange(7, 9, "revenue");
     const q4Rev = sumRange(10, 12, "revenue");
     const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
-    const ytdCost = rows.reduce((s, r) => s + parseNum(r.cost), 0);
+    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
     const ytdGP = ytdRevenue - ytdCost;
     const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
 
