@@ -266,16 +266,16 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * 0.3)}`}>
+        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * elapsedMonths / 12)}`}>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium">YTD Revenue</CardTitle>
-            <RagDot actual={totalRevenue} target={REVENUE_TARGET * 0.3} />
+            <RagDot actual={totalRevenue} target={REVENUE_TARGET * elapsedMonths / 12} />
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? <Skeleton className="h-7 sm:h-8 w-16 sm:w-24" /> : (
               <div className="text-lg sm:text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
             )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * 0.3)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * elapsedMonths / 12)}</p>
           </CardContent>
         </Card>
 
@@ -539,7 +539,7 @@ export default function Dashboard() {
             ) : (
               <>
                 {[
-                  { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * 0.3, format: "currency" as const },
+                  { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * elapsedMonths / 12, format: "currency" as const },
                   { label: "Contract Pipeline", actual: totalContracted, target: REVENUE_TARGET, format: "currency" as const },
                   { label: "Gross Margin", actual: marginPercent, target: MARGIN_TARGET, format: "percent" as const },
                   { label: "Utilisation", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
