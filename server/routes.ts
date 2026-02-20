@@ -129,7 +129,8 @@ export async function registerRoutes(
         GROUP BY e.role, e.grade, e.location, e.cost_band_level
         ORDER BY avg_sell_rate DESC
       `);
-      res.json(result.rows);
+      const rows = result.rows || result;
+      res.json(rows);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -721,9 +722,10 @@ export async function registerRoutes(
              AND t.week_ending >= ? AND t.week_ending < ?
             ) as allocated_permanent
         `, [fyStart, fyEnd]);
-        const row = result.rows[0];
-        const total = parseInt(row.total_permanent || "0");
-        const allocated = parseInt(row.allocated_permanent || "0");
+        const rows = result.rows || result;
+        const row = rows[0];
+        const total = parseInt(row?.total_permanent || "0");
+        const allocated = parseInt(row?.allocated_permanent || "0");
         return res.json({
           totalPermanent: total,
           allocatedPermanent: allocated,
