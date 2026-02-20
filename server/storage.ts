@@ -88,15 +88,43 @@ function rowsToModels<T>(rows: Record<string, any>[]): T[] {
   return rows.map((r) => rowToModel<T>(r));
 }
 
+const DATE_COLUMNS = new Set([
+  "start_date", "end_date", "schedule_start", "schedule_end",
+  "check_point_date", "month", "week_ending", "effective_from", "effective_to",
+  "due_date", "start_date_str", "expiry_date", "completed_at",
+]);
+
+function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
+  for (const key of Object.keys(data)) {
+    if (DATE_COLUMNS.has(key)) {
+      const val = data[key];
+      if (val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
+        data[key] = null;
+      } else if (typeof val === "string" && val !== null) {
+        const isoMatch = val.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (!isoMatch) {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) {
+            data[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          } else {
+            data[key] = null;
+          }
+        }
+      }
+    }
+  }
+  return data;
+}
+
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
-  const snakeData = toSnakeCase(data, table);
+  const snakeData = sanitizeDateFields(toSnakeCase(data, table));
   delete snakeData.id;
   const [row] = await db(table).insert(snakeData).returning("*");
   return rowToModel<T>(row);
 }
 
 async function updateReturning<T>(table: string, id: number, data: Record<string, any>): Promise<T | undefined> {
-  const snakeData = toSnakeCase(data, table);
+  const snakeData = sanitizeDateFields(toSnakeCase(data, table));
   delete snakeData.id;
   const [row] = await db(table).where("id", id).update(snakeData).returning("*");
   if (!row) return undefined;
