@@ -55,9 +55,12 @@ export default function UtilizationDashboard() {
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: ["/api/utilization/weekly"] });
-  const { data: resourcePlans, isLoading: loadingPlans } = useQuery<ResourcePlan[]>({ queryKey: ["/api/resource-plans"] });
+  const { data: resourcePlans } = useQuery<ResourcePlan[]>({
+    queryKey: ["/api/resource-plans"],
+    retry: false,
+  });
 
-  const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly || loadingPlans;
+  const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
 
   const availableFYs = useMemo(() => {
     if (!timesheets) return [getCurrentFy()];

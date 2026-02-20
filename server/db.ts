@@ -376,6 +376,20 @@ export async function runIncrementalMigrations() {
     });
   }
 
+  const hasResourcePlans = await db.schema.hasTable("resource_plans");
+  if (!hasResourcePlans) {
+    await db.schema.createTable("resource_plans", (t) => {
+      t.increments("id").primary();
+      t.integer("project_id").notNullable().references("id").inTable("projects").onDelete("CASCADE");
+      t.integer("employee_id").notNullable().references("id").inTable("employees").onDelete("CASCADE");
+      t.date("month").notNullable();
+      t.decimal("planned_days", 5, 1);
+      t.decimal("planned_hours", 6, 1);
+      t.decimal("allocation_percent", 5, 2);
+    });
+    console.log("Created resource_plans table");
+  }
+
   const hasCxRatings = await db.schema.hasTable("cx_ratings");
   if (!hasCxRatings) {
     await db.schema.createTable("cx_ratings", (t) => {
