@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Database, RefreshCw, Globe, Clock, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
+import { Database, RefreshCw, Globe, Clock, Shield, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
 import type { DataSource } from "@shared/schema";
 
 function statusVariant(status: string | null): "default" | "secondary" | "outline" | "destructive" {
