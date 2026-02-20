@@ -160,17 +160,22 @@ export default function Dashboard() {
   const tmCost = billingBreakdown["T&M"]?.cost || 0;
 
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
+  const WIN_RATES: Record<string, number> = { C: 1.0, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
   const pipelineByClass = classificationOrder.map(cls => {
     const opps = fyPipeline.filter(o => o.classification === cls);
     const totalRev = opps.reduce((s, o) => {
-      let t = 0;
-      for (let i = 1; i <= 12; i++) t += parseFloat((o as any)[`revenueM${i}`] || "0");
-      return s + t;
+      let monthlyTotal = 0;
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`revenueM${i}`] || "0");
+      if (monthlyTotal > 0) return s + monthlyTotal;
+      return s + parseFloat((o as any).value || "0");
     }, 0);
     const totalGP = opps.reduce((s, o) => {
-      let t = 0;
-      for (let i = 1; i <= 12; i++) t += parseFloat((o as any)[`grossProfitM${i}`] || "0");
-      return s + t;
+      let monthlyTotal = 0;
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`grossProfitM${i}`] || "0");
+      if (monthlyTotal > 0) return s + monthlyTotal;
+      const val = parseFloat((o as any).value || "0");
+      const margin = parseFloat((o as any).marginPercent || "0");
+      return s + (val * margin);
     }, 0);
     return { classification: cls, name: classificationLabel(cls), count: opps.length, revenue: totalRev, grossProfit: totalGP };
   });
