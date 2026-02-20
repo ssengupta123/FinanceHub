@@ -575,7 +575,7 @@ export async function registerRoutes(
     const ds = await storage.getDataSource(id);
     if (!ds) return res.status(404).json({ message: "Data source not found" });
 
-    await storage.updateDataSource(id, { status: "syncing", lastSyncAt: new Date().toISOString() });
+    
 
     try {
       let result: { imported: number; errors: string[]; message: string };
