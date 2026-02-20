@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Clock, Target, Users } from "lucide-react";
@@ -48,7 +50,12 @@ function getISOWeekKey(dateStr: string): string {
 }
 
 export default function UtilizationDashboard() {
+  const searchString = useSearch();
+  const urlParams = new URLSearchParams(searchString);
+  const filterParam = urlParams.get("filter");
+
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+  const [showFilter, setShowFilter] = useState<"all" | "bench">(filterParam === "bench" ? "bench" : "all");
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
@@ -78,13 +85,46 @@ export default function UtilizationDashboard() {
   const billableHoursTotal = billableTimesheets.reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
   const billableRatio = totalHours > 0 ? (billableHoursTotal / totalHours) * 100 : 0;
 
-  const employeeStats = useMemo(() => (employees || []).map(emp => {
+  const allEmployeeStats = useMemo(() => (employees || []).map(emp => {
     const empTimesheets = fyTimesheets.filter(t => t.employeeId === emp.id);
     const totalHrs = empTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const billableHrs = empTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const util = totalHrs > 0 ? (billableHrs / totalHrs) * 100 : 0;
-    return { employee: emp, totalHrs, billableHrs, util };
-  }).filter(e => e.totalHrs > 0).sort((a, b) => b.util - a.util), [employees, fyTimesheets]);
+    const hasActiveProjectWork = empTimesheets.some(t => {
+      const proj = (projects || []).find(p => p.id === t.projectId);
+      return proj && proj.client !== "Internal" && (proj.status === "active" || (proj as any).adStatus === "Active");
+    });
+    return { employee: emp, totalHrs, billableHrs, util, hasActiveProjectWork };
+  }).filter(e => e.totalHrs > 0).sort((a, b) => b.util - a.util), [employees, fyTimesheets, projects]);
+
+  const permanentEmployees = useMemo(() => (employees || []).filter(e => (e as any).staffType === "Permanent" && e.status === "active"), [employees]);
+
+  const allocatedPermanent = useMemo(() => {
+    return permanentEmployees.filter(emp => {
+      return fyTimesheets.some(t => {
+        if (t.employeeId !== emp.id) return false;
+        const proj = (projects || []).find(p => p.id === t.projectId);
+        return proj && proj.client !== "Internal" && (proj.status === "active" || (proj as any).adStatus === "Active");
+      });
+    });
+  }, [permanentEmployees, fyTimesheets, projects]);
+
+  const unallocatedPermanent = useMemo(() => {
+    const allocatedIds = new Set(allocatedPermanent.map(e => e.id));
+    return permanentEmployees.filter(e => !allocatedIds.has(e.id));
+  }, [permanentEmployees, allocatedPermanent]);
+
+  const employeeStats = useMemo(() => {
+    if (showFilter === "bench") {
+      const benchIds = new Set(unallocatedPermanent.map(e => e.id));
+      const benchStats = allEmployeeStats.filter(s => benchIds.has(s.employee.id));
+      const permWithNoTimesheets = unallocatedPermanent
+        .filter(emp => !allEmployeeStats.some(s => s.employee.id === emp.id))
+        .map(emp => ({ employee: emp, totalHrs: 0, billableHrs: 0, util: 0, hasActiveProjectWork: false }));
+      return [...benchStats, ...permWithNoTimesheets].sort((a, b) => a.util - b.util);
+    }
+    return allEmployeeStats;
+  }, [allEmployeeStats, showFilter, unallocatedPermanent]);
 
   const projectHours = useMemo(() => (projects || []).map(project => {
     const projTimesheets = fyTimesheets.filter(t => t.projectId === project.id);
@@ -164,10 +204,6 @@ export default function UtilizationDashboard() {
     };
   }, [fyWeeklyData]);
 
-  const overallUtilization = useMemo(() => {
-    if (rollingView.length === 0) return 0;
-    return rollingView.reduce((s, r) => s + r.avgUtil, 0) / rollingView.length;
-  }, [rollingView]);
 
   function utilColor(pct: number): string {
     if (pct >= 80) return "bg-green-500";
@@ -188,14 +224,16 @@ export default function UtilizationDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overall Utilisation</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Staff Allocation</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className="text-2xl font-bold" data-testid="text-overall-utilization">{overallUtilization.toFixed(1)}%</div>
+              <div className="text-2xl font-bold" data-testid="text-staff-allocation">
+                {permanentEmployees.length > 0 ? ((allocatedPermanent.length / permanentEmployees.length) * 100).toFixed(1) : 0}%
+              </div>
             )}
-            <p className="text-xs text-muted-foreground">Average across active resources</p>
+            <p className="text-xs text-muted-foreground">{allocatedPermanent.length} / {permanentEmployees.length} perm staff on active projects</p>
           </CardContent>
         </Card>
         <Card>
@@ -322,8 +360,26 @@ export default function UtilizationDashboard() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">Resource Utilisation (Actuals)</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={showFilter === "all" ? "default" : "outline"}
+              onClick={() => setShowFilter("all")}
+              data-testid="button-filter-all"
+            >
+              All Resources
+            </Button>
+            <Button
+              size="sm"
+              variant={showFilter === "bench" ? "default" : "outline"}
+              onClick={() => setShowFilter("bench")}
+              data-testid="button-filter-bench"
+            >
+              Unutilised ({unallocatedPermanent.length})
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

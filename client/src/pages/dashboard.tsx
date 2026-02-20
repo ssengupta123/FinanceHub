@@ -258,18 +258,20 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border ${ragBg(avgUtilization, UTILIZATION_TARGET)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
-            <CardTitle className="text-xs sm:text-sm font-medium">Utilisation</CardTitle>
-            <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
-              <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
-            )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">{utilizationData?.allocatedPermanent ?? 0} / {utilizationData?.totalPermanent ?? 0} perm staff</p>
-          </CardContent>
-        </Card>
+        <Link href="/utilization?filter=bench" className="block">
+          <Card className={`border cursor-pointer hover-elevate ${ragBg(avgUtilization, UTILIZATION_TARGET)}`} data-testid="card-utilisation-link">
+            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+              <CardTitle className="text-xs sm:text-sm font-medium">Utilisation</CardTitle>
+              <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
+            </CardHeader>
+            <CardContent className="p-3 sm:p-6 pt-0">
+              {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
+                <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
+              )}
+              <p className="text-[10px] sm:text-xs text-muted-foreground">{utilizationData?.allocatedPermanent ?? 0} / {utilizationData?.totalPermanent ?? 0} perm staff</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
