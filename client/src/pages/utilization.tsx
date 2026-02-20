@@ -298,7 +298,7 @@ export default function UtilizationDashboard() {
             )}
             <p className="text-xs text-muted-foreground">
               {overutilisedList.length > 0
-                ? `Averaging >38h/week: ${overutilisedList.slice(0, 3).map(o => o.name.split(" ")[0]).join(", ")}${overutilisedList.length > 3 ? "..." : ""}`
+                ? `${overutilisedList.length} resources over 100% allocation`
                 : "No resources over 100% allocation"
               }
             </p>
