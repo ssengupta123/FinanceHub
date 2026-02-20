@@ -995,7 +995,7 @@ export async function registerRoutes(
             results[sheetName] = await importProjectResourceCost(ws);
           } else if (sheetName === "Project Resource Cost A&F") {
             results[sheetName] = await importProjectResourceCostAF(ws);
-          } else if (sheetName === "query") {
+          } else if (sheetName === "query" || sheetName.toLowerCase().startsWith("open op")) {
             results[sheetName] = await importOpenOpps(ws);
           } else {
             results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
