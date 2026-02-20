@@ -700,7 +700,37 @@ export async function registerRoutes(
     const data = await storage.getFinanceDashboard();
     res.json(data);
   });
-  app.get("/api/dashboard/utilization", async (_req, res) => {
+  app.get("/api/dashboard/utilization", async (req, res) => {
+    const fy = req.query.fy as string | undefined;
+    if (fy) {
+      const parts = fy.split("-");
+      if (parts.length === 2) {
+        const fyStartYear = 2000 + parseInt(parts[0], 10);
+        const fyStart = `${fyStartYear}-07-01`;
+        const fyEnd = `${fyStartYear + 1}-07-01`;
+        const result = await db.raw(`
+          SELECT
+            (SELECT COUNT(*) FROM employees WHERE staff_type = 'Permanent' AND status = 'active') as total_permanent,
+            (SELECT COUNT(DISTINCT t.employee_id)
+             FROM timesheets t
+             JOIN employees e ON e.id = t.employee_id
+             JOIN projects p ON p.id = t.project_id
+             WHERE e.staff_type = 'Permanent' AND e.status = 'active'
+             AND p.client != 'Internal'
+             AND (p.status = 'active' OR p.ad_status = 'Active')
+             AND t.week_ending >= ? AND t.week_ending < ?
+            ) as allocated_permanent
+        `, [fyStart, fyEnd]);
+        const row = result.rows[0];
+        const total = parseInt(row.total_permanent || "0");
+        const allocated = parseInt(row.allocated_permanent || "0");
+        return res.json({
+          totalPermanent: total,
+          allocatedPermanent: allocated,
+          utilization: total > 0 ? allocated / total : 0,
+        });
+      }
+    }
     const data = await storage.getUtilizationSummary();
     res.json(data);
   });

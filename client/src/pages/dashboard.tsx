@@ -19,7 +19,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   AreaChart, Area,
 } from "recharts";
-import type { Project, Employee, Kpi, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
+import type { Project, Employee, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths } from "@/lib/fy-utils";
 
@@ -86,7 +86,7 @@ export default function Dashboard() {
 
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-  const { data: kpis, isLoading: loadingKpis } = useQuery<Kpi[]>({ queryKey: ["/api/kpis"] });
+  const { data: utilizationData, isLoading: loadingUtil } = useQuery<{ totalPermanent: number; allocatedPermanent: number; utilization: number }>({ queryKey: ["/api/dashboard/utilization", selectedFY], queryFn: () => fetch(`/api/dashboard/utilization?fy=${selectedFY}`).then(r => r.json()) });
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
 
@@ -132,7 +132,6 @@ export default function Dashboard() {
   }, [fyProjectMonthly, elapsedMonths]);
 
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
-  const activeProjectIds = new Set(activeProjects.map(p => p.id));
   const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
   const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
@@ -140,14 +139,7 @@ export default function Dashboard() {
   const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
 
-  const activeKpis = useMemo(() => {
-    if (!kpis) return [];
-    return kpis.filter(k => activeProjectIds.has(k.projectId));
-  }, [kpis, activeProjectIds]);
-
-  const avgUtilization = activeKpis.length > 0
-    ? activeKpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / activeKpis.length / 100
-    : 0;
+  const avgUtilization = utilizationData?.utilization ?? 0;
 
   const projectBillingMap = new Map(fyProjects.map(p => [p.id, p.billingCategory || "Other"]));
 
@@ -212,7 +204,7 @@ export default function Dashboard() {
       };
     });
 
-  const isLoading = loadingProjects || loadingEmployees || loadingKpis || loadingPipeline || loadingMonthly;
+  const isLoading = loadingProjects || loadingEmployees || loadingUtil || loadingPipeline || loadingMonthly;
 
   const customTooltipFormatter = (value: number) => formatCurrency(value);
 
@@ -275,7 +267,7 @@ export default function Dashboard() {
             {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
               <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
             )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">{activeProjects.length} proj / {activeEmployees.length} staff</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">{utilizationData?.allocatedPermanent ?? 0} / {utilizationData?.totalPermanent ?? 0} perm staff</p>
           </CardContent>
         </Card>
       </div>
