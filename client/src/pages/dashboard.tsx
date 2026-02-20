@@ -17,7 +17,7 @@ import { DollarSign, FolderOpen, TrendingUp, ArrowRight, Target } from "lucide-r
 import {
   PieChart as RechartsPie, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  AreaChart, Area, ComposedChart, Line, ReferenceLine,
 } from "recharts";
 import type { Project, Employee, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
@@ -198,6 +198,32 @@ export default function Dashboard() {
     return { month, revenue, cost, profit };
   });
 
+  const cumulativeYTDData = useMemo(() => {
+    const monthlyTarget = REVENUE_TARGET / 12;
+    let cumRevenue = 0;
+    let cumCost = 0;
+    let cumTarget = 0;
+    return FY_MONTHS.map((month, mi) => {
+      const monthNum = mi + 1;
+      const isElapsed = monthNum <= elapsedMonths;
+      const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
+      const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+      const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+      cumTarget += monthlyTarget;
+      if (isElapsed) {
+        cumRevenue += revenue;
+        cumCost += cost;
+      }
+      return {
+        month,
+        cumRevenue: isElapsed ? cumRevenue : null,
+        cumCost: isElapsed ? cumCost : null,
+        cumProfit: isElapsed ? cumRevenue - cumCost : null,
+        cumTarget,
+      };
+    });
+  }, [fyProjectMonthly, elapsedMonths]);
+
   const marginBarData = fyProjects
     .filter(p => p.status === "active")
     .map(p => {
@@ -340,32 +366,59 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY {selectedFY})</CardTitle>
-          <Link href="/finance">
-            <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
-              <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 pt-0">
-          {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
-            <ResponsiveContainer width="100%" height={240} data-testid="chart-monthly-trend">
-              <AreaChart data={monthlyTrendData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
-                <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                <Legend wrapperStyle={{ fontSize: "11px" }} />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
-                <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
-                <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY {selectedFY})</CardTitle>
+            <Link href="/finance">
+              <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
+                <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-monthly-trend">
+                <AreaChart data={monthlyTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} />
+                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
+                  <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Cumulative YTD vs Target (FY {selectedFY})</CardTitle>
+            <Badge variant="outline">{formatCurrency(REVENUE_TARGET)} target</Badge>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-cumulative-ytd">
+                <ComposedChart data={cumulativeYTDData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={55} />
+                  <Tooltip formatter={(value: any) => value !== null ? formatCurrency(value) : "—"} />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} />
+                  <Line type="monotone" dataKey="cumTarget" name="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls />
+                  <Area type="monotone" dataKey="cumRevenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} connectNulls />
+                  <Area type="monotone" dataKey="cumCost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={2} connectNulls />
+                  <Line type="monotone" dataKey="cumProfit" name="Profit" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  <ReferenceLine y={REVENUE_TARGET} stroke="#94a3b8" strokeDasharray="3 3" label={{ value: "FY Target", position: "right", fontSize: 10, fill: "#94a3b8" }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
