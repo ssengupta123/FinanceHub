@@ -130,17 +130,46 @@ export default function Pipeline() {
 
   const [selectedFY, setSelectedFY] = useState("open_opps");
 
+  const getDueDateFY = (dueDate: string | null | undefined): string | null => {
+    if (!dueDate) return null;
+    const d = new Date(dueDate);
+    if (isNaN(d.getTime())) return null;
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    const fyStart = m >= 6 ? y : y - 1;
+    return String(fyStart).slice(2) + "-" + String(fyStart + 1).slice(2);
+  };
+
   const availableFYs = useMemo(() => {
     if (!pipeline) return ["open_opps"];
-    const fys = Array.from(new Set(pipeline.map(o => o.fyYear).filter((v): v is string => !!v)));
-    return fys.sort((a, b) => {
+    const fySet = new Set<string>();
+    pipeline.forEach(o => {
+      if (o.fyYear) fySet.add(o.fyYear);
+      if (o.fyYear === "open_opps" && o.dueDate) {
+        const fy = getDueDateFY(o.dueDate);
+        if (fy) fySet.add(fy);
+      }
+    });
+    return Array.from(fySet).sort((a, b) => {
       if (a === "open_opps") return -1;
       if (b === "open_opps") return 1;
       return a.localeCompare(b);
     });
   }, [pipeline]);
 
-  const openOpps = useMemo(() => (pipeline || []).filter(o => o.fyYear === selectedFY), [pipeline, selectedFY]);
+  const openOpps = useMemo(() => {
+    if (!pipeline) return [];
+    if (selectedFY === "open_opps") {
+      return pipeline.filter(o => o.fyYear === "open_opps");
+    }
+    const directMatch = pipeline.filter(o => o.fyYear === selectedFY);
+    const fromOpenOpps = pipeline.filter(o => o.fyYear === "open_opps" && getDueDateFY(o.dueDate) === selectedFY);
+    if (directMatch.length > 0 && fromOpenOpps.length > 0) {
+      const directIds = new Set(directMatch.map(o => o.id));
+      return [...directMatch, ...fromOpenOpps.filter(o => !directIds.has(o.id))];
+    }
+    return directMatch.length > 0 ? directMatch : fromOpenOpps;
+  }, [pipeline, selectedFY]);
 
   const vatCategories = useMemo(() => {
     const cats = Array.from(new Set(openOpps.map(o => o.vat).filter((v): v is string => !!v)));
