@@ -1,0 +1,19 @@
+Row 3: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 4: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 5: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 6: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 7: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 8: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 9: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 10: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 11: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
+
+Row 12: insert into [project_monthly] ([cost], [fy_year], [month], [month_label], [profit], [project_id], [revenue]) output inserted.* values (@p0, @p1, @p2, @p3, @p4, @p5, @p6) - Cannot insert the value NULL into column 'month', table 'FinanceHubDB.dbo.project_monthly'; column does not allow nulls. INSERT fails.
