@@ -226,6 +226,13 @@ export default function UtilizationDashboard() {
     return "bg-red-500";
   }
 
+  function ragLabel(pct: number): { text: string; bg: string; fg: string } {
+    if (pct > 100) return { text: "Over", bg: "bg-purple-100 dark:bg-purple-900/40", fg: "text-purple-700 dark:text-purple-300" };
+    if (pct >= 80) return { text: "Good", bg: "bg-green-100 dark:bg-green-900/40", fg: "text-green-700 dark:text-green-300" };
+    if (pct >= 50) return { text: "Fair", bg: "bg-amber-100 dark:bg-amber-900/40", fg: "text-amber-700 dark:text-amber-300" };
+    return { text: "Risk", bg: "bg-red-100 dark:bg-red-900/40", fg: "text-red-700 dark:text-red-300" };
+  }
+
   function utilCellClass(pct: number, isProjected: boolean): string {
     const opacity = isProjected ? "opacity-70" : "";
     if (pct > 100) return `bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 ${opacity}`;
@@ -240,7 +247,23 @@ export default function UtilizationDashboard() {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilisation Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Forward-looking 13-week resource utilisation for permanent staff</p>
+          <p className="text-sm text-muted-foreground">
+            Forward-looking 13-week resource utilisation for permanent staff
+          </p>
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Good (&ge;80%)
+            </span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" /> Fair (50-79%)
+            </span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> Risk (&lt;50%)
+            </span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500" /> Over (&gt;100%)
+            </span>
+          </div>
         </div>
         <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
       </div>
@@ -253,9 +276,14 @@ export default function UtilizationDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className="text-2xl font-bold" data-testid="text-staff-allocation">
-                {permanentEmployees.length > 0 ? ((allocatedPermanent.length / permanentEmployees.length) * 100).toFixed(1) : 0}%
-              </div>
+              (() => {
+                const allocPct = permanentEmployees.length > 0 ? (allocatedPermanent.length / permanentEmployees.length) * 100 : 0;
+                return (
+                  <div className={`text-2xl font-bold ${allocPct >= 80 ? "text-green-600 dark:text-green-400" : allocPct >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-staff-allocation">
+                    {allocPct.toFixed(1)}%
+                  </div>
+                );
+              })()
             )}
             <p className="text-xs text-muted-foreground">{allocatedPermanent.length} / {permanentEmployees.length} perm staff on active projects</p>
           </CardContent>
@@ -291,9 +319,10 @@ export default function UtilizationDashboard() {
                 const totalHrs = permTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
                 const billHrs = permTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
                 const ratio = totalHrs > 0 ? (billHrs / totalHrs) * 100 : 0;
+                const ratioColor = ratio >= 80 ? "text-green-600 dark:text-green-400" : ratio >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
                 return (
                   <>
-                    <div className="text-2xl font-bold" data-testid="text-billable-ratio">{ratio.toFixed(1)}%</div>
+                    <div className={`text-2xl font-bold ${ratioColor}`} data-testid="text-billable-ratio">{ratio.toFixed(1)}%</div>
                     <p className="text-xs text-muted-foreground">{billHrs.toFixed(0)}h billable of {totalHrs.toFixed(0)}h total (perm only)</p>
                   </>
                 );
@@ -308,7 +337,10 @@ export default function UtilizationDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className="text-2xl font-bold" data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>
+              (() => {
+                const benchColor = benchSummary.benchPct <= 15 ? "text-green-600 dark:text-green-400" : benchSummary.benchPct <= 30 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
+                return <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>;
+              })()
             )}
             <p className="text-xs text-muted-foreground">
               {benchSummary.benchPct.toFixed(1)}% capacity | {benchSummary.onBenchCount} on bench (perm only)
@@ -378,6 +410,7 @@ export default function UtilizationDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[160px] sticky left-0 bg-background z-10">Resource</TableHead>
+                    <TableHead className="text-center min-w-[60px]">RAG</TableHead>
                     <TableHead className="text-right min-w-[60px]">Avg %</TableHead>
                     <TableHead className="text-right min-w-[70px]">Bench (h)</TableHead>
                     {weekColumns.map(w => (
@@ -393,6 +426,16 @@ export default function UtilizationDashboard() {
                           <span className={`inline-block w-2 h-2 rounded-full ${utilColor(row.avgUtil)}`} />
                           {row.name}
                         </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {(() => {
+                          const rag = ragLabel(row.avgUtil);
+                          return (
+                            <Badge variant="outline" className={`${rag.bg} ${rag.fg} border-0 text-xs`} data-testid={`badge-rag-${row.employeeId}`}>
+                              {rag.text}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <span className={
@@ -419,6 +462,17 @@ export default function UtilizationDashboard() {
                   ))}
                   <TableRow className="font-bold border-t-2">
                     <TableCell className="sticky left-0 bg-background z-10">Total</TableCell>
+                    <TableCell className="text-center">
+                      {(() => {
+                        const totalPct = benchSummary.totalCapacity > 0 ? (benchSummary.totalWorked / benchSummary.totalCapacity) * 100 : 0;
+                        const rag = ragLabel(totalPct);
+                        return (
+                          <Badge variant="outline" className={`${rag.bg} ${rag.fg} border-0 text-xs`} data-testid="badge-rag-total">
+                            {rag.text}
+                          </Badge>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right">
                       {benchSummary.totalCapacity > 0
                         ? ((benchSummary.totalWorked / benchSummary.totalCapacity) * 100).toFixed(0)
