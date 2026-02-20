@@ -77,9 +77,8 @@ function classificationLabel(c: string) {
   return map[c] || c;
 }
 
-const MARGIN_TARGET = 0.20;
-const REVENUE_TARGET = 5000000;
-const UTILIZATION_TARGET = 0.85;
+type FinancialTargets = { revenue_target: number; margin_target: number; utilisation_target: number };
+const DEFAULT_TARGETS: FinancialTargets = { revenue_target: 5000000, margin_target: 0.20, utilisation_target: 0.85 };
 
 export default function Dashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
@@ -89,6 +88,10 @@ export default function Dashboard() {
   const { data: utilizationData, isLoading: loadingUtil } = useQuery<{ totalPermanent: number; allocatedPermanent: number; utilization: number }>({ queryKey: ["/api/dashboard/utilization", selectedFY], queryFn: () => fetch(`/api/dashboard/utilization?fy=${selectedFY}`).then(r => r.json()) });
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
+  const { data: targets } = useQuery<FinancialTargets>({ queryKey: ["/api/financial-targets", selectedFY], queryFn: () => fetch(`/api/financial-targets/${selectedFY}`).then(r => r.json()) });
+  const REVENUE_TARGET = targets?.revenue_target ?? DEFAULT_TARGETS.revenue_target;
+  const MARGIN_TARGET = targets?.margin_target ?? DEFAULT_TARGETS.margin_target;
+  const UTILIZATION_TARGET = targets?.utilisation_target ?? DEFAULT_TARGETS.utilisation_target;
 
   const availableFYs = useMemo(() => {
     if (!projectMonthly) return [getCurrentFy()];

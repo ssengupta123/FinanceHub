@@ -838,6 +838,23 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  app.get("/api/financial-targets/:fy", async (req, res) => {
+    const fy = req.params.fy;
+    const allTargets = await storage.getReferenceDataByCategory("financial_target");
+    const fyTargets = allTargets.filter(t => t.fyYear === fy && t.active !== false);
+    const defaults: Record<string, string> = {
+      revenue_target: "5000000",
+      margin_target: "0.20",
+      utilisation_target: "0.85",
+    };
+    const result: Record<string, number> = {};
+    for (const [key, defaultVal] of Object.entries(defaults)) {
+      const match = fyTargets.find(t => t.key === key);
+      result[key] = parseFloat(match?.value ?? defaultVal);
+    }
+    res.json(result);
+  });
+
   // ─── Auth ───
   app.post("/api/auth/login", async (req, res) => {
     try {

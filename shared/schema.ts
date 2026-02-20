@@ -291,6 +291,7 @@ export const insertReferenceDataSchema = z.object({
   value: z.string(),
   displayOrder: z.number().nullable().optional(),
   active: z.boolean().optional().default(true),
+  fyYear: z.string().nullable().optional(),
 });
 export type InsertReferenceData = z.infer<typeof insertReferenceDataSchema>;
 export type ReferenceData = InsertReferenceData & { id: number };

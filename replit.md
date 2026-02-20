@@ -4,6 +4,12 @@
 FinanceHub is a production-grade financial and project management application designed to consolidate data from various sources (manual and automated). Its primary purpose is to track project burn rates, resource utilization, financial forecasts, customer experience ratings, and resource costs with robust workflows. The application is tailored to match Excel data structures, including pipeline classifications, VAT categories, billing types, and the Australian Financial Year format (Jul-Jun). It is engineered for deployment on Azure, aiming to provide a comprehensive solution for financial oversight and project management.
 
 ## Recent Changes
+- **Feb 2026:** Centralised financial targets as reference data with FY field:
+  - Added `fy_year` column to `reference_data` table for FY-scoped entries.
+  - New `financial_target` category in Admin reference data page with FY selector — allows setting Revenue Target, Margin Target, and Utilisation Target per financial year.
+  - New API endpoint `GET /api/financial-targets/:fy` returns targets for a given FY with fallback defaults (Revenue $5M, Margin 20%, Utilisation 85%).
+  - Dashboard and Projects pages now fetch targets dynamically from reference data instead of using hardcoded constants.
+  - Cumulative YTD vs Target chart on dashboard uses dynamic revenue target.
 - **Feb 2026:** Added Open Opps pipeline import:
   - New **Open Opps** Excel import (`importOpenOpps`) reads SharePoint-exported pipeline file with "query" sheet. Imports Folder-type rows with Phase set (A/Q/DF/DVF/S), parsing value, margin, work type, RAG status, dates, leads, categories, partners, and client codes. 300 opportunities imported with $136.7M total pipeline value.
   - Extended `pipeline_opportunities` table with 14 new columns: value, margin_percent, work_type, status, due_date, start_date, expiry_date, comment, cas_lead, csd_lead, category, partner, client_contact, client_code.

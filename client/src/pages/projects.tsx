@@ -87,8 +87,6 @@ function statusVariant(status: string | null | undefined): "default" | "secondar
   }
 }
 
-const MARGIN_TARGET = 0.20;
-
 function RagDot({ value, greenThreshold, amberThreshold }: { value: number; greenThreshold: number; amberThreshold: number }) {
   let color = "bg-green-500";
   if (value < amberThreshold) color = "bg-red-500";
@@ -96,9 +94,9 @@ function RagDot({ value, greenThreshold, amberThreshold }: { value: number; gree
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
-function marginRagClass(val: number): string {
-  if (val >= MARGIN_TARGET) return "text-green-600 dark:text-green-400";
-  if (val >= MARGIN_TARGET * 0.5) return "text-amber-500 dark:text-amber-400";
+function marginRagClass(val: number, marginTarget: number): string {
+  if (val >= marginTarget) return "text-green-600 dark:text-green-400";
+  if (val >= marginTarget * 0.5) return "text-amber-500 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
 }
 
@@ -237,6 +235,8 @@ export default function ProjectsList() {
 
   const { data: projects, isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: projectMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
+  const { data: targets } = useQuery<{ revenue_target: number; margin_target: number; utilisation_target: number }>({ queryKey: ["/api/financial-targets", selectedFY], queryFn: () => fetch(`/api/financial-targets/${selectedFY}`).then(r => r.json()) });
+  const MARGIN_TARGET = targets?.margin_target ?? 0.20;
 
   const availableFYs = useMemo(() => {
     if (!projectMonthly) return [getCurrentFy()];
@@ -712,7 +712,7 @@ export default function ProjectsList() {
                         )}
                         {isCol("margin") && (
                           <TableCell
-                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent))}`}
+                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent), MARGIN_TARGET)}`}
                             onClick={() => navigate(`/projects/${project.id}`)}
                             data-testid={`text-margin-${project.id}`}
                           >
