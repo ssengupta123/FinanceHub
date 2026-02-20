@@ -407,7 +407,6 @@ export default function UtilizationDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[160px] sticky left-0 bg-background z-10">Resource</TableHead>
-                    <TableHead className="text-center min-w-[60px]">RAG</TableHead>
                     <TableHead className="text-right min-w-[60px]">Avg %</TableHead>
                     <TableHead className="text-right min-w-[70px]">Bench (h)</TableHead>
                     {weekColumns.map(w => (
@@ -423,16 +422,6 @@ export default function UtilizationDashboard() {
                           <span className={`inline-block w-2 h-2 rounded-full ${utilColor(row.avgUtil)}`} />
                           {row.name}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {(() => {
-                          const rag = ragLabel(row.avgUtil);
-                          return (
-                            <Badge variant="outline" className={`${rag.bg} ${rag.fg} border-0 text-xs`} data-testid={`badge-rag-${row.employeeId}`}>
-                              {rag.text}
-                            </Badge>
-                          );
-                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <span className={
@@ -459,17 +448,6 @@ export default function UtilizationDashboard() {
                   ))}
                   <TableRow className="font-bold border-t-2">
                     <TableCell className="sticky left-0 bg-background z-10">Total</TableCell>
-                    <TableCell className="text-center">
-                      {(() => {
-                        const totalPct = benchSummary.totalCapacity > 0 ? (benchSummary.totalWorked / benchSummary.totalCapacity) * 100 : 0;
-                        const rag = ragLabel(totalPct);
-                        return (
-                          <Badge variant="outline" className={`${rag.bg} ${rag.fg} border-0 text-xs`} data-testid="badge-rag-total">
-                            {rag.text}
-                          </Badge>
-                        );
-                      })()}
-                    </TableCell>
                     <TableCell className="text-right">
                       {benchSummary.totalCapacity > 0
                         ? ((benchSummary.totalWorked / benchSummary.totalCapacity) * 100).toFixed(0)
