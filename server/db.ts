@@ -432,5 +432,13 @@ export async function runIncrementalMigrations() {
     console.log("Added new pipeline_opportunities columns");
   }
 
+  const hasRefFyYear = await db.schema.hasColumn("reference_data", "fy_year");
+  if (!hasRefFyYear) {
+    await db.schema.alterTable("reference_data", (t) => {
+      t.text("fy_year");
+    });
+    console.log("Added fy_year column to reference_data");
+  }
+
   console.log("Incremental migrations completed");
 }

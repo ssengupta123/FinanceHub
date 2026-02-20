@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getCurrentFy } from "@/lib/fy-utils";
+import { FySelector } from "@/components/fy-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,6 +45,7 @@ type SortField = "employee_name" | "project_name" | "month" | "total_hours" | "t
 
 export default function ResourcePlans() {
   const { toast } = useToast();
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [open, setOpen] = useState(false);
   const [employeeId, setEmployeeId] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -149,6 +152,7 @@ export default function ResourcePlans() {
           <p className="text-sm text-muted-foreground">Actual resource allocations derived from timesheet data</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={[getCurrentFy()]} onChange={setSelectedFY} />
           <Select value={filterMonth} onValueChange={setFilterMonth}>
             <SelectTrigger className="w-[160px]" data-testid="select-filter-month-trigger">
               <SelectValue placeholder="Filter by month" />

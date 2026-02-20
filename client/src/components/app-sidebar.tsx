@@ -39,7 +39,7 @@ const navGroups = [
     items: [
       { title: "Dashboard", icon: LayoutDashboard, path: "/" },
       { title: "Finance", icon: TrendingUp, path: "/finance" },
-      { title: "Utilization", icon: BarChart3, path: "/utilization" },
+      { title: "Utilisation", icon: BarChart3, path: "/utilization" },
     ],
   },
   {
@@ -56,6 +56,7 @@ const navGroups = [
       { title: "Resource Plans", icon: Calendar, path: "/resource-plans" },
       { title: "Timesheets", icon: Clock, path: "/timesheets" },
       { title: "Costs", icon: Receipt, path: "/costs" },
+      { title: "Milestones", icon: Target, path: "/milestones" },
     ],
   },
   {
@@ -68,9 +69,8 @@ const navGroups = [
     ],
   },
   {
-    label: "Tracking",
+    label: "Admin",
     items: [
-      { title: "Milestones", icon: Target, path: "/milestones" },
       { title: "Data Sources", icon: Database, path: "/data-sources" },
       { title: "Data Upload", icon: Upload, path: "/upload" },
     ],

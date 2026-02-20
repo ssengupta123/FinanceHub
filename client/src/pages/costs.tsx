@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -60,6 +62,7 @@ export default function Costs() {
   const [month, setMonth] = useState("");
   const [costType, setCostType] = useState("resource");
   const [source, setSource] = useState("calculated");
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("total_cost");
   const [sortAsc, setSortAsc] = useState(false);
@@ -70,13 +73,34 @@ export default function Costs() {
 
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
 
-  const availableMonths = useMemo(() => {
-    const months = new Set((costSummary || []).map(r => r.month));
-    return Array.from(months).sort().reverse();
+  const monthToFy = (yyyyMm: string): string | null => {
+    if (!yyyyMm || yyyyMm.length < 7) return null;
+    const [yearStr, monStr] = yyyyMm.split("-");
+    const year = parseInt(yearStr);
+    const mon = parseInt(monStr);
+    if (isNaN(year) || isNaN(mon)) return null;
+    const fyStart = mon >= 7 ? year : year - 1;
+    return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+  };
+
+  const availableFYs = useMemo(() => {
+    if (!costSummary) return [getCurrentFy()];
+    const fys = costSummary.map(r => monthToFy(r.month)).filter(Boolean) as string[];
+    return getFyOptions(fys);
   }, [costSummary]);
 
+  const fyFilteredSummary = useMemo(() => {
+    if (!costSummary) return [];
+    return costSummary.filter(r => monthToFy(r.month) === selectedFY);
+  }, [costSummary, selectedFY]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set(fyFilteredSummary.map(r => r.month));
+    return Array.from(months).sort().reverse();
+  }, [fyFilteredSummary]);
+
   const filteredSummary = useMemo(() => {
-    let data = costSummary || [];
+    let data = fyFilteredSummary;
     if (filterMonth !== "all") {
       data = data.filter(r => r.month === filterMonth);
     }
@@ -106,7 +130,7 @@ export default function Costs() {
       return sortAsc ? aVal - bVal : bVal - aVal;
     });
     return data;
-  }, [costSummary, filterMonth, sortField, sortAsc]);
+  }, [fyFilteredSummary, filterMonth, sortField, sortAsc]);
 
   const totals = useMemo(() => {
     const data = filteredSummary;
@@ -157,6 +181,7 @@ export default function Costs() {
           <p className="text-sm text-muted-foreground">Cost and revenue analysis derived from timesheet data</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <Select value={filterMonth} onValueChange={setFilterMonth}>
             <SelectTrigger className="w-[160px]" data-testid="select-filter-month-trigger">
               <SelectValue placeholder="Filter by month" />

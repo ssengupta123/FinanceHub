@@ -700,7 +700,37 @@ export async function registerRoutes(
     const data = await storage.getFinanceDashboard();
     res.json(data);
   });
-  app.get("/api/dashboard/utilization", async (_req, res) => {
+  app.get("/api/dashboard/utilization", async (req, res) => {
+    const fy = req.query.fy as string | undefined;
+    if (fy) {
+      const parts = fy.split("-");
+      if (parts.length === 2) {
+        const fyStartYear = 2000 + parseInt(parts[0], 10);
+        const fyStart = `${fyStartYear}-07-01`;
+        const fyEnd = `${fyStartYear + 1}-07-01`;
+        const result = await db.raw(`
+          SELECT
+            (SELECT COUNT(*) FROM employees WHERE staff_type = 'Permanent' AND status = 'active') as total_permanent,
+            (SELECT COUNT(DISTINCT t.employee_id)
+             FROM timesheets t
+             JOIN employees e ON e.id = t.employee_id
+             JOIN projects p ON p.id = t.project_id
+             WHERE e.staff_type = 'Permanent' AND e.status = 'active'
+             AND p.client != 'Internal'
+             AND (p.status = 'active' OR p.ad_status = 'Active')
+             AND t.week_ending >= ? AND t.week_ending < ?
+            ) as allocated_permanent
+        `, [fyStart, fyEnd]);
+        const row = result.rows[0];
+        const total = parseInt(row.total_permanent || "0");
+        const allocated = parseInt(row.allocated_permanent || "0");
+        return res.json({
+          totalPermanent: total,
+          allocatedPermanent: allocated,
+          utilization: total > 0 ? allocated / total : 0,
+        });
+      }
+    }
     const data = await storage.getUtilizationSummary();
     res.json(data);
   });
@@ -806,6 +836,23 @@ export async function registerRoutes(
   app.delete("/api/reference-data/:id", async (req, res) => {
     await storage.deleteReferenceData(Number(req.params.id));
     res.json({ success: true });
+  });
+
+  app.get("/api/financial-targets/:fy", async (req, res) => {
+    const fy = req.params.fy;
+    const allTargets = await storage.getReferenceDataByCategory("financial_target");
+    const fyTargets = allTargets.filter(t => t.fyYear === fy && t.active !== false);
+    const defaults: Record<string, string> = {
+      revenue_target: "5000000",
+      margin_target: "0.20",
+      utilisation_target: "0.85",
+    };
+    const result: Record<string, number> = {};
+    for (const [key, defaultVal] of Object.entries(defaults)) {
+      const match = fyTargets.find(t => t.key === key);
+      result[key] = parseFloat(match?.value ?? defaultVal);
+    }
+    res.json(result);
   });
 
   // ─── Auth ───
@@ -1030,8 +1077,8 @@ export async function registerRoutes(
       if (!openai) {
         return res.status(503).json({ message: "AI insights are not available. Configure OPENAI_API_KEY in environment variables." });
       }
-      if (!type || !["pipeline", "projects", "overview"].includes(type)) {
-        return res.status(400).json({ message: "Invalid type. Use: pipeline, projects, or overview" });
+      if (!type || !["pipeline", "projects", "overview", "spending_patterns", "financial_advice", "spending_forecast"].includes(type)) {
+        return res.status(400).json({ message: "Invalid type." });
       }
 
       const projects = await storage.getProjects();
@@ -1131,6 +1178,127 @@ Identify risks including:
 - Revenue concentration: too much revenue from one or two projects
 - T&M leakage: T&M projects where billable rates may not cover costs
 - Forecast vs actual gaps: projects where forecasted revenue differs significantly from actual trajectory`;
+      } else if (type === "spending_patterns" || type === "financial_advice" || type === "spending_forecast") {
+        const employees = await storage.getEmployees();
+        let resourceCosts: any[] = [];
+        try { resourceCosts = await db("resource_costs").select("*"); } catch (e) { /* table may not exist */ }
+
+        const activeProjects = projects.filter(p => p.status === "active" || (p as any).adStatus === "Active");
+        const permEmployees = employees.filter(e => (e as any).staffType === "Permanent");
+
+        const monthlySpend: Record<string, { revenue: number; cost: number; profit: number }> = {};
+        projectMonthly.forEach(m => {
+          const key = `${m.fyYear}-M${m.month}`;
+          if (!monthlySpend[key]) monthlySpend[key] = { revenue: 0, cost: 0, profit: 0 };
+          monthlySpend[key].revenue += parseFloat(m.revenue || "0");
+          monthlySpend[key].cost += parseFloat(m.cost || "0");
+          monthlySpend[key].profit += parseFloat(m.revenue || "0") - parseFloat(m.cost || "0");
+        });
+
+        const billingBreakdown: Record<string, { revenue: number; cost: number }> = {};
+        projects.forEach(p => {
+          const cat = (p as any).billingCategory || "Other";
+          const pm = projectMonthly.filter(m => m.projectId === p.id);
+          const rev = pm.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+          const cost = pm.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          if (!billingBreakdown[cat]) billingBreakdown[cat] = { revenue: 0, cost: 0 };
+          billingBreakdown[cat].revenue += rev;
+          billingBreakdown[cat].cost += cost;
+        });
+
+        const topCostProjects = projects.map(p => {
+          const pm = projectMonthly.filter(m => m.projectId === p.id);
+          const totalCost = pm.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const totalRev = pm.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+          const monthCosts = pm.sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => parseFloat(m.cost || "0"));
+          return { name: p.name, code: (p as any).projectCode, billing: (p as any).billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
+        }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
+
+        const staffCostSummary = resourceCosts.map((rc: any) => ({
+          name: rc.employee_name,
+          staffType: rc.staff_type,
+          phase: rc.cost_phase,
+          total: parseFloat(rc.total_cost || "0"),
+        }));
+        const totalStaffCost = staffCostSummary.reduce((s: number, r: any) => s + r.total, 0);
+        const permCost = staffCostSummary.filter((r: any) => r.staffType === "Permanent").reduce((s: number, r: any) => s + r.total, 0);
+        const contractorCost = staffCostSummary.filter((r: any) => r.staffType === "Contractor").reduce((s: number, r: any) => s + r.total, 0);
+
+        const monthlySpendStr = Object.entries(monthlySpend)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Profit $${v.profit.toLocaleString()}`)
+          .join("\n");
+
+        const billingStr = Object.entries(billingBreakdown)
+          .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Margin ${v.revenue > 0 ? ((v.revenue - v.cost) / v.revenue * 100).toFixed(1) : 0}%`)
+          .join("\n");
+
+        const topProjectsStr = topCostProjects
+          .map(p => `  "${p.name}" [${p.billing || "?"}]: Cost $${p.totalCost.toLocaleString()} Rev $${p.totalRev.toLocaleString()} Margin:${p.margin}% Trend:[${p.monthCosts.map(c => `$${c.toLocaleString()}`).join(",")}]`)
+          .join("\n");
+
+        const dataContext = `Organization Financial Data:
+- Active Projects: ${activeProjects.length} / ${projects.length} total
+- Permanent Employees: ${permEmployees.length} / ${employees.length} total
+- Total Staff Cost (resource_costs): $${totalStaffCost.toLocaleString()} (Permanent: $${permCost.toLocaleString()}, Contractor: $${contractorCost.toLocaleString()})
+- Pipeline Opportunities: ${pipelineOpps.length}
+
+Monthly Spend Pattern (by FY-Month):
+${monthlySpendStr}
+
+Billing Category Breakdown:
+${billingStr}
+
+Top 20 Projects by Cost:
+${topProjectsStr}`;
+
+        if (type === "spending_patterns") {
+          systemPrompt = `You are a senior financial analyst specializing in spending pattern analysis for an Australian professional services firm. Use Australian Financial Year (Jul-Jun). Provide data-driven analysis with specific numbers.`;
+          userPrompt = `Analyze our spending patterns in detail. Identify trends, anomalies, and areas of concern.
+
+${dataContext}
+
+Provide analysis on:
+1. **Monthly Spending Trends**: Are costs increasing, stable, or decreasing? Identify any spikes or dips and what might be driving them.
+2. **Cost Concentration**: Which projects consume the most resources? Is there unhealthy concentration?
+3. **Billing Type Economics**: How do Fixed vs T&M projects compare on cost efficiency and margins?
+4. **Staff Cost Structure**: What's the permanent vs contractor cost mix? Is it optimal?
+5. **Seasonal Patterns**: Are there predictable quarterly or monthly patterns in spend?
+6. **Cost Anomalies**: Flag any unusual cost movements that warrant investigation.
+
+Use specific project names and dollar amounts. Include month-over-month or quarter-over-quarter comparisons where relevant.`;
+        } else if (type === "financial_advice") {
+          systemPrompt = `You are a strategic financial advisor for an Australian professional services firm. Provide actionable, specific financial advice based on real data. Use Australian Financial Year (Jul-Jun). Be direct and practical — this is for senior leadership decision-making.`;
+          userPrompt = `Based on our financial data, provide strategic financial advice and actionable recommendations.
+
+${dataContext}
+
+Provide advice across these areas:
+1. **Margin Improvement**: Which projects or billing categories have the most margin improvement potential? What specific actions should we take?
+2. **Cost Optimization**: Where can we reduce costs without impacting delivery? Are there projects where costs are out of proportion to revenue?
+3. **Revenue Growth Opportunities**: Based on current project performance, where should we invest more? Which clients or work types are most profitable?
+4. **Workforce Strategy**: Is our permanent/contractor mix optimal? Should we convert contractors to permanent or vice versa based on cost data?
+5. **Cash Flow Management**: Based on spending patterns, are there cash flow risks we should plan for?
+6. **Portfolio Rebalancing**: Should we shift focus between Fixed and T&M work based on margin performance?
+
+For each recommendation, provide: the specific opportunity, estimated financial impact, and suggested timeline.`;
+        } else {
+          systemPrompt = `You are a financial forecasting expert for an Australian professional services firm. Use historical spending data to predict future trends. Use Australian Financial Year (Jul-Jun). Be specific with projections and clearly state your confidence level and assumptions.`;
+          userPrompt = `Based on our historical spending data, predict future spending trends and financial trajectory.
+
+${dataContext}
+
+Provide forecasts and predictions on:
+1. **Revenue Trajectory**: Based on monthly trends, project the next 3-6 months of revenue. Are we on track to meet targets?
+2. **Cost Trajectory**: Where are costs heading? Project next quarter costs based on recent trends.
+3. **Margin Forecast**: Will margins improve or deteriorate? Which factors will drive this?
+4. **Resource Cost Projections**: Based on staff cost data, what's the expected cost base going forward?
+5. **Project Completion Risk**: Based on burn rates and remaining budgets, which projects are at risk of cost overrun in the coming months?
+6. **Pipeline Revenue Timing**: When will current pipeline opportunities likely convert to revenue? What's the expected revenue ramp?
+7. **Seasonal Adjustments**: Account for any seasonal patterns (e.g., Q4 slowdown, new FY ramp-up) in your forecasts.
+
+For each prediction, state your confidence level (High/Medium/Low) and the key assumptions. Include best-case and worst-case scenarios where appropriate.`;
+        }
       } else {
         const totalRevenue = kpis.reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
         const totalCost = kpis.reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);

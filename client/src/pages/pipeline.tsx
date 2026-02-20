@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { getCurrentFy } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -128,7 +129,7 @@ export default function Pipeline() {
   const isCol = (key: PipelineColumnKey) => visibleColumns.has(key);
   const { data: pipeline, isLoading } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
 
-  const [selectedFY, setSelectedFY] = useState("open_opps");
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
   const getDueDateFY = (dueDate: string | null | undefined): string | null => {
     if (!dueDate) return null;

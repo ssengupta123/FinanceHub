@@ -4,6 +4,8 @@ import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, ProjectMonthly } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,8 +87,6 @@ function statusVariant(status: string | null | undefined): "default" | "secondar
   }
 }
 
-const MARGIN_TARGET = 0.20;
-
 function RagDot({ value, greenThreshold, amberThreshold }: { value: number; greenThreshold: number; amberThreshold: number }) {
   let color = "bg-green-500";
   if (value < amberThreshold) color = "bg-red-500";
@@ -94,9 +94,9 @@ function RagDot({ value, greenThreshold, amberThreshold }: { value: number; gree
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
-function marginRagClass(val: number): string {
-  if (val >= MARGIN_TARGET) return "text-green-600 dark:text-green-400";
-  if (val >= MARGIN_TARGET * 0.5) return "text-amber-500 dark:text-amber-400";
+function marginRagClass(val: number, marginTarget: number): string {
+  if (val >= marginTarget) return "text-green-600 dark:text-green-400";
+  if (val >= marginTarget * 0.5) return "text-amber-500 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
 }
 
@@ -223,6 +223,7 @@ export default function ProjectsList() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVat, setFilterVat] = useState("all");
@@ -233,10 +234,27 @@ export default function ProjectsList() {
   );
 
   const { data: projects, isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: projectMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
+  const { data: targets } = useQuery<{ revenue_target: number; margin_target: number; utilisation_target: number }>({ queryKey: ["/api/financial-targets", selectedFY], queryFn: () => fetch(`/api/financial-targets/${selectedFY}`).then(r => r.json()) });
+  const MARGIN_TARGET = targets?.margin_target ?? 0.20;
+
+  const availableFYs = useMemo(() => {
+    if (!projectMonthly) return [getCurrentFy()];
+    const fys = projectMonthly.map(m => m.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projectMonthly]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!projectMonthly) return new Set<number>();
+    return new Set(
+      projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [projectMonthly, selectedFY]);
 
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => {
+      if (!fyProjectIds.has(p.id)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!p.name.toLowerCase().includes(q) && !p.projectCode.toLowerCase().includes(q)) return false;
@@ -246,7 +264,7 @@ export default function ProjectsList() {
       if (filterStatus !== "all" && p.status !== filterStatus) return false;
       return true;
     });
-  }, [projects, searchQuery, filterVat, filterBilling, filterStatus]);
+  }, [projects, fyProjectIds, searchQuery, filterVat, filterBilling, filterStatus]);
 
   const totals = useMemo(() => {
     return filteredProjects.reduce(
@@ -331,7 +349,9 @@ export default function ProjectsList() {
           <h1 className="text-2xl font-semibold" data-testid="text-projects-title">Job Status</h1>
           <p className="text-sm text-muted-foreground">Project portfolio with financial tracking</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-project">
               <Plus className="mr-2 h-4 w-4" /> Add Project
@@ -492,6 +512,7 @@ export default function ProjectsList() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -691,7 +712,7 @@ export default function ProjectsList() {
                         )}
                         {isCol("margin") && (
                           <TableCell
-                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent))}`}
+                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent), MARGIN_TARGET)}`}
                             onClick={() => navigate(`/projects/${project.id}`)}
                             data-testid={`text-margin-${project.id}`}
                           >

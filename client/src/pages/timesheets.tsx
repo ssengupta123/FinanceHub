@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,12 +28,25 @@ export default function Timesheets() {
   const [billable, setBillable] = useState(true);
   const [source, setSource] = useState("manual");
 
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
   const { data: timesheets, isLoading } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: employees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   const employeeMap = new Map(employees?.map(e => [e.id, e]) || []);
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
+
+  const availableFYs = useMemo(() => {
+    if (!timesheets) return [getCurrentFy()];
+    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [timesheets]);
+
+  const filteredTimesheets = useMemo(() => {
+    if (!timesheets) return [];
+    return timesheets.filter(t => getFyFromDate(t.weekEnding) === selectedFY);
+  }, [timesheets, selectedFY]);
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<Timesheet>) => {
@@ -78,10 +93,12 @@ export default function Timesheets() {
           <h1 className="text-2xl font-semibold" data-testid="text-timesheets-title">Timesheets</h1>
           <p className="text-sm text-muted-foreground">Track employee time entries across projects</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-timesheet"><Plus className="mr-1 h-4 w-4" /> Add Entry</Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-timesheet"><Plus className="mr-1 h-4 w-4" /> Add Entry</Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Timesheet Entry</DialogTitle>
@@ -149,7 +166,8 @@ export default function Timesheets() {
               </Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -176,14 +194,14 @@ export default function Timesheets() {
                     ))}
                   </TableRow>
                 ))
-              ) : !timesheets?.length ? (
+              ) : !filteredTimesheets.length ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No timesheet entries found
                   </TableCell>
                 </TableRow>
               ) : (
-                timesheets.map(ts => {
+                filteredTimesheets.map(ts => {
                   const emp = employeeMap.get(ts.employeeId);
                   const proj = projectMap.get(ts.projectId);
                   return (

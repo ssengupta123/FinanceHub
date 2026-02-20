@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -157,11 +159,24 @@ export default function Milestones() {
   const [milestoneType, setMilestoneType] = useState("payment");
   const [invoiceStatus, setInvoiceStatus] = useState("draft");
 
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
   const { data: milestones, isLoading } = useQuery<Milestone[]>({ queryKey: ["/api/milestones"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
 
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
+
+  const availableFYs = useMemo(() => {
+    if (!milestones) return [getCurrentFy()];
+    const fys = milestones.map(m => getFyFromDate(m.dueDate)).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [milestones]);
+
+  const fyFilteredMilestones = useMemo(() => {
+    if (!milestones) return [];
+    return milestones.filter(m => getFyFromDate(m.dueDate) === selectedFY);
+  }, [milestones, selectedFY]);
 
   const timesheetsByProject = useMemo(() => {
     const map = new Map<number, { totalHours: number; count: number }>();
@@ -175,10 +190,9 @@ export default function Milestones() {
   }, [timesheets]);
 
   const filteredMilestones = useMemo(() => {
-    if (!milestones) return [];
-    if (activeTab === "all") return milestones;
-    return milestones.filter(m => m.milestoneType === activeTab);
-  }, [milestones, activeTab]);
+    if (activeTab === "all") return fyFilteredMilestones;
+    return fyFilteredMilestones.filter(m => m.milestoneType === activeTab);
+  }, [fyFilteredMilestones, activeTab]);
 
   const { overdue, upcoming, completed } = useMemo(() => {
     const today = new Date();
@@ -207,18 +221,18 @@ export default function Milestones() {
   }, [filteredMilestones]);
 
   const milestoneSummary = useMemo(() => {
-    if (!milestones) return { paymentCount: 0, deliveryCount: 0, paymentTotal: 0, deliveryTotal: 0, pendingCount: 0, overdueCount: 0 };
-    const payment = milestones.filter(m => m.milestoneType === "payment");
-    const delivery = milestones.filter(m => m.milestoneType === "delivery");
+    if (!fyFilteredMilestones.length) return { paymentCount: 0, deliveryCount: 0, paymentTotal: 0, deliveryTotal: 0, pendingCount: 0, overdueCount: 0 };
+    const payment = fyFilteredMilestones.filter(m => m.milestoneType === "payment");
+    const delivery = fyFilteredMilestones.filter(m => m.milestoneType === "delivery");
     return {
       paymentCount: payment.length,
       deliveryCount: delivery.length,
       paymentTotal: payment.reduce((s, m) => s + parseNum(m.amount), 0),
       deliveryTotal: delivery.reduce((s, m) => s + parseNum(m.amount), 0),
-      pendingCount: milestones.filter(m => m.status === "pending").length,
-      overdueCount: milestones.filter(m => m.status === "overdue").length,
+      pendingCount: fyFilteredMilestones.filter(m => m.status === "pending").length,
+      overdueCount: fyFilteredMilestones.filter(m => m.status === "overdue").length,
     };
-  }, [milestones]);
+  }, [fyFilteredMilestones]);
 
   const createMutation = useMutation({
     mutationFn: async (data: Record<string, any>) => {
@@ -294,6 +308,7 @@ export default function Milestones() {
           <p className="text-sm text-muted-foreground">Payment invoices, delivery milestones, and timesheet integration</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           {(!milestones || milestones.length === 0) && (
             <Button
               variant="outline"
@@ -438,7 +453,7 @@ export default function Milestones() {
 
       <div className="flex gap-2 flex-wrap">
         <Button variant={activeTab === "all" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("all")} data-testid="button-tab-all">
-          All ({milestones?.length || 0})
+          All ({fyFilteredMilestones.length})
         </Button>
         <Button variant={activeTab === "payment" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("payment")} data-testid="button-tab-payment">
           <Receipt className="h-4 w-4 mr-1" /> Payment Invoices ({milestoneSummary.paymentCount})

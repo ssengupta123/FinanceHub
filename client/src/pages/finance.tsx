@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getElapsedFyMonths } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -95,6 +97,7 @@ const ALL_COLUMNS: { key: FinanceColumnKey; label: string }[] = [
 ];
 
 export default function FinanceDashboard() {
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [visibleColumns, setVisibleColumns] = useState<Set<FinanceColumnKey>>(
     new Set(ALL_COLUMNS.map(c => c.key))
   );
@@ -108,6 +111,29 @@ export default function FinanceDashboard() {
 
   const isLoading = loadingProjects || loadingMonthly;
 
+  const availableFYs = useMemo(() => {
+    if (!monthlyData) return [getCurrentFy()];
+    const fys = monthlyData.map(m => m.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [monthlyData]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!monthlyData) return new Set<number>();
+    return new Set(
+      monthlyData.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [monthlyData, selectedFY]);
+
+  const fyProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => fyProjectIds.has(p.id));
+  }, [projects, fyProjectIds]);
+
+  const fyMonthlyData = useMemo(() => {
+    if (!monthlyData) return [];
+    return monthlyData.filter(m => m.fyYear === selectedFY);
+  }, [monthlyData, selectedFY]);
+
   const toggleColumn = (key: FinanceColumnKey) => {
     setVisibleColumns(prev => {
       const next = new Set(prev);
@@ -119,19 +145,21 @@ export default function FinanceDashboard() {
 
   const isCol = (key: FinanceColumnKey) => visibleColumns.has(key);
 
+  const elapsedMonths = getElapsedFyMonths(selectedFY);
+
   const monthlyByProject = new Map<number, ProjectMonthly[]>();
-  (monthlyData || []).forEach((m) => {
+  fyMonthlyData.forEach((m) => {
     const list = monthlyByProject.get(m.projectId) || [];
     list.push(m);
     monthlyByProject.set(m.projectId, list);
   });
 
-  const clientRows: ClientRow[] = (projects || []).map((p) => {
+  const clientRows: ClientRow[] = fyProjects.map((p) => {
     const rows = monthlyByProject.get(p.id) || [];
 
     const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
       rows
-        .filter((r) => r.month >= start && r.month <= end)
+        .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
         .reduce((s, r) => s + parseNum(r[field]), 0);
 
     const q1Rev = sumRange(1, 3, "revenue");
@@ -139,7 +167,7 @@ export default function FinanceDashboard() {
     const q3Rev = sumRange(7, 9, "revenue");
     const q4Rev = sumRange(10, 12, "revenue");
     const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
-    const ytdCost = rows.reduce((s, r) => s + parseNum(r.cost), 0);
+    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
     const ytdGP = ytdRevenue - ytdCost;
     const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
 
@@ -160,6 +188,14 @@ export default function FinanceDashboard() {
       status: p.adStatus || p.status,
     };
   });
+
+  const statusOrder = (s: string) => {
+    const lower = s?.toLowerCase() || "";
+    if (lower === "active") return 0;
+    if (lower === "closed" || lower === "completed") return 2;
+    return 1;
+  };
+  clientRows.sort((a, b) => statusOrder(a.status) - statusOrder(b.status) || a.client.localeCompare(b.client));
 
   const totalRevenue = clientRows.reduce((s, r) => s + r.ytdRevenue, 0);
   const totalCost = clientRows.reduce((s, r) => s + r.ytdCost, 0);
@@ -199,12 +235,17 @@ export default function FinanceDashboard() {
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="sticky top-0 z-50 bg-background border-b px-6 py-4">
-        <h1 className="text-2xl font-semibold" data-testid="text-finance-title">
-          Finance Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Client Summary - FY 25-26 Quarterly & Yearly Breakdown
-        </p>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold" data-testid="text-finance-title">
+              Finance Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Client Summary - FY {selectedFY} Quarterly & Yearly Breakdown
+            </p>
+          </div>
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -243,7 +284,7 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={!isLoading ? (totalGP > 0 ? "border-green-500/50" : "border-red-500/50") : ""}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -252,7 +293,7 @@ export default function FinanceDashboard() {
               {isLoading ? (
                 <Skeleton className="h-8 w-24" />
               ) : (
-                <div className="text-2xl font-bold" data-testid="text-finance-gp">
+                <div className={`text-2xl font-bold ${totalGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-finance-gp">
                   {formatCurrency(totalGP)}
                 </div>
               )}
@@ -274,6 +315,135 @@ export default function FinanceDashboard() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">Overall gross profit margin</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle className="text-base">VAT Category Breakdown</CardTitle>
+              <Layers className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                ))
+              ) : (
+                <div className="space-y-3">
+                  {vatBreakdown.map(({ vat, revenue }) => (
+                    <div
+                      key={vat}
+                      className="flex items-center justify-between gap-2"
+                      data-testid={`vat-row-${vat.toLowerCase()}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs min-w-[70px] justify-center">
+                          {vat}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium" data-testid={`text-vat-revenue-${vat.toLowerCase()}`}>
+                          {formatCurrency(revenue)}
+                        </span>
+                        {totalRevenue > 0 && (
+                          <span className="text-xs text-muted-foreground w-12 text-right">
+                            {((revenue / totalRevenue) * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="border-t pt-3 flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Total</span>
+                    <span className="text-sm font-bold" data-testid="text-vat-total">
+                      {formatCurrency(totalRevenue)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+              <CardTitle className="text-base">Billing Type Split</CardTitle>
+              <SplitSquareHorizontal className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                ))
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Fixed Price</span>
+                      <span className="text-sm font-medium" data-testid="text-fixed-revenue">
+                        {formatCurrency(fixedRevenue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">Cost</span>
+                      <span className="text-sm" data-testid="text-fixed-cost">
+                        {formatCurrency(fixedCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP</span>
+                      <span className={`text-sm font-medium ${(fixedRevenue - fixedCost) > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-fixed-gp">
+                        {formatCurrency(fixedRevenue - fixedCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP%</span>
+                      <span className="text-sm font-medium" data-testid="text-fixed-gp-percent">
+                        {fixedRevenue > 0
+                          ? ((fixedRevenue - fixedCost) / fixedRevenue * 100).toFixed(1)
+                          : "0.0"}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">Time & Materials</span>
+                      <span className="text-sm font-medium" data-testid="text-tm-revenue">
+                        {formatCurrency(tmRevenue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">Cost</span>
+                      <span className="text-sm" data-testid="text-tm-cost">
+                        {formatCurrency(tmCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP</span>
+                      <span className={`text-sm font-medium ${(tmRevenue - tmCost) > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-tm-gp">
+                        {formatCurrency(tmRevenue - tmCost)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">GP%</span>
+                      <span className="text-sm font-medium" data-testid="text-tm-gp-percent">
+                        {tmRevenue > 0
+                          ? ((tmRevenue - tmCost) / tmRevenue * 100).toFixed(1)
+                          : "0.0"}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3 flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">Combined Revenue</span>
+                    <span className="text-sm font-bold" data-testid="text-billing-total">
+                      {formatCurrency(fixedRevenue + tmRevenue)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -404,7 +574,10 @@ export default function FinanceDashboard() {
                           </TableCell>
                         )}
                         {isCol("ytdGP") && (
-                          <TableCell className="text-right" data-testid={`text-ytd-gp-${row.projectId}`}>
+                          <TableCell
+                            className={`text-right font-medium ${row.ytdGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                            data-testid={`text-ytd-gp-${row.projectId}`}
+                          >
                             {formatCurrency(row.ytdGP)}
                           </TableCell>
                         )}
@@ -466,7 +639,10 @@ export default function FinanceDashboard() {
                         </TableCell>
                       )}
                       {isCol("ytdGP") && (
-                        <TableCell className="text-right font-bold" data-testid="text-total-ytd-gp">
+                        <TableCell
+                          className={`text-right font-bold ${totalGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                          data-testid="text-total-ytd-gp"
+                        >
                           {formatCurrency(totalGP)}
                         </TableCell>
                       )}
@@ -484,134 +660,6 @@ export default function FinanceDashboard() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle className="text-base">VAT Category Breakdown</CardTitle>
-              <Layers className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
-                ))
-              ) : (
-                <div className="space-y-3">
-                  {vatBreakdown.map(({ vat, revenue }) => (
-                    <div
-                      key={vat}
-                      className="flex items-center justify-between gap-2"
-                      data-testid={`vat-row-${vat.toLowerCase()}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs min-w-[70px] justify-center">
-                          {vat}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium" data-testid={`text-vat-revenue-${vat.toLowerCase()}`}>
-                          {formatCurrency(revenue)}
-                        </span>
-                        {totalRevenue > 0 && (
-                          <span className="text-xs text-muted-foreground w-12 text-right">
-                            {((revenue / totalRevenue) * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="border-t pt-3 flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Total</span>
-                    <span className="text-sm font-bold" data-testid="text-vat-total">
-                      {formatCurrency(totalRevenue)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <CardTitle className="text-base">Billing Type Split</CardTitle>
-              <SplitSquareHorizontal className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
-                ))
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">Fixed Price</span>
-                      <span className="text-sm font-medium" data-testid="text-fixed-revenue">
-                        {formatCurrency(fixedRevenue)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">Cost</span>
-                      <span className="text-sm" data-testid="text-fixed-cost">
-                        {formatCurrency(fixedCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP</span>
-                      <span className="text-sm" data-testid="text-fixed-gp">
-                        {formatCurrency(fixedRevenue - fixedCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP%</span>
-                      <span className="text-sm font-medium" data-testid="text-fixed-gp-percent">
-                        {fixedRevenue > 0
-                          ? ((fixedRevenue - fixedCost) / fixedRevenue * 100).toFixed(1)
-                          : "0.0"}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">Time & Materials</span>
-                      <span className="text-sm font-medium" data-testid="text-tm-revenue">
-                        {formatCurrency(tmRevenue)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">Cost</span>
-                      <span className="text-sm" data-testid="text-tm-cost">
-                        {formatCurrency(tmCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP</span>
-                      <span className="text-sm" data-testid="text-tm-gp">
-                        {formatCurrency(tmRevenue - tmCost)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">GP%</span>
-                      <span className="text-sm font-medium" data-testid="text-tm-gp-percent">
-                        {tmRevenue > 0
-                          ? ((tmRevenue - tmCost) / tmRevenue * 100).toFixed(1)
-                          : "0.0"}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-3 flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">Combined Revenue</span>
-                    <span className="text-sm font-bold" data-testid="text-billing-total">
-                      {formatCurrency(fixedRevenue + tmRevenue)}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );

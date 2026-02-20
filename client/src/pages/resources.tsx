@@ -2,7 +2,9 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Employee } from "@shared/schema";
+import type { Employee, Timesheet } from "@shared/schema";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -139,6 +141,7 @@ export default function Resources() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
 
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStaffType, setFilterStaffType] = useState("all");
   const [filterTeam, setFilterTeam] = useState("all");
@@ -159,6 +162,23 @@ export default function Resources() {
   const isCol = (key: ColumnKey) => visibleColumns.has(key);
 
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+
+  const availableFYs = useMemo(() => {
+    if (!timesheets) return [getCurrentFy()];
+    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [timesheets]);
+
+  const fyEmployeeIds = useMemo(() => {
+    if (!timesheets) return new Set<number>();
+    return new Set(
+      timesheets
+        .filter(t => getFyFromDate(t.weekEnding) === selectedFY)
+        .map(t => t.employeeId)
+        .filter((id): id is number => id !== null && id !== undefined)
+    );
+  }, [timesheets, selectedFY]);
 
   const teams = useMemo(() => {
     if (!employees) return [];
@@ -169,7 +189,12 @@ export default function Resources() {
 
   const filtered = useMemo(() => {
     if (!employees) return [];
-    return employees.filter(emp => {
+
+    const base = fyEmployeeIds.size > 0
+      ? employees.filter(emp => fyEmployeeIds.has(emp.id))
+      : employees;
+
+    return base.filter(emp => {
       const nameMatch = searchQuery === "" ||
         `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.employeeCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -179,7 +204,7 @@ export default function Resources() {
       const statusMatch = filterStatus === "all" || emp.status === filterStatus;
       return nameMatch && typeMatch && teamMatch && statusMatch;
     });
-  }, [employees, searchQuery, filterStaffType, filterTeam, filterStatus]);
+  }, [employees, selectedFY, searchQuery, filterStaffType, filterTeam, filterStatus]);
 
   const summary = useMemo(() => {
     if (!employees) return { total: 0, active: 0, onBench: 0, avgDayRate: 0 };
@@ -243,6 +268,7 @@ export default function Resources() {
           <p className="text-sm text-muted-foreground" data-testid="text-resources-subtitle">Staff Schedule of Tasks & Costing</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" data-testid="button-column-toggle">

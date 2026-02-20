@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
+import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,7 @@ type VarianceRow = {
 
 export default function Forecasts() {
   const { toast } = useToast();
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"forecasts" | "variance">("variance");
   const [formData, setFormData] = useState({
@@ -68,29 +71,46 @@ export default function Forecasts() {
 
   const projectMap = new Map((projects || []).map(p => [p.id, p]));
 
+  const availableFYs = useMemo(() => {
+    if (!projectMonthly) return [getCurrentFy()];
+    const fys = projectMonthly.map(m => m.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projectMonthly]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!projectMonthly) return new Set<number>();
+    return new Set(
+      projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [projectMonthly, selectedFY]);
+
   const varianceData = useMemo<VarianceRow[]>(() => {
     if (!forecasts || !projects || !projectMonthly) return [];
 
     const projForecasts = new Map<number, { rev: number; cost: number; margin: number }>();
-    forecasts.forEach(f => {
-      const existing = projForecasts.get(f.projectId) || { rev: 0, cost: 0, margin: 0 };
-      existing.rev += parseNum(f.forecastRevenue);
-      existing.cost += parseNum(f.forecastCost);
-      existing.margin += parseNum(f.forecastMargin);
-      projForecasts.set(f.projectId, existing);
-    });
+    forecasts
+      .filter(f => fyProjectIds.has(f.projectId))
+      .forEach(f => {
+        const existing = projForecasts.get(f.projectId) || { rev: 0, cost: 0, margin: 0 };
+        existing.rev += parseNum(f.forecastRevenue);
+        existing.cost += parseNum(f.forecastCost);
+        existing.margin += parseNum(f.forecastMargin);
+        projForecasts.set(f.projectId, existing);
+      });
 
     const projActuals = new Map<number, { rev: number; cost: number; profit: number }>();
-    projectMonthly.forEach(pm => {
-      const existing = projActuals.get(pm.projectId) || { rev: 0, cost: 0, profit: 0 };
-      existing.rev += parseNum(pm.revenue);
-      existing.cost += parseNum(pm.cost);
-      existing.profit += parseNum(pm.profit);
-      projActuals.set(pm.projectId, existing);
-    });
+    projectMonthly
+      .filter(m => m.fyYear === selectedFY)
+      .forEach(pm => {
+        const existing = projActuals.get(pm.projectId) || { rev: 0, cost: 0, profit: 0 };
+        existing.rev += parseNum(pm.revenue);
+        existing.cost += parseNum(pm.cost);
+        existing.profit += parseNum(pm.profit);
+        projActuals.set(pm.projectId, existing);
+      });
 
     const rows: VarianceRow[] = [];
-    const allProjectIds = new Set([...projForecasts.keys(), ...projActuals.keys()]);
+    const allProjectIds = new Set([...Array.from(projForecasts.keys()), ...Array.from(projActuals.keys())]);
 
     allProjectIds.forEach(pid => {
       const fc = projForecasts.get(pid) || { rev: 0, cost: 0, margin: 0 };
@@ -121,7 +141,7 @@ export default function Forecasts() {
     });
 
     return rows.sort((a, b) => Math.abs(b.revenueVariance) - Math.abs(a.revenueVariance));
-  }, [forecasts, projects, projectMonthly]);
+  }, [forecasts, projects, projectMonthly, selectedFY, fyProjectIds]);
 
   const varianceSummary = useMemo(() => {
     const totalFcRev = varianceData.reduce((s, r) => s + r.forecastRevenue, 0);
@@ -174,6 +194,7 @@ export default function Forecasts() {
           <p className="text-sm text-muted-foreground">Revenue and cost forecasts with variance analysis</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <Button
             variant={viewMode === "variance" ? "default" : "outline"}
             size="sm"
@@ -237,7 +258,7 @@ export default function Forecasts() {
                     <Input type="number" step="0.01" value={formData.forecastMargin} onChange={(e) => setFormData(prev => ({ ...prev, forecastMargin: e.target.value }))} data-testid="input-forecast-margin" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Utilization %</Label>
+                    <Label>Utilisation %</Label>
                     <Input type="number" step="0.01" value={formData.forecastUtilization} onChange={(e) => setFormData(prev => ({ ...prev, forecastUtilization: e.target.value }))} data-testid="input-forecast-utilization" />
                   </div>
                   <div className="space-y-2">
@@ -411,24 +432,26 @@ export default function Forecasts() {
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Margin</TableHead>
-                    <TableHead className="text-right">Utilization</TableHead>
+                    <TableHead className="text-right">Utilisation</TableHead>
                     <TableHead className="text-right">Burn Rate</TableHead>
                     <TableHead>Notes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {forecasts.map(f => (
-                    <TableRow key={f.id} data-testid={`row-forecast-${f.id}`}>
-                      <TableCell className="font-medium">{projectMap.get(f.projectId)?.name || `Project #${f.projectId}`}</TableCell>
-                      <TableCell>{f.month}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(f.forecastRevenue)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(f.forecastCost)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(f.forecastMargin)}</TableCell>
-                      <TableCell className="text-right">{parseNum(f.forecastUtilization).toFixed(1)}%</TableCell>
-                      <TableCell className="text-right">{formatCurrency(f.forecastBurnRate)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{f.notes || "—"}</TableCell>
-                    </TableRow>
-                  ))}
+                  {forecasts
+                    .filter(f => fyProjectIds.has(f.projectId))
+                    .map(f => (
+                      <TableRow key={f.id} data-testid={`row-forecast-${f.id}`}>
+                        <TableCell className="font-medium">{projectMap.get(f.projectId)?.name || `Project #${f.projectId}`}</TableCell>
+                        <TableCell>{f.month}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(f.forecastRevenue)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(f.forecastCost)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(f.forecastMargin)}</TableCell>
+                        <TableCell className="text-right">{parseNum(f.forecastUtilization).toFixed(1)}%</TableCell>
+                        <TableCell className="text-right">{formatCurrency(f.forecastBurnRate)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{f.notes || "—"}</TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             )}

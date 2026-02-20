@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,9 +17,11 @@ import { DollarSign, FolderOpen, TrendingUp, ArrowRight, Target } from "lucide-r
 import {
   PieChart as RechartsPie, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  AreaChart, Area, ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import type { Project, Employee, Kpi, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
+import type { Project, Employee, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -74,51 +77,108 @@ function classificationLabel(c: string) {
   return map[c] || c;
 }
 
-const MARGIN_TARGET = 0.20;
-const REVENUE_TARGET = 5000000;
-const UTILIZATION_TARGET = 0.85;
+type FinancialTargets = { revenue_target: number; margin_target: number; utilisation_target: number };
+const DEFAULT_TARGETS: FinancialTargets = { revenue_target: 5000000, margin_target: 0.20, utilisation_target: 0.85 };
 
 export default function Dashboard() {
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-  const { data: kpis, isLoading: loadingKpis } = useQuery<Kpi[]>({ queryKey: ["/api/kpis"] });
+  const { data: utilizationData, isLoading: loadingUtil } = useQuery<{ totalPermanent: number; allocatedPermanent: number; utilization: number }>({ queryKey: ["/api/dashboard/utilization", selectedFY], queryFn: () => fetch(`/api/dashboard/utilization?fy=${selectedFY}`).then(r => r.json()) });
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
+  const { data: targets } = useQuery<FinancialTargets>({ queryKey: ["/api/financial-targets", selectedFY], queryFn: () => fetch(`/api/financial-targets/${selectedFY}`).then(r => r.json()) });
+  const REVENUE_TARGET = targets?.revenue_target ?? DEFAULT_TARGETS.revenue_target;
+  const MARGIN_TARGET = targets?.margin_target ?? DEFAULT_TARGETS.margin_target;
+  const UTILIZATION_TARGET = targets?.utilisation_target ?? DEFAULT_TARGETS.utilisation_target;
 
-  const activeProjects = projects?.filter(p => p.status === "active" || p.adStatus === "Active") || [];
+  const availableFYs = useMemo(() => {
+    if (!projectMonthly) return [getCurrentFy()];
+    const fys = projectMonthly.map(m => m.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projectMonthly]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!projectMonthly) return new Set<number>();
+    return new Set(
+      projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [projectMonthly, selectedFY]);
+
+  const fyProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => fyProjectIds.has(p.id));
+  }, [projects, fyProjectIds]);
+
+  const fyPipeline = useMemo(() => {
+    if (!pipeline) return [];
+    return pipeline.filter(p => {
+      if (p.fyYear === selectedFY) return true;
+      if (p.fyYear === "open_opps" && p.dueDate) {
+        const derived = getFyFromDate(p.dueDate);
+        return derived === selectedFY;
+      }
+      return false;
+    });
+  }, [pipeline, selectedFY]);
+
+  const fyProjectMonthly = useMemo(() => {
+    if (!projectMonthly) return [];
+    return projectMonthly.filter(m => m.fyYear === selectedFY);
+  }, [projectMonthly, selectedFY]);
+
+  const elapsedMonths = getElapsedFyMonths(selectedFY);
+
+  const ytdProjectMonthly = useMemo(() => {
+    return fyProjectMonthly.filter(m => (m.month ?? 0) <= elapsedMonths);
+  }, [fyProjectMonthly, elapsedMonths]);
+
+  const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
   const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
-  const totalContracted = projects?.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0) || 0;
-  const totalBudgeted = projects?.reduce((sum, p) => sum + parseFloat(p.budgetAmount || "0"), 0) || 0;
-  const totalRevenue = kpis?.reduce((sum, k) => sum + parseFloat(k.revenue || "0"), 0) || 0;
-  const totalCosts = kpis?.reduce((sum, k) => sum + parseFloat(k.grossCost || "0"), 0) || 0;
+  const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
+  const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
+  const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
-  const avgUtilization = kpis && kpis.length > 0
-    ? kpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / kpis.length / 100
-    : 0;
 
-  const fixedPriceProjects = projects?.filter(p => p.billingCategory === "Fixed") || [];
-  const tmProjects = projects?.filter(p => p.billingCategory === "T&M") || [];
-  const fixedIds = new Set(fixedPriceProjects.map(p => p.id));
-  const tmIds = new Set(tmProjects.map(p => p.id));
+  const avgUtilization = utilizationData?.utilization ?? 0;
 
-  const fixedRevenue = kpis?.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0) || 0;
-  const fixedCost = kpis?.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0) || 0;
-  const tmRevenue = kpis?.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0) || 0;
-  const tmCost = kpis?.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0) || 0;
+  const projectBillingMap = new Map(fyProjects.map(p => [p.id, p.billingCategory || "Other"]));
+
+  const billingBreakdown = useMemo(() => {
+    const result: Record<string, { revenue: number; cost: number }> = {};
+    ytdProjectMonthly.forEach(m => {
+      const billing = projectBillingMap.get(m.projectId) || "Other";
+      if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
+      result[billing].revenue += parseFloat(m.revenue || "0");
+      result[billing].cost += parseFloat(m.cost || "0");
+    });
+    return result;
+  }, [ytdProjectMonthly, projectBillingMap]);
+
+  const fixedRevenue = billingBreakdown["Fixed"]?.revenue || 0;
+  const fixedCost = billingBreakdown["Fixed"]?.cost || 0;
+  const tmRevenue = billingBreakdown["T&M"]?.revenue || 0;
+  const tmCost = billingBreakdown["T&M"]?.cost || 0;
 
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
+  const WIN_RATES: Record<string, number> = { C: 1.0, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
   const pipelineByClass = classificationOrder.map(cls => {
-    const opps = pipeline?.filter(o => o.classification === cls) || [];
+    const opps = fyPipeline.filter(o => o.classification === cls);
     const totalRev = opps.reduce((s, o) => {
-      let t = 0;
-      for (let i = 1; i <= 12; i++) t += parseFloat((o as any)[`revenueM${i}`] || "0");
-      return s + t;
+      let monthlyTotal = 0;
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`revenueM${i}`] || "0");
+      if (monthlyTotal > 0) return s + monthlyTotal;
+      return s + parseFloat((o as any).value || "0");
     }, 0);
     const totalGP = opps.reduce((s, o) => {
-      let t = 0;
-      for (let i = 1; i <= 12; i++) t += parseFloat((o as any)[`grossProfitM${i}`] || "0");
-      return s + t;
+      let monthlyTotal = 0;
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`grossProfitM${i}`] || "0");
+      if (monthlyTotal > 0) return s + monthlyTotal;
+      const val = parseFloat((o as any).value || "0");
+      const margin = parseFloat((o as any).marginPercent || "0");
+      return s + (val * margin);
     }, 0);
     return { classification: cls, name: classificationLabel(cls), count: opps.length, revenue: totalRev, grossProfit: totalGP };
   });
@@ -134,14 +194,40 @@ export default function Dashboard() {
 
   const monthlyTrendData = FY_MONTHS.map((month, mi) => {
     const monthNum = mi + 1;
-    const monthlyRecords = (projectMonthly || []).filter(m => m.month === monthNum);
+    const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
     const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
     const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
     const profit = revenue - cost;
     return { month, revenue, cost, profit };
   });
 
-  const marginBarData = (projects || [])
+  const cumulativeYTDData = useMemo(() => {
+    const monthlyTarget = REVENUE_TARGET / 12;
+    let cumRevenue = 0;
+    let cumCost = 0;
+    let cumTarget = 0;
+    return FY_MONTHS.map((month, mi) => {
+      const monthNum = mi + 1;
+      const isElapsed = monthNum <= elapsedMonths;
+      const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
+      const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
+      const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+      cumTarget += monthlyTarget;
+      if (isElapsed) {
+        cumRevenue += revenue;
+        cumCost += cost;
+      }
+      return {
+        month,
+        cumRevenue: isElapsed ? cumRevenue : null,
+        cumCost: isElapsed ? cumCost : null,
+        cumProfit: isElapsed ? cumRevenue - cumCost : null,
+        cumTarget,
+      };
+    });
+  }, [fyProjectMonthly, elapsedMonths]);
+
+  const marginBarData = fyProjects
     .filter(p => p.status === "active")
     .map(p => {
       const forecastMargin = parseFloat(p.forecastGmPercent || "0") * 100;
@@ -152,15 +238,18 @@ export default function Dashboard() {
       };
     });
 
-  const isLoading = loadingProjects || loadingEmployees || loadingKpis || loadingPipeline || loadingMonthly;
+  const isLoading = loadingProjects || loadingEmployees || loadingUtil || loadingPipeline || loadingMonthly;
 
   const customTooltipFormatter = (value: number) => formatCurrency(value);
 
   return (
     <div className="flex-1 overflow-auto p-3 sm:p-6 space-y-4 sm:space-y-6" data-testid="page-dashboard">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
-        <p className="text-xs sm:text-sm text-muted-foreground">FY 25-26 Company Overview</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">FY {selectedFY} Company Overview</p>
+        </div>
+        <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
       </div>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
@@ -177,16 +266,16 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * 0.3)}`}>
+        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * elapsedMonths / 12)}`}>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium">YTD Revenue</CardTitle>
-            <RagDot actual={totalRevenue} target={REVENUE_TARGET * 0.3} />
+            <RagDot actual={totalRevenue} target={REVENUE_TARGET * elapsedMonths / 12} />
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? <Skeleton className="h-7 sm:h-8 w-16 sm:w-24" /> : (
               <div className="text-lg sm:text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
             )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * 0.3)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * elapsedMonths / 12)}</p>
           </CardContent>
         </Card>
 
@@ -203,18 +292,20 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border ${ragBg(avgUtilization, UTILIZATION_TARGET)}`}>
-          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
-            <CardTitle className="text-xs sm:text-sm font-medium">Utilization</CardTitle>
-            <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 pt-0">
-            {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
-              <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
-            )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">{activeProjects.length} proj / {activeEmployees.length} staff</p>
-          </CardContent>
-        </Card>
+        <Link href="/utilization?filter=bench" className="block">
+          <Card className={`border cursor-pointer hover-elevate ${ragBg(avgUtilization, UTILIZATION_TARGET)}`} data-testid="card-utilisation-link">
+            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
+              <CardTitle className="text-xs sm:text-sm font-medium">Utilisation</CardTitle>
+              <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
+            </CardHeader>
+            <CardContent className="p-3 sm:p-6 pt-0">
+              {isLoading ? <Skeleton className="h-7 sm:h-8 w-10 sm:w-12" /> : (
+                <div className={`text-lg sm:text-2xl font-bold ${ragColor(avgUtilization, UTILIZATION_TARGET)}`} data-testid="text-utilization">{formatPercent(avgUtilization)}</div>
+              )}
+              <p className="text-[10px] sm:text-xs text-muted-foreground">{utilizationData?.allocatedPermanent ?? 0} / {utilizationData?.totalPermanent ?? 0} perm staff</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
@@ -238,12 +329,14 @@ export default function Dashboard() {
             )}
             <div className="mt-2 grid grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
               <div>
-                <p className="text-muted-foreground">Fixed GP</p>
-                <p className="font-medium">{formatCurrency(fixedRevenue - fixedCost)} ({fixedRevenue > 0 ? formatPercent((fixedRevenue - fixedCost) / fixedRevenue) : "0%"})</p>
+                <p className="text-muted-foreground">Fixed Revenue</p>
+                <p className="font-medium">{formatCurrency(fixedRevenue)}</p>
+                <p className="text-muted-foreground mt-1">GP: {formatCurrency(fixedRevenue - fixedCost)} ({fixedRevenue > 0 ? formatPercent((fixedRevenue - fixedCost) / fixedRevenue) : "0%"})</p>
               </div>
               <div>
-                <p className="text-muted-foreground">T&M GP</p>
-                <p className="font-medium">{formatCurrency(tmRevenue - tmCost)} ({tmRevenue > 0 ? formatPercent((tmRevenue - tmCost) / tmRevenue) : "0%"})</p>
+                <p className="text-muted-foreground">T&M Revenue</p>
+                <p className="font-medium">{formatCurrency(tmRevenue)}</p>
+                <p className="text-muted-foreground mt-1">GP: {formatCurrency(tmRevenue - tmCost)} ({tmRevenue > 0 ? formatPercent((tmRevenue - tmCost) / tmRevenue) : "0%"})</p>
               </div>
             </div>
           </CardContent>
@@ -276,32 +369,59 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY 25-26)</CardTitle>
-          <Link href="/finance">
-            <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
-              <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 pt-0">
-          {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
-            <ResponsiveContainer width="100%" height={240} data-testid="chart-monthly-trend">
-              <AreaChart data={monthlyTrendData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
-                <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                <Legend wrapperStyle={{ fontSize: "11px" }} />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
-                <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
-                <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY {selectedFY})</CardTitle>
+            <Link href="/finance">
+              <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
+                <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
+              </Button>
+            </Link>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-monthly-trend">
+                <AreaChart data={monthlyTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} />
+                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
+                  <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-base">Cumulative YTD vs Target (FY {selectedFY})</CardTitle>
+            <Badge variant="outline">{formatCurrency(REVENUE_TARGET)} target</Badge>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-6 pt-0">
+            {isLoading ? <Skeleton className="h-[200px] sm:h-[300px] w-full" /> : (
+              <ResponsiveContainer width="100%" height={260} data-testid="chart-cumulative-ytd">
+                <ComposedChart data={cumulativeYTDData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={55} />
+                  <Tooltip formatter={(value: any) => value !== null ? formatCurrency(value) : "—"} />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} />
+                  <Line type="monotone" dataKey="cumTarget" name="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls />
+                  <Area type="monotone" dataKey="cumRevenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} connectNulls />
+                  <Area type="monotone" dataKey="cumCost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={2} connectNulls />
+                  <Line type="monotone" dataKey="cumProfit" name="Profit" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  <ReferenceLine y={REVENUE_TARGET} stroke="#94a3b8" strokeDasharray="3 3" label={{ value: "FY Target", position: "right", fontSize: 10, fill: "#94a3b8" }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
@@ -330,7 +450,7 @@ export default function Dashboard() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY 25-26)</CardTitle>
+          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY {selectedFY})</CardTitle>
         </CardHeader>
         <CardContent className="p-3 sm:p-6 pt-0">
           {isLoading ? (
@@ -419,10 +539,10 @@ export default function Dashboard() {
             ) : (
               <>
                 {[
-                  { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * 0.3, format: "currency" as const },
+                  { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * elapsedMonths / 12, format: "currency" as const },
                   { label: "Contract Pipeline", actual: totalContracted, target: REVENUE_TARGET, format: "currency" as const },
                   { label: "Gross Margin", actual: marginPercent, target: MARGIN_TARGET, format: "percent" as const },
-                  { label: "Utilization", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
+                  { label: "Utilisation", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
                 ].map((item) => {
                   const pctComplete = item.target > 0 ? Math.min(item.actual / item.target, 1) : 0;
                   return (
