@@ -42,11 +42,10 @@ const PHASE_MAP: Record<string, string> = {
   "S": "S",
 };
 
-async function getSharePointToken(): Promise<SharePointToken> {
+async function getGraphToken(): Promise<SharePointToken> {
   const tenantId = process.env.AZURE_TENANT_ID;
   const clientId = process.env.AZURE_CLIENT_ID;
   const clientSecret = process.env.AZURE_CLIENT_SECRET;
-  const sharePointDomain = process.env.SHAREPOINT_DOMAIN || "";
 
   if (!tenantId || !clientId || !clientSecret) {
     throw new Error("Missing Azure credentials. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET.");
@@ -54,15 +53,11 @@ async function getSharePointToken(): Promise<SharePointToken> {
 
   const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
 
-  const scope = sharePointDomain
-    ? `https://${sharePointDomain}/.default`
-    : "https://graph.microsoft.com/.default";
-
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: clientId,
     client_secret: clientSecret,
-    scope,
+    scope: "https://graph.microsoft.com/.default",
   });
 
   const resp = await fetch(tokenUrl, {
@@ -77,7 +72,7 @@ async function getSharePointToken(): Promise<SharePointToken> {
     throw new Error(`Failed to get Azure AD token (HTTP ${resp.status}). Check Azure credentials and tenant configuration.`);
   }
 
-  console.log(`[SharePoint] Token acquired successfully with scope: ${scope}`);
+  console.log(`[SharePoint] Graph token acquired successfully`);
   return resp.json();
 }
 
@@ -122,21 +117,52 @@ export async function syncSharePointOpenOpps(): Promise<{
     );
   }
 
-  const token = await getSharePointToken();
+  const token = await getGraphToken();
 
-  const listUrl =
-    `https://${sharePointDomain}${sharePointSite}/_api/web/lists/getbytitle('${encodeURIComponent(sharePointList)}')/items` +
-    `?$top=5000&$select=*`;
+  const siteHost = sharePointDomain;
+  const sitePath = sharePointSite.startsWith("/") ? sharePointSite : `/${sharePointSite}`;
+
+  const siteUrl = `https://graph.microsoft.com/v1.0/sites/${siteHost}:${sitePath}`;
+  console.log(`[SharePoint] Looking up site: ${siteUrl}`);
+  const siteResp = await fetch(siteUrl, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (!siteResp.ok) {
+    const errBody = await siteResp.text();
+    console.error(`[SharePoint] Site lookup failed (HTTP ${siteResp.status}): ${errBody.substring(0, 500)}`);
+    throw new Error(`SharePoint site not found (HTTP ${siteResp.status}). Check SHAREPOINT_DOMAIN and SHAREPOINT_SITE_PATH.`);
+  }
+  const siteData = await siteResp.json();
+  const siteId = siteData.id;
+  console.log(`[SharePoint] Found site ID: ${siteId}`);
+
+  const listsUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`;
+  const listsResp = await fetch(listsUrl, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (!listsResp.ok) {
+    const errBody = await listsResp.text();
+    console.error(`[SharePoint] Lists lookup failed (HTTP ${listsResp.status}): ${errBody.substring(0, 500)}`);
+    throw new Error(`Failed to retrieve SharePoint lists (HTTP ${listsResp.status}).`);
+  }
+  const listsData = await listsResp.json();
+  const targetList = (listsData.value || []).find((l: any) =>
+    l.displayName === sharePointList || l.name === sharePointList
+  );
+  if (!targetList) {
+    const available = (listsData.value || []).map((l: any) => l.displayName).join(", ");
+    throw new Error(`SharePoint list "${sharePointList}" not found. Available lists: ${available}`);
+  }
+  const listId = targetList.id;
+  console.log(`[SharePoint] Found list "${sharePointList}" with ID: ${listId}`);
 
   const allItems: SharePointListItem[] = [];
-  let nextUrl: string | null = listUrl;
+  let nextUrl: string | null =
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        Accept: "application/json;odata=nometadata",
-      },
+      headers: { Authorization: `Bearer ${token.access_token}` },
     });
 
     if (!resp.ok) {
@@ -147,11 +173,12 @@ export async function syncSharePointOpenOpps(): Promise<{
     }
 
     const data: any = await resp.json();
-    const items = data.value || [];
+    const items = (data.value || []).map((item: any) => item.fields || item);
     allItems.push(...items);
 
-    nextUrl = data["odata.nextLink"] || data["@odata.nextLink"] || null;
+    nextUrl = data["@odata.nextLink"] || null;
   }
+  console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
 
   const staged: any[] = [];
   for (let i = 0; i < allItems.length; i++) {
