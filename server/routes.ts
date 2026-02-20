@@ -1563,7 +1563,7 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
       existingCodes.add(empCode);
       existingNames.add(fullName.toLowerCase());
 
-      await storage.createEmployee({
+      const empData = {
         employeeCode: empCode,
         firstName,
         lastName,
@@ -1589,9 +1589,12 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
         team: r[10] ? String(r[10]).substring(0, 100) : null,
         jid: r[7] ? String(r[7]).substring(0, 50) : null,
         onboardingStatus: "completed",
-      });
+      };
+      await storage.createEmployee(empData);
       imported++;
     } catch (err: any) {
+      console.error(`StaffSOT Row ${i + 3} raw:`, JSON.stringify(r.slice(0, 15)));
+      console.error(`StaffSOT Row ${i + 3} scheduleStart raw=${r[8]} type=${typeof r[8]}, scheduleEnd raw=${r[9]} type=${typeof r[9]}`);
       errors.push(`Row ${i + 3}: ${err.message}`);
     }
   }

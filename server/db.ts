@@ -1,6 +1,6 @@
 import Knex from "knex";
 
-const isMSSQL = process.env.DB_CLIENT === "mssql";
+export const isMSSQL = process.env.DB_CLIENT === "mssql";
 
 const knexConfig: Knex.Knex.Config = isMSSQL
   ? {

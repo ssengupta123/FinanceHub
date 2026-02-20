@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, isMSSQL } from "./db";
 import {
   type Employee,
   type InsertEmployee,
@@ -98,18 +98,28 @@ function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {
       const val = data[key];
-      if (val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
+      if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
         data[key] = null;
-      } else if (typeof val === "string" && val !== null) {
-        const isoMatch = val.match(/^\d{4}-\d{2}-\d{2}$/);
-        if (!isoMatch) {
+      } else if (typeof val === "string") {
+        const isoMatch = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (isoMatch) {
+          if (isMSSQL) {
+            data[key] = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+          }
+        } else {
           const d = new Date(val);
           if (!isNaN(d.getTime())) {
-            data[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            if (isMSSQL) {
+              data[key] = d;
+            } else {
+              data[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            }
           } else {
             data[key] = null;
           }
         }
+      } else if (typeof val === "number") {
+        data[key] = null;
       }
     }
   }
@@ -119,8 +129,21 @@ function sanitizeDateFields(data: Record<string, any>): Record<string, any> {
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
   const snakeData = sanitizeDateFields(toSnakeCase(data, table));
   delete snakeData.id;
-  const [row] = await db(table).insert(snakeData).returning("*");
-  return rowToModel<T>(row);
+  try {
+    const [row] = await db(table).insert(snakeData).returning("*");
+    return rowToModel<T>(row);
+  } catch (err: any) {
+    if (err.message && err.message.includes("date")) {
+      const dateFields: Record<string, any> = {};
+      for (const [k, v] of Object.entries(snakeData)) {
+        if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
+          dateFields[k] = { value: v, type: typeof v };
+        }
+      }
+      console.error(`[insertReturning] ${table} date error. Fields:`, JSON.stringify(dateFields));
+    }
+    throw err;
+  }
 }
 
 async function updateReturning<T>(table: string, id: number, data: Record<string, any>): Promise<T | undefined> {
