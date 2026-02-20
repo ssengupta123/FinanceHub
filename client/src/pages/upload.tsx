@@ -28,7 +28,22 @@ const IMPORTABLE_SHEETS: Record<string, string> = {
   "CX Master List": "Customer experience ratings linked to projects and staff",
   "Project Resource Cost": "Monthly resource costs per employee (total)",
   "Project Resource Cost A&F": "Monthly resource costs split by Phase C and Phase DVF",
+  "Open Opps": "Pipeline opportunities with value, margin, work type, RAG status, leads",
 };
+
+function isImportableSheet(sheetName: string): string | null {
+  if (IMPORTABLE_SHEETS[sheetName]) return sheetName;
+  if (sheetName === "query" || sheetName.toLowerCase().startsWith("open op")) return sheetName;
+  return null;
+}
+
+function getSheetDescription(sheetName: string): string {
+  if (IMPORTABLE_SHEETS[sheetName]) return IMPORTABLE_SHEETS[sheetName];
+  if (sheetName === "query" || sheetName.toLowerCase().startsWith("open op")) {
+    return IMPORTABLE_SHEETS["Open Opps"];
+  }
+  return "";
+}
 
 interface SheetInfo {
   name: string;
@@ -97,7 +112,7 @@ export default function UploadPage() {
       const data = await res.json();
       setSheets(data.sheets);
       const importable = data.sheets
-        .filter((s: SheetInfo) => IMPORTABLE_SHEETS[s.name])
+        .filter((s: SheetInfo) => isImportableSheet(s.name))
         .map((s: SheetInfo) => s.name);
       setSelectedSheets(new Set(importable));
       if (importable.length > 0) setPreviewSheet(importable[0]);
@@ -311,7 +326,7 @@ export default function UploadPage() {
             <CardContent>
               <div className="space-y-2">
                 {sheets.map(sheet => {
-                  const isImportable = !!IMPORTABLE_SHEETS[sheet.name];
+                  const isImportable = !!isImportableSheet(sheet.name);
                   const isSelected = selectedSheets.has(sheet.name);
                   const result = results?.[sheet.name];
 
@@ -337,7 +352,7 @@ export default function UploadPage() {
                           <p className="font-medium truncate">{sheet.name}</p>
                           <p className="text-xs text-muted-foreground">
                             {sheet.rows} rows, {sheet.cols} columns
-                            {isImportable && ` — ${IMPORTABLE_SHEETS[sheet.name]}`}
+                            {isImportable && ` — ${getSheetDescription(sheet.name)}`}
                           </p>
                         </div>
                       </div>
