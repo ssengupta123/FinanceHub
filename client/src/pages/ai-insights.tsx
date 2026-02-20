@@ -2,11 +2,11 @@ import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Sparkles, GitBranch, FolderOpen, AlertTriangle, Loader2 } from "lucide-react";
+import { Sparkles, GitBranch, FolderOpen, AlertTriangle, Loader2, TrendingUp, DollarSign, LineChart } from "lucide-react";
 
-type InsightType = "pipeline" | "projects" | "overview";
+type InsightType = "pipeline" | "projects" | "overview" | "spending_patterns" | "financial_advice" | "spending_forecast";
 
-const insightCards: { type: InsightType; title: string; description: string; icon: typeof Sparkles }[] = [
+const riskCards: { type: InsightType; title: string; description: string; icon: typeof Sparkles }[] = [
   {
     type: "overview",
     title: "Risk Register",
@@ -24,6 +24,27 @@ const insightCards: { type: InsightType; title: string; description: string; ico
     title: "Project Risks",
     description: "Budget overruns, margin erosion, cost blowouts, fixed-price exposure, and billing leakage by project",
     icon: FolderOpen,
+  },
+];
+
+const financialCards: { type: InsightType; title: string; description: string; icon: typeof Sparkles }[] = [
+  {
+    type: "spending_patterns",
+    title: "Spending Patterns",
+    description: "Analyze cost trends, seasonal patterns, spending anomalies, and cost concentration across projects and billing types",
+    icon: DollarSign,
+  },
+  {
+    type: "financial_advice",
+    title: "Financial Advice",
+    description: "Personalized recommendations for margin improvement, cost optimization, revenue growth, and workforce strategy",
+    icon: TrendingUp,
+  },
+  {
+    type: "spending_forecast",
+    title: "Spending Forecast",
+    description: "Predict future revenue trajectory, cost trends, margin outlook, and project completion risks over the next 3-6 months",
+    icon: LineChart,
   },
 ];
 
@@ -87,20 +108,13 @@ export default function AIInsights() {
     }
   }, []);
 
-  return (
-    <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-ai-insights-title">
-          <Sparkles className="h-6 w-6 text-primary" />
-          AI Insights
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          AI-powered analysis of your financial data and project portfolio
-        </p>
-      </div>
+  const allCards = [...riskCards, ...financialCards];
 
+  const renderCardGrid = (cards: typeof riskCards, sectionTitle: string) => (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{sectionTitle}</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {insightCards.map((card) => {
+        {cards.map((card) => {
           const Icon = card.icon;
           const isActive = activeType === card.type;
           const isCurrentlyLoading = isLoading && isActive;
@@ -140,6 +154,23 @@ export default function AIInsights() {
           );
         })}
       </div>
+    </div>
+  );
+
+  return (
+    <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-ai-insights-title">
+          <Sparkles className="h-6 w-6 text-primary" />
+          AI Insights
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          AI-powered analysis of your financial data and project portfolio
+        </p>
+      </div>
+
+      {renderCardGrid(riskCards, "Risk Analysis")}
+      {renderCardGrid(financialCards, "Financial Intelligence")}
 
       {error && (
         <Card className="border-destructive" data-testid="card-insight-error">
@@ -154,7 +185,7 @@ export default function AIInsights() {
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              {insightCards.find(c => c.type === activeType)?.title || "Analysis"}
+              {allCards.find(c => c.type === activeType)?.title || "Analysis"}
             </CardTitle>
             {isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </CardHeader>
