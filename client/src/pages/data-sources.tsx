@@ -206,10 +206,19 @@ export default function DataSources() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {statusIcon(ds.status)}
-                    <Badge variant={statusVariant(ds.status)} data-testid={`badge-status-${ds.id}`}>
-                      {ds.status}
-                    </Badge>
+                    {syncMutation.isPending && syncMutation.variables === ds.id ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
+                        <Badge variant="secondary" data-testid={`badge-status-${ds.id}`}>syncing</Badge>
+                      </>
+                    ) : (
+                      <>
+                        {statusIcon(ds.status ?? null)}
+                        <Badge variant={statusVariant(ds.status ?? null)} data-testid={`badge-status-${ds.id}`}>
+                          {ds.status ?? "configured"}
+                        </Badge>
+                      </>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -272,12 +281,12 @@ export default function DataSources() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={syncMutation.isPending || ds.status === "syncing"}
+                      disabled={syncMutation.isPending}
                       onClick={() => syncMutation.mutate(ds.id)}
                       data-testid={`button-sync-${ds.id}`}
                     >
-                      <RefreshCw className={`mr-1 h-3 w-3 ${ds.status === "syncing" ? "animate-spin" : ""}`} />
-                      {ds.status === "syncing" ? "Syncing..." : "Sync Now"}
+                      <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending && syncMutation.variables === ds.id ? "animate-spin" : ""}`} />
+                      {syncMutation.isPending && syncMutation.variables === ds.id ? "Syncing..." : "Sync Now"}
                     </Button>
                   </div>
                 </CardContent>
