@@ -21,7 +21,7 @@ import {
 } from "recharts";
 import type { Project, Employee, Kpi, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -125,13 +125,19 @@ export default function Dashboard() {
     return projectMonthly.filter(m => m.fyYear === selectedFY);
   }, [projectMonthly, selectedFY]);
 
+  const elapsedMonths = getElapsedFyMonths(selectedFY);
+
+  const ytdProjectMonthly = useMemo(() => {
+    return fyProjectMonthly.filter(m => (m.month ?? 0) <= elapsedMonths);
+  }, [fyProjectMonthly, elapsedMonths]);
+
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
   const activeProjectIds = new Set(activeProjects.map(p => p.id));
   const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
   const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
-  const totalRevenue = fyProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
-  const totalCosts = fyProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
+  const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
+  const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
 
   const activeKpis = useMemo(() => {
@@ -147,14 +153,14 @@ export default function Dashboard() {
 
   const billingBreakdown = useMemo(() => {
     const result: Record<string, { revenue: number; cost: number }> = {};
-    fyProjectMonthly.forEach(m => {
+    ytdProjectMonthly.forEach(m => {
       const billing = projectBillingMap.get(m.projectId) || "Other";
       if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
       result[billing].revenue += parseFloat(m.revenue || "0");
       result[billing].cost += parseFloat(m.cost || "0");
     });
     return result;
-  }, [fyProjectMonthly, projectBillingMap]);
+  }, [ytdProjectMonthly, projectBillingMap]);
 
   const fixedRevenue = billingBreakdown["Fixed"]?.revenue || 0;
   const fixedCost = billingBreakdown["Fixed"]?.cost || 0;
