@@ -90,7 +90,7 @@ function rowsToModels<T>(rows: Record<string, any>[]): T[] {
 
 const DATE_COLUMNS = new Set([
   "start_date", "end_date", "schedule_start", "schedule_end",
-  "check_point_date", "month", "week_ending", "effective_from", "effective_to",
+  "check_point_date", "week_ending", "effective_from", "effective_to",
   "due_date", "start_date_str", "expiry_date", "completed_at",
 ]);
 
