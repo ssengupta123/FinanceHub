@@ -1,13 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Database, RefreshCw, Globe, Clock, Shield, AlertTriangle, CheckCircle2, Settings, Download, Upload } from "lucide-react";
+import { Database, RefreshCw, Globe, Clock, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
 import type { DataSource } from "@shared/schema";
 
 function statusVariant(status: string | null): "default" | "secondary" | "outline" | "destructive" {
@@ -54,10 +53,7 @@ function sourceIcon(type: string) {
 
 export default function DataSources() {
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
   const { data: dataSources, isLoading } = useQuery<DataSource[]>({ queryKey: ["/api/data-sources"] });
-  const importFileRef = useRef<HTMLInputElement>(null);
-  const [importResult, setImportResult] = useState<{ message: string; counts?: Record<string, number> } | null>(null);
 
   const syncMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -94,40 +90,6 @@ export default function DataSources() {
     },
   });
 
-  const importMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const resp = await fetch("/api/admin/import-data", { method: "POST", body: formData, credentials: "include" });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ message: "Import failed" }));
-        throw new Error(err.message);
-      }
-      return resp.json();
-    },
-    onSuccess: (data: any) => {
-      setImportResult(data);
-      queryClient.invalidateQueries();
-      toast({ title: "Import complete", description: data.message });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Import failed", description: error.message, variant: "destructive" });
-    },
-  });
-
-  function handleExport() {
-    window.open("/api/admin/export-data", "_blank");
-  }
-
-  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImportResult(null);
-      importMutation.mutate(file);
-    }
-    if (importFileRef.current) importFileRef.current.value = "";
-  }
-
   const summary = useMemo(() => {
     if (!dataSources) return { total: 0, active: 0, configured: 0, error: 0 };
     return {
@@ -157,56 +119,6 @@ export default function DataSources() {
           </Button>
         )}
       </div>
-
-      {isAdmin && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <div>
-              <CardTitle className="text-base">Data Transfer</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">Export all data to JSON or import from a previously exported file</p>
-            </div>
-            <Shield className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleExport} data-testid="button-export-data">
-                <Download className="mr-1 h-3 w-3" />
-                Export All Data
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={importMutation.isPending}
-                onClick={() => importFileRef.current?.click()}
-                data-testid="button-import-data"
-              >
-                <Upload className="mr-1 h-3 w-3" />
-                {importMutation.isPending ? "Importing..." : "Import Data"}
-              </Button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportFile}
-                data-testid="input-import-file"
-              />
-            </div>
-            {importResult && (
-              <div className="text-sm space-y-1">
-                <p className="font-medium">{importResult.message}</p>
-                {importResult.counts && (
-                  <div className="flex gap-2 flex-wrap">
-                    {Object.entries(importResult.counts).filter(([, v]) => v > 0).map(([table, count]) => (
-                      <Badge key={table} variant="secondary">{table}: {count}</Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {dataSources && dataSources.length > 0 && (
         <div className="grid gap-4 md:grid-cols-3">
