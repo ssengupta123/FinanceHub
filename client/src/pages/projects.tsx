@@ -4,6 +4,8 @@ import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, ProjectMonthly } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -223,6 +225,7 @@ export default function ProjectsList() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVat, setFilterVat] = useState("all");
@@ -234,9 +237,16 @@ export default function ProjectsList() {
 
   const { data: projects, isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
+  const availableFYs = useMemo(() => {
+    if (!projects) return [getCurrentFy()];
+    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projects]);
+
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => {
+      if (p.fyYear !== selectedFY) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!p.name.toLowerCase().includes(q) && !p.projectCode.toLowerCase().includes(q)) return false;
@@ -246,7 +256,7 @@ export default function ProjectsList() {
       if (filterStatus !== "all" && p.status !== filterStatus) return false;
       return true;
     });
-  }, [projects, searchQuery, filterVat, filterBilling, filterStatus]);
+  }, [projects, selectedFY, searchQuery, filterVat, filterBilling, filterStatus]);
 
   const totals = useMemo(() => {
     return filteredProjects.reduce(
@@ -331,7 +341,9 @@ export default function ProjectsList() {
           <h1 className="text-2xl font-semibold" data-testid="text-projects-title">Job Status</h1>
           <p className="text-sm text-muted-foreground">Project portfolio with financial tracking</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-project">
               <Plus className="mr-2 h-4 w-4" /> Add Project
@@ -492,6 +504,7 @@ export default function ProjectsList() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">

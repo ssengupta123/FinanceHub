@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +20,8 @@ import {
   AreaChart, Area,
 } from "recharts";
 import type { Project, Employee, Kpi, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -79,37 +82,74 @@ const REVENUE_TARGET = 5000000;
 const UTILIZATION_TARGET = 0.85;
 
 export default function Dashboard() {
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: kpis, isLoading: loadingKpis } = useQuery<Kpi[]>({ queryKey: ["/api/kpis"] });
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
 
-  const activeProjects = projects?.filter(p => p.status === "active" || p.adStatus === "Active") || [];
+  const availableFYs = useMemo(() => {
+    if (!projects) return [getCurrentFy()];
+    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projects]);
+
+  const fyProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => p.fyYear === selectedFY);
+  }, [projects, selectedFY]);
+
+  const fyPipeline = useMemo(() => {
+    if (!pipeline) return [];
+    return pipeline.filter(p => {
+      if (p.fyYear === selectedFY) return true;
+      if (p.fyYear === "open_opps" && p.dueDate) {
+        const derived = getFyFromDate(p.dueDate);
+        return derived === selectedFY;
+      }
+      return false;
+    });
+  }, [pipeline, selectedFY]);
+
+  const fyProjectMonthly = useMemo(() => {
+    if (!projectMonthly) return [];
+    return projectMonthly.filter(m => m.fyYear === selectedFY);
+  }, [projectMonthly, selectedFY]);
+
+  const fyProjectIds = useMemo(() => new Set(fyProjects.map(p => p.id)), [fyProjects]);
+
+  const fyKpis = useMemo(() => {
+    if (!kpis) return [];
+    return kpis.filter(k => fyProjectIds.has(k.projectId));
+  }, [kpis, fyProjectIds]);
+
+  const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
   const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
-  const totalContracted = projects?.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0) || 0;
-  const totalBudgeted = projects?.reduce((sum, p) => sum + parseFloat(p.budgetAmount || "0"), 0) || 0;
-  const totalRevenue = kpis?.reduce((sum, k) => sum + parseFloat(k.revenue || "0"), 0) || 0;
-  const totalCosts = kpis?.reduce((sum, k) => sum + parseFloat(k.grossCost || "0"), 0) || 0;
+  const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
+  const totalBudgeted = fyProjects.reduce((sum, p) => sum + parseFloat(p.budgetAmount || "0"), 0);
+  const totalRevenue = fyKpis.reduce((sum, k) => sum + parseFloat(k.revenue || "0"), 0);
+  const totalCosts = fyKpis.reduce((sum, k) => sum + parseFloat(k.grossCost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
-  const avgUtilization = kpis && kpis.length > 0
-    ? kpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / kpis.length / 100
+  const avgUtilization = fyKpis.length > 0
+    ? fyKpis.reduce((sum, k) => sum + parseFloat(k.utilization || "0"), 0) / fyKpis.length / 100
     : 0;
 
-  const fixedPriceProjects = projects?.filter(p => p.billingCategory === "Fixed") || [];
-  const tmProjects = projects?.filter(p => p.billingCategory === "T&M") || [];
+  const fixedPriceProjects = fyProjects.filter(p => p.billingCategory === "Fixed");
+  const tmProjects = fyProjects.filter(p => p.billingCategory === "T&M");
   const fixedIds = new Set(fixedPriceProjects.map(p => p.id));
   const tmIds = new Set(tmProjects.map(p => p.id));
 
-  const fixedRevenue = kpis?.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0) || 0;
-  const fixedCost = kpis?.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0) || 0;
-  const tmRevenue = kpis?.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0) || 0;
-  const tmCost = kpis?.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0) || 0;
+  const fixedRevenue = fyKpis.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
+  const fixedCost = fyKpis.filter(k => fixedIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
+  const tmRevenue = fyKpis.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
+  const tmCost = fyKpis.filter(k => tmIds.has(k.projectId)).reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
 
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
   const pipelineByClass = classificationOrder.map(cls => {
-    const opps = pipeline?.filter(o => o.classification === cls) || [];
+    const opps = fyPipeline.filter(o => o.classification === cls);
     const totalRev = opps.reduce((s, o) => {
       let t = 0;
       for (let i = 1; i <= 12; i++) t += parseFloat((o as any)[`revenueM${i}`] || "0");
@@ -134,14 +174,14 @@ export default function Dashboard() {
 
   const monthlyTrendData = FY_MONTHS.map((month, mi) => {
     const monthNum = mi + 1;
-    const monthlyRecords = (projectMonthly || []).filter(m => m.month === monthNum);
+    const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
     const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
     const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
     const profit = revenue - cost;
     return { month, revenue, cost, profit };
   });
 
-  const marginBarData = (projects || [])
+  const marginBarData = fyProjects
     .filter(p => p.status === "active")
     .map(p => {
       const forecastMargin = parseFloat(p.forecastGmPercent || "0") * 100;
@@ -158,9 +198,12 @@ export default function Dashboard() {
 
   return (
     <div className="flex-1 overflow-auto p-3 sm:p-6 space-y-4 sm:space-y-6" data-testid="page-dashboard">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
-        <p className="text-xs sm:text-sm text-muted-foreground">FY 25-26 Company Overview</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">FY {selectedFY} Company Overview</p>
+        </div>
+        <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
       </div>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
@@ -278,7 +321,7 @@ export default function Dashboard() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY 25-26)</CardTitle>
+          <CardTitle className="text-sm sm:text-base">Monthly Revenue & Cost (FY {selectedFY})</CardTitle>
           <Link href="/finance">
             <Button variant="ghost" size="sm" data-testid="link-monthly-finance">
               <span className="hidden sm:inline">Full View</span> <ArrowRight className="h-3 w-3 sm:ml-1" />
@@ -330,7 +373,7 @@ export default function Dashboard() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY 25-26)</CardTitle>
+          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY {selectedFY})</CardTitle>
         </CardHeader>
         <CardContent className="p-3 sm:p-6 pt-0">
           {isLoading ? (

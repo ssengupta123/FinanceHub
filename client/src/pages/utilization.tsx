@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,6 +7,8 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Clock, Target, Users } from "lucide-react";
 import type { Employee, Timesheet, Project } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 
 interface WeeklyUtilData {
   employee_id: number;
@@ -46,6 +48,8 @@ function getISOWeekKey(dateStr: string): string {
 }
 
 export default function UtilizationDashboard() {
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
@@ -53,30 +57,46 @@ export default function UtilizationDashboard() {
 
   const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
 
-  const totalHours = (timesheets || []).reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
-  const billableTimesheets = (timesheets || []).filter(t => t.billable);
+  const availableFYs = useMemo(() => {
+    if (!timesheets) return [getCurrentFy()];
+    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [timesheets]);
+
+  const fyTimesheets = useMemo(() => {
+    if (!timesheets) return [];
+    return timesheets.filter(t => getFyFromDate(t.weekEnding) === selectedFY);
+  }, [timesheets, selectedFY]);
+
+  const fyWeeklyData = useMemo(() => {
+    if (!weeklyData) return [];
+    return weeklyData.filter(w => getFyFromDate(w.week_ending) === selectedFY);
+  }, [weeklyData, selectedFY]);
+
+  const totalHours = fyTimesheets.reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
+  const billableTimesheets = fyTimesheets.filter(t => t.billable);
   const billableHoursTotal = billableTimesheets.reduce((sum, t) => sum + parseNum(t.hoursWorked), 0);
   const billableRatio = totalHours > 0 ? (billableHoursTotal / totalHours) * 100 : 0;
 
   const employeeStats = useMemo(() => (employees || []).map(emp => {
-    const empTimesheets = (timesheets || []).filter(t => t.employeeId === emp.id);
+    const empTimesheets = fyTimesheets.filter(t => t.employeeId === emp.id);
     const totalHrs = empTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const billableHrs = empTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const util = totalHrs > 0 ? (billableHrs / totalHrs) * 100 : 0;
     return { employee: emp, totalHrs, billableHrs, util };
-  }).filter(e => e.totalHrs > 0).sort((a, b) => b.util - a.util), [employees, timesheets]);
+  }).filter(e => e.totalHrs > 0).sort((a, b) => b.util - a.util), [employees, fyTimesheets]);
 
   const projectHours = useMemo(() => (projects || []).map(project => {
-    const projTimesheets = (timesheets || []).filter(t => t.projectId === project.id);
+    const projTimesheets = fyTimesheets.filter(t => t.projectId === project.id);
     const totalHrs = projTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const billableHrs = projTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
     const ratio = totalHrs > 0 ? (billableHrs / totalHrs) * 100 : 0;
     return { project, totalHrs, billableHrs, ratio };
-  }).filter(p => p.totalHrs > 0).sort((a, b) => b.totalHrs - a.totalHrs), [projects, timesheets]);
+  }).filter(p => p.totalHrs > 0).sort((a, b) => b.totalHrs - a.totalHrs), [projects, fyTimesheets]);
 
   const { weekColumns, rollingView, benchSummary } = useMemo(() => {
     const standardWeeklyHours = 38;
-    const data = weeklyData || [];
+    const data = fyWeeklyData;
     if (data.length === 0) return { weekColumns: [], rollingView: [], benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 } };
 
     const allWeekKeys = new Map<string, { label: string; date: Date }>();
@@ -142,7 +162,7 @@ export default function UtilizationDashboard() {
       rollingView: rolling,
       benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
     };
-  }, [weeklyData]);
+  }, [fyWeeklyData]);
 
   const overallUtilization = useMemo(() => {
     if (rollingView.length === 0) return 0;
@@ -157,9 +177,12 @@ export default function UtilizationDashboard() {
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilization Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Resource utilization, time tracking, and 13-week rolling view</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold" data-testid="text-utilization-title">Utilization Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Resource utilization, time tracking, and 13-week rolling view</p>
+        </div>
+        <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

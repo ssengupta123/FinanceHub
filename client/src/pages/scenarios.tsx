@@ -32,6 +32,7 @@ import {
 import { FlaskConical, Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getCurrentFy } from "@/lib/fy-utils";
 import type { PipelineOpportunity, Scenario } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -87,7 +88,7 @@ export default function Scenarios() {
   const { data: scenarios, isLoading: loadingScenarios } = useQuery<Scenario[]>({ queryKey: ["/api/scenarios"] });
   const { data: refData } = useQuery<ReferenceData[]>({ queryKey: ["/api/reference-data"] });
 
-  const [selectedFY, setSelectedFY] = useState("open_opps");
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [winRates, setWinRates] = useState<Record<string, number>>({ ...DEFAULT_WIN_RATES });
   const [revenueGoal, setRevenueGoal] = useState(30000000);
   const [marginGoal, setMarginGoal] = useState(40);

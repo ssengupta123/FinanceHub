@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -95,6 +97,7 @@ const ALL_COLUMNS: { key: FinanceColumnKey; label: string }[] = [
 ];
 
 export default function FinanceDashboard() {
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [visibleColumns, setVisibleColumns] = useState<Set<FinanceColumnKey>>(
     new Set(ALL_COLUMNS.map(c => c.key))
   );
@@ -108,6 +111,22 @@ export default function FinanceDashboard() {
 
   const isLoading = loadingProjects || loadingMonthly;
 
+  const availableFYs = useMemo(() => {
+    if (!projects) return [getCurrentFy()];
+    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [projects]);
+
+  const fyProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => p.fyYear === selectedFY);
+  }, [projects, selectedFY]);
+
+  const fyMonthlyData = useMemo(() => {
+    if (!monthlyData) return [];
+    return monthlyData.filter(m => m.fyYear === selectedFY);
+  }, [monthlyData, selectedFY]);
+
   const toggleColumn = (key: FinanceColumnKey) => {
     setVisibleColumns(prev => {
       const next = new Set(prev);
@@ -120,13 +139,13 @@ export default function FinanceDashboard() {
   const isCol = (key: FinanceColumnKey) => visibleColumns.has(key);
 
   const monthlyByProject = new Map<number, ProjectMonthly[]>();
-  (monthlyData || []).forEach((m) => {
+  fyMonthlyData.forEach((m) => {
     const list = monthlyByProject.get(m.projectId) || [];
     list.push(m);
     monthlyByProject.set(m.projectId, list);
   });
 
-  const clientRows: ClientRow[] = (projects || []).map((p) => {
+  const clientRows: ClientRow[] = fyProjects.map((p) => {
     const rows = monthlyByProject.get(p.id) || [];
 
     const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
@@ -199,12 +218,17 @@ export default function FinanceDashboard() {
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="sticky top-0 z-50 bg-background border-b px-6 py-4">
-        <h1 className="text-2xl font-semibold" data-testid="text-finance-title">
-          Finance Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Client Summary - FY 25-26 Quarterly & Yearly Breakdown
-        </p>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold" data-testid="text-finance-title">
+              Finance Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Client Summary - FY {selectedFY} Quarterly & Yearly Breakdown
+            </p>
+          </div>
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6 space-y-6">

@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getCurrentFy } from "@/lib/fy-utils";
+import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,7 @@ type VarianceRow = {
 
 export default function Forecasts() {
   const { toast } = useToast();
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"forecasts" | "variance">("variance");
   const [formData, setFormData] = useState({
@@ -90,7 +93,7 @@ export default function Forecasts() {
     });
 
     const rows: VarianceRow[] = [];
-    const allProjectIds = new Set([...projForecasts.keys(), ...projActuals.keys()]);
+    const allProjectIds = new Set([...Array.from(projForecasts.keys()), ...Array.from(projActuals.keys())]);
 
     allProjectIds.forEach(pid => {
       const fc = projForecasts.get(pid) || { rev: 0, cost: 0, margin: 0 };
@@ -174,6 +177,7 @@ export default function Forecasts() {
           <p className="text-sm text-muted-foreground">Revenue and cost forecasts with variance analysis</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <FySelector value={selectedFY} options={[getCurrentFy()]} onChange={setSelectedFY} />
           <Button
             variant={viewMode === "variance" ? "default" : "outline"}
             size="sm"
