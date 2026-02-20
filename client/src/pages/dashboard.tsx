@@ -91,15 +91,22 @@ export default function Dashboard() {
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
 
   const availableFYs = useMemo(() => {
-    if (!projects) return [getCurrentFy()];
-    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    if (!projectMonthly) return [getCurrentFy()];
+    const fys = projectMonthly.map(m => m.fyYear).filter(Boolean) as string[];
     return getFyOptions(fys);
-  }, [projects]);
+  }, [projectMonthly]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!projectMonthly) return new Set<number>();
+    return new Set(
+      projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [projectMonthly, selectedFY]);
 
   const fyProjects = useMemo(() => {
     if (!projects) return [];
-    return projects.filter(p => p.fyYear === selectedFY);
-  }, [projects, selectedFY]);
+    return projects.filter(p => fyProjectIds.has(p.id));
+  }, [projects, fyProjectIds]);
 
   const fyPipeline = useMemo(() => {
     if (!pipeline) return [];
@@ -117,8 +124,6 @@ export default function Dashboard() {
     if (!projectMonthly) return [];
     return projectMonthly.filter(m => m.fyYear === selectedFY);
   }, [projectMonthly, selectedFY]);
-
-  const fyProjectIds = useMemo(() => new Set(fyProjects.map(p => p.id)), [fyProjects]);
 
   const fyKpis = useMemo(() => {
     if (!kpis) return [];

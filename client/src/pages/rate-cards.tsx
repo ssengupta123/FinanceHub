@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { RateCard } from "@shared/schema";
-import { getCurrentFy } from "@/lib/fy-utils";
+import { getCurrentFy, getFyFromDate } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -140,6 +140,15 @@ export default function RateCards() {
     if (sortField === field) setSortAsc(!sortAsc);
     else { setSortField(field); setSortAsc(false); }
   }
+
+  const fyFilteredRateCards = useMemo(() => {
+    if (!rateCards) return [];
+    return rateCards.filter(rc => {
+      if (!rc.effectiveFrom) return true;
+      const fy = getFyFromDate(rc.effectiveFrom);
+      return fy === selectedFY;
+    });
+  }, [rateCards, selectedFY]);
 
   const filteredDerived = useMemo(() => {
     let data = derivedRates || [];
@@ -401,7 +410,7 @@ export default function RateCards() {
         </CardContent>
       </Card>
 
-      {(rateCards && rateCards.length > 0) && (
+      {(fyFilteredRateCards.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Manual Rate Cards</CardTitle>
@@ -422,7 +431,7 @@ export default function RateCards() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rateCards.map(rc => (
+                {fyFilteredRateCards.map(rc => (
                   <TableRow key={rc.id} data-testid={`row-rate-card-${rc.id}`}>
                     <TableCell className="font-medium" data-testid={`text-rate-role-${rc.id}`}>{rc.role}</TableCell>
                     <TableCell>{rc.grade || "\u2014"}</TableCell>

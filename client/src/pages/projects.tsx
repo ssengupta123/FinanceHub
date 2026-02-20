@@ -236,17 +236,25 @@ export default function ProjectsList() {
   );
 
   const { data: projects, isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: projectMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
 
   const availableFYs = useMemo(() => {
-    if (!projects) return [getCurrentFy()];
-    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    if (!projectMonthly) return [getCurrentFy()];
+    const fys = projectMonthly.map(m => m.fyYear).filter(Boolean) as string[];
     return getFyOptions(fys);
-  }, [projects]);
+  }, [projectMonthly]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!projectMonthly) return new Set<number>();
+    return new Set(
+      projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [projectMonthly, selectedFY]);
 
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => {
-      if (p.fyYear !== selectedFY) return false;
+      if (!fyProjectIds.has(p.id)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!p.name.toLowerCase().includes(q) && !p.projectCode.toLowerCase().includes(q)) return false;
@@ -256,7 +264,7 @@ export default function ProjectsList() {
       if (filterStatus !== "all" && p.status !== filterStatus) return false;
       return true;
     });
-  }, [projects, selectedFY, searchQuery, filterVat, filterBilling, filterStatus]);
+  }, [projects, fyProjectIds, searchQuery, filterVat, filterBilling, filterStatus]);
 
   const totals = useMemo(() => {
     return filteredProjects.reduce(

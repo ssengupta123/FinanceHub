@@ -112,15 +112,22 @@ export default function FinanceDashboard() {
   const isLoading = loadingProjects || loadingMonthly;
 
   const availableFYs = useMemo(() => {
-    if (!projects) return [getCurrentFy()];
-    const fys = projects.map(p => p.fyYear).filter(Boolean) as string[];
+    if (!monthlyData) return [getCurrentFy()];
+    const fys = monthlyData.map(m => m.fyYear).filter(Boolean) as string[];
     return getFyOptions(fys);
-  }, [projects]);
+  }, [monthlyData]);
+
+  const fyProjectIds = useMemo(() => {
+    if (!monthlyData) return new Set<number>();
+    return new Set(
+      monthlyData.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
+    );
+  }, [monthlyData, selectedFY]);
 
   const fyProjects = useMemo(() => {
     if (!projects) return [];
-    return projects.filter(p => p.fyYear === selectedFY);
-  }, [projects, selectedFY]);
+    return projects.filter(p => fyProjectIds.has(p.id));
+  }, [projects, fyProjectIds]);
 
   const fyMonthlyData = useMemo(() => {
     if (!monthlyData) return [];

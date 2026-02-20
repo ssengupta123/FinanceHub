@@ -2,8 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Employee } from "@shared/schema";
-import { getCurrentFy } from "@/lib/fy-utils";
+import type { Employee, Timesheet } from "@shared/schema";
+import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -162,10 +162,23 @@ export default function Resources() {
   const isCol = (key: ColumnKey) => visibleColumns.has(key);
 
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
 
   const availableFYs = useMemo(() => {
-    return ["22-23", "23-24", "24-25", "25-26", "26-27"];
-  }, []);
+    if (!timesheets) return [getCurrentFy()];
+    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
+    return getFyOptions(fys);
+  }, [timesheets]);
+
+  const fyEmployeeIds = useMemo(() => {
+    if (!timesheets) return new Set<number>();
+    return new Set(
+      timesheets
+        .filter(t => getFyFromDate(t.weekEnding) === selectedFY)
+        .map(t => t.employeeId)
+        .filter((id): id is number => id !== null && id !== undefined)
+    );
+  }, [timesheets, selectedFY]);
 
   const teams = useMemo(() => {
     if (!employees) return [];
@@ -177,18 +190,9 @@ export default function Resources() {
   const filtered = useMemo(() => {
     if (!employees) return [];
 
-    const startYear = 2000 + parseInt(selectedFY.split("-")[0]);
-    const fyStart = new Date(startYear, 6, 1);
-    const fyEnd = new Date(startYear + 1, 5, 30);
-
-    const fyFiltered = employees.filter(emp => {
-      const empStart = emp.startDate ? new Date(emp.startDate) : null;
-      const empEnd = emp.endDate ? new Date(emp.endDate) : null;
-      if (!empStart) return true;
-      return empStart <= fyEnd && (!empEnd || empEnd >= fyStart);
-    });
-
-    const base = fyFiltered.length > 0 ? fyFiltered : employees;
+    const base = fyEmployeeIds.size > 0
+      ? employees.filter(emp => fyEmployeeIds.has(emp.id))
+      : employees;
 
     return base.filter(emp => {
       const nameMatch = searchQuery === "" ||
