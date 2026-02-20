@@ -72,9 +72,12 @@ async function getSharePointToken(): Promise<SharePointToken> {
   });
 
   if (!resp.ok) {
+    const errBody = await resp.text();
+    console.error(`[SharePoint] Token request failed (HTTP ${resp.status}): ${errBody}`);
     throw new Error(`Failed to get Azure AD token (HTTP ${resp.status}). Check Azure credentials and tenant configuration.`);
   }
 
+  console.log(`[SharePoint] Token acquired successfully with scope: ${scope}`);
   return resp.json();
 }
 
@@ -137,6 +140,9 @@ export async function syncSharePointOpenOpps(): Promise<{
     });
 
     if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error(`[SharePoint] API error (HTTP ${resp.status}) for URL: ${nextUrl}`);
+      console.error(`[SharePoint] Response body: ${errBody.substring(0, 500)}`);
       throw new Error(`SharePoint API error (HTTP ${resp.status}). Check SharePoint domain, site path, and list name configuration.`);
     }
 
