@@ -4,6 +4,7 @@
 FinanceHub is a production-grade financial and project management application designed to consolidate data from various sources (manual and automated). Its primary purpose is to track project burn rates, resource utilization, financial forecasts, customer experience ratings, and resource costs with robust workflows. The application is tailored to match Excel data structures, including pipeline classifications, VAT categories, billing types, and the Australian Financial Year format (Jul-Jun). It is engineered for deployment on Azure, aiming to provide a comprehensive solution for financial oversight and project management.
 
 ## Recent Changes
+- **Feb 2026:** Enabled AI-Powered Financial Insights — all 6 analysis types now live with streaming responses from OpenAI GPT-4o-mini. Risk Analysis (Risk Register, Pipeline Risks, Project Risks) and Financial Intelligence (Spending Patterns, Financial Advice, Spending Forecast) analyse real project/pipeline/cost data.
 - **Feb 2026:** Centralised financial targets as reference data with FY field:
   - Added `fy_year` column to `reference_data` table for FY-scoped entries.
   - New `financial_target` category in Admin reference data page with FY selector — allows setting Revenue Target, Margin Target, and Utilisation Target per financial year.

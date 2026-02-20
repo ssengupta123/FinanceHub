@@ -65,7 +65,7 @@ const navGroups = [
       { title: "Pipeline", icon: GitBranch, path: "/pipeline" },
       { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios" },
       { title: "Forecasts", icon: LineChart, path: "/forecasts" },
-      { title: "Coming Soon", icon: Sparkles, path: "/ai-insights" },
+      { title: "AI Insights", icon: Sparkles, path: "/ai-insights" },
     ],
   },
   {
