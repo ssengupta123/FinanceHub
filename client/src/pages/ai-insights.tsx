@@ -133,21 +133,11 @@ export default function AIInsights() {
                 <p className="text-xs text-muted-foreground mb-3">{card.description}</p>
                 <Button
                   size="sm"
-                  onClick={() => generateInsight(card.type)}
-                  disabled={isLoading}
+                  disabled
                   data-testid={`button-generate-${card.type}`}
                 >
-                  {isCurrentlyLoading ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-3 w-3" />
-                      Generate
-                    </>
-                  )}
+                  <Sparkles className="h-3 w-3" />
+                  Coming Soon
                 </Button>
               </CardContent>
             </Card>
@@ -162,7 +152,7 @@ export default function AIInsights() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-ai-insights-title">
           <Sparkles className="h-6 w-6 text-primary" />
-          AI Insights
+          Coming Soon
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           AI-powered analysis of your financial data and project portfolio
