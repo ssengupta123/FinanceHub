@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Target, Users, AlertTriangle } from "lucide-react";
-import type { Employee, Timesheet, Project } from "@shared/schema";
+import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 
@@ -55,8 +55,9 @@ export default function UtilizationDashboard() {
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: ["/api/utilization/weekly"] });
+  const { data: resourcePlans, isLoading: loadingPlans } = useQuery<ResourcePlan[]>({ queryKey: ["/api/resource-plans"] });
 
-  const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
+  const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly || loadingPlans;
 
   const availableFYs = useMemo(() => {
     if (!timesheets) return [getCurrentFy()];
@@ -117,15 +118,66 @@ export default function UtilizationDashboard() {
       return d >= recentCutoff && d <= today;
     });
 
+    const rpByEmpMonth = new Map<string, number>();
+    const hasResourcePlans = (resourcePlans || []).length > 0;
+    (resourcePlans || []).forEach(rp => {
+      if (!rp.employeeId || !rp.month) return;
+      const monthKey = rp.month.substring(0, 7);
+      const mapKey = `${rp.employeeId}-${monthKey}`;
+      const existing = rpByEmpMonth.get(mapKey) || 0;
+      rpByEmpMonth.set(mapKey, existing + parseNum(rp.allocationPercent));
+    });
+
+    const activeProjects = (projects || []).filter(p =>
+      p.client !== "Internal" && (p.status === "active" || (p as any).adStatus === "Active")
+    );
+
+    const recentWindowStart = new Date(today);
+    recentWindowStart.setDate(recentWindowStart.getDate() - 56);
+
+    const empProjectAllocations = new Map<number, { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[]>();
+    permanentEmployees.forEach(emp => {
+      const empRecentTimesheets = fyTimesheets.filter(t => {
+        if (t.employeeId !== emp.id) return false;
+        const d = new Date(t.weekEnding);
+        return d >= recentWindowStart && d <= today;
+      });
+
+      const projectWeekHours = new Map<number, Map<string, number>>();
+      empRecentTimesheets.forEach(t => {
+        if (!t.projectId) return;
+        const proj = activeProjects.find(p => p.id === t.projectId);
+        if (!proj) return;
+        const wk = getISOWeekKey(t.weekEnding);
+        if (!projectWeekHours.has(t.projectId)) projectWeekHours.set(t.projectId, new Map());
+        const weekMap = projectWeekHours.get(t.projectId)!;
+        weekMap.set(wk, (weekMap.get(wk) || 0) + parseNum(t.hoursWorked));
+      });
+
+      const allocations: { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[] = [];
+      projectWeekHours.forEach((weekMap, projId) => {
+        const proj = activeProjects.find(p => p.id === projId);
+        if (!proj) return;
+        const weekHours = Array.from(weekMap.values());
+        const avgPerWeek = weekHours.length > 0 ? weekHours.reduce((s, h) => s + h, 0) / weekHours.length : 0;
+        if (avgPerWeek < 0.5) return;
+
+        allocations.push({
+          projectId: projId,
+          startDate: proj.startDate ? new Date(proj.startDate) : null,
+          endDate: proj.endDate ? new Date(proj.endDate) : null,
+          avgHoursPerWeek: avgPerWeek,
+        });
+      });
+      empProjectAllocations.set(emp.id, allocations);
+    });
+
     const empRecentAvg = new Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>();
 
     permanentEmployees.forEach(emp => {
       const empRows = recentData.filter(r => r.employee_id === emp.id);
-      const isAllocated = fyTimesheets.some(t => {
-        if (t.employeeId !== emp.id) return false;
-        const proj = (projects || []).find(p => p.id === t.projectId);
-        return proj && proj.client !== "Internal" && (proj.status === "active" || (proj as any).adStatus === "Active");
-      });
+      const allocations = empProjectAllocations.get(emp.id) || [];
+      const isAllocated = allocations.length > 0;
 
       if (empRows.length > 0) {
         const weekKeys = new Set(empRows.map(r => getISOWeekKey(r.week_ending)));
@@ -150,7 +202,6 @@ export default function UtilizationDashboard() {
       }
     });
 
-    const currentWeekKey = getISOWeekKey(today);
     const actualDataByEmpWeek = new Map<string, { totalHours: number; billableHours: number }>();
     weeklyData.forEach(row => {
       if (!permanentIds.has(row.employee_id)) return;
@@ -164,22 +215,47 @@ export default function UtilizationDashboard() {
 
     const rolling = permanentEmployees.map(emp => {
       const recent = empRecentAvg.get(emp.id)!;
-      const projectedHours = recent.isAllocated ? recent.avgHours : 0;
-      const projectedBillable = recent.isAllocated ? recent.avgBillable : 0;
+      const allocations = empProjectAllocations.get(emp.id) || [];
 
-      const weeks = weekCols.map(w => {
-        const mapKey = `${emp.id}-${w.key}`;
+      const weeks = futureWeeks.map((fw, wi) => {
+        const mapKey = `${emp.id}-${fw.key}`;
         const actual = actualDataByEmpWeek.get(mapKey);
 
         if (actual && actual.totalHours > 0) {
           const utilPct = (actual.totalHours / STANDARD_WEEKLY_HOURS) * 100;
           const bench = Math.max(STANDARD_WEEKLY_HOURS - actual.totalHours, 0);
-          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false };
+          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0 };
         }
 
-        const utilPct = (projectedHours / STANDARD_WEEKLY_HOURS) * 100;
-        const bench = Math.max(STANDARD_WEEKLY_HOURS - projectedHours, 0);
-        return { worked: projectedHours, billable: projectedBillable, bench, utilization: utilPct, isProjected: true };
+        const weekDate = fw.date;
+        const monthKey = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, "0")}`;
+
+        if (hasResourcePlans) {
+          const rpKey = `${emp.id}-${monthKey}`;
+          const rpAlloc = rpByEmpMonth.get(rpKey);
+          if (rpAlloc !== undefined) {
+            const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
+            const utilPct = rpAlloc;
+            const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
+            return { worked: projHours, billable: projHours, bench, utilization: utilPct, isProjected: true, projectCount: 0 };
+          }
+        }
+
+        const activeAllocsForWeek = allocations.filter(a => {
+          if (a.endDate && weekDate > a.endDate) return false;
+          if (a.startDate && weekDate < a.startDate) return false;
+          return true;
+        });
+
+        if (activeAllocsForWeek.length > 0) {
+          const totalProjectedHours = activeAllocsForWeek.reduce((s, a) => s + a.avgHoursPerWeek, 0);
+          const utilPct = (totalProjectedHours / STANDARD_WEEKLY_HOURS) * 100;
+          const bench = Math.max(STANDARD_WEEKLY_HOURS - totalProjectedHours, 0);
+          const billableRatio = recent.avgHours > 0 ? recent.avgBillable / recent.avgHours : 0.8;
+          return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length };
+        }
+
+        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0 };
       });
 
       const avgUtil = weeks.length > 0
@@ -187,6 +263,7 @@ export default function UtilizationDashboard() {
         : 0;
       const totalBench = weeks.reduce((s, w) => s + w.bench, 0);
       const totalWorked = weeks.reduce((s, w) => s + w.worked, 0);
+      const maxProjectCount = Math.max(...weeks.map(w => w.projectCount));
 
       return {
         employeeId: emp.id,
@@ -197,6 +274,7 @@ export default function UtilizationDashboard() {
         totalBench,
         totalWorked,
         isAllocated: recent.isAllocated,
+        maxProjectCount,
       };
     }).sort((a, b) => b.avgUtil - a.avgUtil);
 
@@ -208,7 +286,7 @@ export default function UtilizationDashboard() {
 
     const overutilised = rolling
       .filter(r => r.avgUtil > 100)
-      .map(r => ({ name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil }))
+      .map(r => ({ name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil, projectCount: r.maxProjectCount }))
       .sort((a, b) => b.pct - a.pct);
 
     return {
@@ -217,7 +295,7 @@ export default function UtilizationDashboard() {
       benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
       overutilisedList: overutilised,
     };
-  }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects]);
+  }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
 
   function utilColor(pct: number): string {
     if (pct > 100) return "bg-red-500";
@@ -361,15 +439,17 @@ export default function UtilizationDashboard() {
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead className="text-right">Avg Hours/Week</TableHead>
+                  <TableHead className="text-right">Active Projects</TableHead>
                   <TableHead className="text-right">Allocation %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {overutilisedList.map((emp, idx) => (
+                {overutilisedList.map((emp: any, idx: number) => (
                   <TableRow key={idx} data-testid={`row-overutilised-${idx}`}>
                     <TableCell className="font-medium">{emp.name}</TableCell>
                     <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
                     <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
+                    <TableCell className="text-right">{emp.projectCount > 0 ? emp.projectCount : "\u2014"}</TableCell>
                     <TableCell className="text-right">
                       <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
                         {emp.pct.toFixed(0)}%
@@ -388,7 +468,7 @@ export default function UtilizationDashboard() {
           <div>
             <CardTitle className="text-base">Rolling 13-Week Resource Utilisation (Forward Projection)</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Permanent employees only. Current week actual data where available, projected forward based on active allocations.
+              Permanent employees only. Cross-references resource plans and project date ranges to detect multi-project allocations.
               <span className="ml-2 inline-flex items-center gap-1">
                 <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /> Actual
                 <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /> Projected
