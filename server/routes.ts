@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, isMSSQL } from "./db";
 import { z } from "zod";
 import multer from "multer";
 import XLSX from "xlsx";
@@ -216,16 +216,19 @@ export async function registerRoutes(
 
   app.get("/api/costs/summary", async (req, res) => {
     try {
+      const monthExpr = isMSSQL
+        ? `FORMAT(timesheets.week_ending, 'yyyy-MM')`
+        : `to_char(timesheets.week_ending, 'YYYY-MM')`;
       const rows = await db("timesheets")
         .select("timesheets.project_id")
-        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`${monthExpr} as month`))
         .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
         .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
         .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
         .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
         .count({ entry_count: "*" })
         .leftJoin("projects", "timesheets.project_id", "projects.id")
-        .groupBy("timesheets.project_id", db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`), "projects.name")
+        .groupBy("timesheets.project_id", db.raw(monthExpr), "projects.name")
         .orderBy([{ column: "month", order: "desc" }, { column: "total_cost", order: "desc" }]);
       res.json(rows);
     } catch (err: any) {
@@ -235,11 +238,17 @@ export async function registerRoutes(
 
   app.get("/api/resource-allocations", async (req, res) => {
     try {
+      const monthExpr = isMSSQL
+        ? `FORMAT(timesheets.week_ending, 'yyyy-MM')`
+        : `to_char(timesheets.week_ending, 'YYYY-MM')`;
+      const nameExpr = isMSSQL
+        ? `COALESCE(employees.first_name + ' ' + employees.last_name, 'Unknown')`
+        : `COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown')`;
       const rows = await db("timesheets")
         .select("timesheets.employee_id", "timesheets.project_id")
-        .select(db.raw(`to_char(timesheets.week_ending, 'YYYY-MM') as month`))
+        .select(db.raw(`${monthExpr} as month`))
         .select(db.raw(`COALESCE(projects.name, 'Unknown') as project_name`))
-        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .select(db.raw(`${nameExpr} as employee_name`))
         .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
         .sum({ total_cost: db.raw("CAST(timesheets.cost_value AS numeric)") })
         .sum({ total_revenue: db.raw("CAST(timesheets.sale_value AS numeric)") })
@@ -247,7 +256,7 @@ export async function registerRoutes(
         .leftJoin("projects", "timesheets.project_id", "projects.id")
         .leftJoin("employees", "timesheets.employee_id", "employees.id")
         .groupBy("timesheets.employee_id", "timesheets.project_id",
-          db.raw(`to_char(timesheets.week_ending, 'YYYY-MM')`),
+          db.raw(monthExpr),
           "projects.name", "employees.first_name", "employees.last_name")
         .orderBy([{ column: "month", order: "desc" }, { column: "total_hours", order: "desc" }]);
       res.json(rows);
@@ -258,13 +267,19 @@ export async function registerRoutes(
 
   app.get("/api/utilization/weekly", async (req, res) => {
     try {
+      const nameExpr = isMSSQL
+        ? `COALESCE(employees.first_name + ' ' + employees.last_name, 'Unknown')`
+        : `COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown')`;
+      const billableExpr = isMSSQL
+        ? `CASE WHEN timesheets.billable = 1 THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END`
+        : `CASE WHEN timesheets.billable = true THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END`;
       const rows = await db("timesheets")
         .select("timesheets.employee_id")
         .select(db.raw(`timesheets.week_ending`))
-        .select(db.raw(`COALESCE(employees.first_name || ' ' || employees.last_name, 'Unknown') as employee_name`))
+        .select(db.raw(`${nameExpr} as employee_name`))
         .select(db.raw(`COALESCE(employees.role, '') as employee_role`))
         .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
-        .sum({ billable_hours: db.raw("CASE WHEN timesheets.billable = true THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END") })
+        .sum({ billable_hours: db.raw(billableExpr) })
         .sum({ cost_value: db.raw("CAST(timesheets.cost_value AS numeric)") })
         .sum({ sale_value: db.raw("CAST(timesheets.sale_value AS numeric)") })
         .leftJoin("employees", "timesheets.employee_id", "employees.id")
