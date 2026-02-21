@@ -17,7 +17,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [ssoLoading, setSsoLoading] = useState(true);
+  const [ssoLoading, setSsoLoading] = useState(() => {
+    const isReplit = window.location.hostname.includes("replit") || window.location.hostname.includes("janeway");
+    return !isReplit;
+  });
   const ssoAttempted = useRef(false);
 
   useEffect(() => {
@@ -37,6 +40,12 @@ export default function LoginPage() {
       });
       window.history.replaceState({}, "", "/");
       setSsoLoading(false);
+      setShowManualLogin(true);
+      return;
+    }
+
+    const isReplit = window.location.hostname.includes("replit") || window.location.hostname.includes("janeway");
+    if (isReplit) {
       setShowManualLogin(true);
       return;
     }
