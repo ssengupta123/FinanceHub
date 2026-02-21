@@ -1565,7 +1565,20 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     res.json(updated);
   });
   app.delete("/api/vat-reports/:id", async (req, res) => {
-    await storage.deleteVatReport(Number(req.params.id));
+    const id = Number(req.params.id);
+    const existing = await storage.getVatReport(id);
+    if (!existing) return res.status(404).json({ message: "Not found" });
+    const changedBy = req.body?._changedBy || null;
+    await storage.createVatChangeLog({
+      vatReportId: id,
+      fieldName: "report_deleted",
+      oldValue: `${existing.vatName} report dated ${existing.reportDate}`,
+      newValue: null,
+      changedBy,
+      entityType: "report",
+      entityId: id,
+    });
+    await storage.deleteVatReport(id);
     res.json({ success: true });
   });
 
@@ -1791,6 +1804,80 @@ Your role:
       } else {
         res.status(500).json({ message: error.message || "AI chat failed" });
       }
+    }
+  });
+
+  // ─── VAT AI Structured Suggestions (per-field) ───
+  app.post("/api/vat-reports/ai-suggest-fields", async (req, res) => {
+    try {
+      const { vatName, reportId } = req.body;
+      if (!vatName || typeof vatName !== "string") return res.status(400).json({ message: "vatName is required" });
+
+      const pipelineOpps = await storage.getPipelineByVat(vatName);
+      let existingReport: any = null;
+      let risks: any[] = [];
+      if (reportId) {
+        existingReport = await storage.getVatReport(reportId);
+        risks = await storage.getVatRisks(reportId);
+      }
+
+      const pipelineSummary = pipelineOpps.map(o => {
+        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
+          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
+          .reduce((s, v) => s + parseFloat(v || "0"), 0);
+        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
+      }).join("\n");
+
+      const riskSummary = risks.map(r =>
+        `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
+      ).join("\n");
+
+      if (!openai) {
+        return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
+      }
+
+      const systemPrompt = `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
+
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
+${existingReport ? `EXISTING REPORT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
+
+Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values where available. Be concise and actionable.
+
+Return this exact JSON structure:
+{
+  "statusSummary": "bullet points summarising overall VAT status, key wins, pipeline health",
+  "openOppsSummary": "bullet points about open opportunities, their values and status",
+  "bigPlays": "bullet points about major strategic opportunities being pursued",
+  "approachToShortfall": "bullet points on strategies to address revenue target gaps",
+  "accountGoals": "bullet points on key account objectives and targets",
+  "relationships": "bullet points on key stakeholder relationships and engagement status",
+  "research": "bullet points on market research, competitor insights, or industry trends",
+  "otherActivities": "bullet points on other notable activities, events, or initiatives"
+}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Generate a complete structured report draft for the ${vatName} VAT based on the available pipeline and risk data.` },
+        ],
+        max_tokens: 3000,
+        response_format: { type: "json_object" },
+      });
+
+      const content = completion.choices[0]?.message?.content || "{}";
+      try {
+        const parsed = JSON.parse(content);
+        res.json({ fields: parsed });
+      } catch {
+        res.status(500).json({ message: "AI returned invalid JSON" });
+      }
+    } catch (error: any) {
+      console.error("VAT AI suggest-fields error:", error);
+      res.status(500).json({ message: error.message || "AI suggestion failed" });
     }
   });
 

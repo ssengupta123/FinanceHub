@@ -406,7 +406,7 @@ export type InsertVatPlannerTask = z.infer<typeof insertVatPlannerTaskSchema>;
 export type VatPlannerTask = InsertVatPlannerTask & { id: number };
 
 export const insertVatChangeLogSchema = z.object({
-  vatReportId: z.number(),
+  vatReportId: z.number().nullable().optional(),
   fieldName: z.string(),
   oldValue: z.string().nullable().optional(),
   newValue: z.string().nullable().optional(),

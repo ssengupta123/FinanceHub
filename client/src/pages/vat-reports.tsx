@@ -1181,8 +1181,6 @@ function ChangeLogPanel({ reportId }: { reportId: number }) {
   );
 }
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
-
 type ReportDraftFields = {
   statusSummary: string;
   openOppsSummary: string;
@@ -1205,151 +1203,123 @@ const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
   { key: "otherActivities", label: "Other Activities" },
 ];
 
-function VatAIChatbot({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent?: (field: keyof ReportDraftFields, content: string) => void }) {
+function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }) {
   const { toast } = useToast();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [suggestions, setSuggestions] = useState<Partial<ReportDraftFields> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || streaming) return;
-    const userMsg: ChatMessage = { role: "user", content: input.trim() };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
-    setInput("");
-    setStreaming(true);
-
+  const generateSuggestions = useCallback(async () => {
+    setLoading(true);
+    setSuggestions(null);
+    setAppliedFields(new Set());
     try {
-      const res = await fetch("/api/vat-reports/ai-chat", {
+      const res = await fetch("/api/vat-reports/ai-suggest-fields", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vatName, reportId, messages: newMessages }),
+        body: JSON.stringify({ vatName, reportId }),
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "AI failed" }));
-        setMessages(prev => [...prev, { role: "assistant", content: "Error: " + (err.message || "AI failed") }]);
-        setStreaming(false);
+        toast({ title: "AI Error", description: err.message || "Failed to generate suggestions", variant: "destructive" });
+        setLoading(false);
         return;
       }
-
-      const reader = res.body?.getReader();
-      if (!reader) { setStreaming(false); return; }
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let assistantContent = "";
-
-      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.content) {
-                assistantContent += data.content;
-                setMessages(prev => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = { role: "assistant", content: assistantContent };
-                  return updated;
-                });
-              }
-            } catch {}
-          }
-        }
-      }
+      const data = await res.json();
+      setSuggestions(data.fields || {});
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: "assistant", content: "Error: " + (err.message || "Connection failed") }]);
+      toast({ title: "Error", description: err.message || "Connection failed", variant: "destructive" });
     }
-    setStreaming(false);
-  }, [input, messages, streaming, vatName, reportId]);
+    setLoading(false);
+  }, [vatName, reportId, toast]);
 
-  const quickActions = [
-    { label: "Draft full report", prompt: "Draft a complete status report for this VAT including status summary, open opportunities, big plays, and approach to shortfall. Format each section with a clear heading like **Status Summary:** followed by the content." },
-    { label: "Status summary", prompt: "Draft a status summary for this VAT with key bullet points." },
-    { label: "Open opportunities", prompt: "Summarise the open opportunities for this VAT." },
-    { label: "Big plays", prompt: "What are the big plays for this VAT?" },
-    { label: "Approach to shortfall", prompt: "Suggest an approach to the target shortfall for this VAT." },
-  ];
+  const handleApply = (field: keyof ReportDraftFields, content: string) => {
+    onApplyContent(field, content);
+    setAppliedFields(prev => new Set(prev).add(field));
+    toast({ title: `Applied to ${DRAFT_FIELD_LABELS.find(f => f.key === field)?.label || field}` });
+  };
 
-  const handleApplyToField = (content: string, field: keyof ReportDraftFields) => {
-    if (onApplyContent) {
-      onApplyContent(field, content);
-      toast({ title: `Applied to ${DRAFT_FIELD_LABELS.find(f => f.key === field)?.label || field}` });
+  const handleApplyAll = () => {
+    if (!suggestions) return;
+    const applied = new Set<string>();
+    for (const { key } of DRAFT_FIELD_LABELS) {
+      const content = suggestions[key];
+      if (content && content.trim()) {
+        onApplyContent(key, content.trim());
+        applied.add(key);
+      }
     }
+    setAppliedFields(applied);
+    toast({ title: `Applied ${applied.size} fields to the report` });
   };
 
   return (
-    <div className="flex flex-col h-[350px]">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 p-3 border rounded-lg bg-muted/30 mb-3">
-        {messages.length === 0 ? (
-          <div className="text-center py-6 space-y-3">
-            <Sparkles className="h-8 w-8 mx-auto text-purple-500" />
-            <p className="text-sm text-muted-foreground">Ask the AI to help draft your report content based on {vatName}'s pipeline data.</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {quickActions.map((action, i) => (
-                <Button key={i} size="sm" variant="outline" className="text-xs" onClick={() => { setInput(action.prompt); }} data-testid={`button-quick-${i}`}>
-                  {action.label}
-                </Button>
-              ))}
+    <div className="flex flex-col h-[420px]">
+      {!suggestions && !loading ? (
+        <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-6 space-y-4">
+          <Sparkles className="h-10 w-10 text-purple-500" />
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium">AI Report Assistant</p>
+            <p className="text-xs text-muted-foreground">Generate draft content for each report field based on {vatName}'s pipeline data, risks, and opportunities.</p>
+          </div>
+          <Button onClick={generateSuggestions} className="gap-2" data-testid="button-generate-suggestions">
+            <Sparkles className="h-4 w-4" />Generate Suggestions
+          </Button>
+        </div>
+      ) : loading ? (
+        <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-6 space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+          <p className="text-sm text-muted-foreground">Generating suggestions for each field...</p>
+          <p className="text-xs text-muted-foreground">This may take a moment while AI analyses the pipeline data.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col h-full">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-muted-foreground">Review each suggestion and apply individually or all at once.</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="text-xs h-7" onClick={generateSuggestions} data-testid="button-regenerate">
+                <Loader2 className="h-3 w-3 mr-1" />Regenerate
+              </Button>
+              <Button size="sm" className="text-xs h-7" onClick={handleApplyAll} data-testid="button-apply-all">
+                <CheckCircle2 className="h-3 w-3 mr-1" />Apply All
+              </Button>
             </div>
           </div>
-        ) : (
-          messages.map((msg, i) => (
-            <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background border"
-              }`}>
-                <div className="whitespace-pre-wrap">{msg.content || (streaming && i === messages.length - 1 ? "..." : "")}</div>
-              </div>
-              {msg.role === "assistant" && msg.content && !streaming && onApplyContent && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  <Select onValueChange={(field) => handleApplyToField(msg.content, field as keyof ReportDraftFields)}>
-                    <SelectTrigger className="h-6 w-auto text-[10px] px-2 gap-1 border-dashed" data-testid={`button-apply-${i}`}>
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>Apply to field...</span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DRAFT_FIELD_LABELS.map(({ key, label }) => (
-                        <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+          <ScrollArea className="flex-1">
+            <div className="space-y-3 pr-3">
+              {DRAFT_FIELD_LABELS.map(({ key, label }) => {
+                const content = suggestions?.[key] || "";
+                const isApplied = appliedFields.has(key);
+                return (
+                  <div key={key} className={`border rounded-lg p-3 ${isApplied ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-background"}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold">{label}</span>
+                      <Button
+                        size="sm"
+                        variant={isApplied ? "secondary" : "default"}
+                        className="text-[10px] h-6 px-2"
+                        onClick={() => handleApply(key, content)}
+                        disabled={!content}
+                        data-testid={`button-apply-${key}`}
+                      >
+                        {isApplied ? (
+                          <><CheckCircle2 className="h-3 w-3 mr-1" />Applied</>
+                        ) : (
+                          <><Plus className="h-3 w-3 mr-1" />Apply</>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                      {content || "No suggestion generated for this field."}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
-          ))
-        )}
-      </div>
-      <div className="flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
-          placeholder={`Ask about ${vatName}...`}
-          className="text-xs h-9"
-          disabled={streaming}
-          data-testid="input-ai-chat"
-        />
-        <Button size="sm" onClick={sendMessage} disabled={streaming || !input.trim()} className="h-9" data-testid="button-send-ai-chat">
-          {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        </Button>
-      </div>
+          </ScrollArea>
+        </div>
+      )}
     </div>
   );
 }
@@ -1376,7 +1346,9 @@ function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteRepor
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("DELETE", `/api/vat-reports/${report.id}`);
+      await apiRequest("DELETE", `/api/vat-reports/${report.id}`, {
+        _changedBy: user?.displayName || user?.username,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
@@ -1624,10 +1596,10 @@ export default function VatReportsPage() {
                   <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
                 </label>
                 <p className="text-xs text-muted-foreground mb-2">Get AI suggestions then use "Apply to field" to fill the report sections.</p>
-                <VatAIChatbot
+                <VatAISuggestions
                   vatName={activeVat}
                   reportId={latestReports[activeVat]?.id}
-                  onApplyContent={(field, content) => setDraftFields(prev => ({ ...prev, [field]: content }))}
+                  onApplyContent={(field: keyof ReportDraftFields, content: string) => setDraftFields(prev => ({ ...prev, [field]: content }))}
                 />
               </div>
               <div className="flex flex-col overflow-hidden">

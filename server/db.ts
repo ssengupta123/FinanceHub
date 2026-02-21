@@ -548,7 +548,7 @@ export async function runIncrementalMigrations() {
   if (!hasVatChangeLogs) {
     await db.schema.createTable("vat_change_logs", (t) => {
       t.increments("id").primary();
-      t.integer("vat_report_id").notNullable().references("id").inTable("vat_reports").onDelete("CASCADE");
+      t.integer("vat_report_id").references("id").inTable("vat_reports").onDelete("SET NULL");
       t.text("field_name").notNullable();
       t.text("old_value");
       t.text("new_value");
@@ -558,6 +558,22 @@ export async function runIncrementalMigrations() {
       t.timestamp("changed_at").defaultTo(db.fn.now());
     });
     console.log("Created vat_change_logs table");
+  } else {
+    try {
+      const hasNotNull = await db.raw(`
+        SELECT is_nullable FROM information_schema.columns
+        WHERE table_name = 'vat_change_logs' AND column_name = 'vat_report_id'
+      `);
+      const isNullable = hasNotNull.rows?.[0]?.is_nullable;
+      if (isNullable === 'NO') {
+        await db.raw(`ALTER TABLE vat_change_logs DROP CONSTRAINT IF EXISTS vat_change_logs_vat_report_id_foreign`);
+        await db.raw(`ALTER TABLE vat_change_logs ALTER COLUMN vat_report_id DROP NOT NULL`);
+        await db.raw(`ALTER TABLE vat_change_logs ADD CONSTRAINT vat_change_logs_vat_report_id_foreign FOREIGN KEY (vat_report_id) REFERENCES vat_reports(id) ON DELETE SET NULL`);
+        console.log("Updated vat_change_logs FK to SET NULL");
+      }
+    } catch (e) {
+      console.log("vat_change_logs FK migration check skipped:", (e as Error).message);
+    }
   }
 
   console.log("Incremental migrations completed");
