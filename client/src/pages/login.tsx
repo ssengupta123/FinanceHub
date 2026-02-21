@@ -17,10 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [ssoLoading, setSsoLoading] = useState(() => {
-    const isReplit = window.location.hostname.includes("replit") || window.location.hostname.includes("janeway");
-    return !isReplit;
-  });
+  const [ssoLoading, setSsoLoading] = useState(false);
   const ssoAttempted = useRef(false);
 
   useEffect(() => {
@@ -39,13 +36,6 @@ export default function LoginPage() {
         variant: "destructive",
       });
       window.history.replaceState({}, "", "/");
-      setSsoLoading(false);
-      setShowManualLogin(true);
-      return;
-    }
-
-    const isReplit = window.location.hostname.includes("replit") || window.location.hostname.includes("janeway");
-    if (isReplit) {
       setShowManualLogin(true);
       return;
     }
@@ -53,10 +43,7 @@ export default function LoginPage() {
     if (ssoAttempted.current) return;
     ssoAttempted.current = true;
 
-    const fallbackTimer = setTimeout(() => {
-      setSsoLoading(false);
-      setShowManualLogin(true);
-    }, 5000);
+    setSsoLoading(true);
 
     const autoSsoLogin = async () => {
       try {
@@ -65,20 +52,16 @@ export default function LoginPage() {
         if (data.authUrl) {
           window.location.href = data.authUrl;
         } else {
-          clearTimeout(fallbackTimer);
           setSsoLoading(false);
           setShowManualLogin(true);
         }
       } catch {
-        clearTimeout(fallbackTimer);
         setSsoLoading(false);
         setShowManualLogin(true);
       }
     };
 
     autoSsoLogin();
-
-    return () => clearTimeout(fallbackTimer);
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -92,37 +75,6 @@ export default function LoginPage() {
 
   const isPending = loginMutation.isPending || registerMutation.isPending;
 
-  if (ssoLoading && !showManualLogin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary">
-                <DollarSign className="h-5 w-5 text-primary-foreground" />
-              </div>
-            </div>
-            <CardTitle data-testid="text-login-title">Signing you in...</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Redirecting to Microsoft for authentication
-            </p>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center py-8 gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <Button
-              variant="ghost"
-              className="text-sm text-muted-foreground underline"
-              data-testid="button-manual-login"
-              onClick={() => { setSsoLoading(false); setShowManualLogin(true); }}
-            >
-              Sign in manually instead
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
@@ -132,12 +84,23 @@ export default function LoginPage() {
               <DollarSign className="h-5 w-5 text-primary-foreground" />
             </div>
           </div>
-          <CardTitle data-testid="text-login-title">{isRegister ? "Create Account" : "Sign In"}</CardTitle>
+          <CardTitle data-testid="text-login-title">
+            {ssoLoading ? "Signing you in..." : isRegister ? "Create Account" : "Sign In"}
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {isRegister ? "Create an account to access FinanceHub" : "Sign in to FinanceHub with your credentials"}
+            {ssoLoading
+              ? "Redirecting to Microsoft for authentication"
+              : isRegister
+                ? "Create an account to access FinanceHub"
+                : "Sign in to FinanceHub"}
           </p>
         </CardHeader>
         <CardContent>
+          {ssoLoading && (
+            <div className="flex justify-center py-4 mb-4">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
