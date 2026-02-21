@@ -1702,6 +1702,11 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     }
     res.json(updated);
   });
+  app.delete("/api/vat-reports", async (req, res) => {
+    const deleted = await storage.deleteAllVatReports();
+    res.json({ success: true, deleted });
+  });
+
   app.delete("/api/vat-reports/:id", async (req, res) => {
     const id = Number(req.params.id);
     const existing = await storage.getVatReport(id);

@@ -520,8 +520,29 @@ function VatPptxUpload() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<Record<string, VatImportResult> | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const pptxInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  async function handleDeleteAll() {
+    setDeleting(true);
+    try {
+      const res = await apiRequest("DELETE", "/api/vat-reports");
+      const data = await res.json();
+      toast({
+        title: "VAT Reports Deleted",
+        description: `${data.deleted} VAT report${data.deleted !== 1 ? "s" : ""} and all associated data have been removed.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports/latest"] });
+    } catch (err: any) {
+      toast({ title: "Delete Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
 
   async function handlePptxSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -617,6 +638,55 @@ function VatPptxUpload() {
           <p className="text-sm text-muted-foreground mb-4">
             Upload a VAT Sales Committee Report PowerPoint file to import all VAT reports, risks, and planner tasks.
           </p>
+
+          {showDeleteConfirm ? (
+            <div className="mb-4 p-4 rounded-md border border-destructive/50 bg-destructive/5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-destructive">Delete all VAT report data?</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This will permanently remove all VAT reports, risks, action items, planner tasks, and change logs. This cannot be undone.
+                  </p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleDeleteAll}
+                      disabled={deleting}
+                      data-testid="button-confirm-delete-vat"
+                    >
+                      {deleting ? "Deleting..." : "Yes, delete all"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleting}
+                      data-testid="button-cancel-delete-vat"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setShowDeleteConfirm(true)}
+                data-testid="button-delete-all-vat"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete All VAT Report Data
+              </Button>
+              <p className="text-xs text-muted-foreground mt-1">Clear existing reports before importing to avoid duplicates</p>
+            </div>
+          )}
+
           {!pptxFile ? (
             <div
               className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate"

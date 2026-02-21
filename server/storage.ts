@@ -314,6 +314,7 @@ export interface IStorage {
   createVatReport(data: InsertVatReport): Promise<VatReport>;
   updateVatReport(id: number, data: Partial<InsertVatReport>): Promise<VatReport | undefined>;
   deleteVatReport(id: number): Promise<void>;
+  deleteAllVatReports(): Promise<number>;
 
   getVatRisks(vatReportId: number): Promise<VatRisk[]>;
   createVatRisk(data: InsertVatRisk): Promise<VatRisk>;
@@ -854,6 +855,14 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteVatReport(id: number): Promise<void> {
     await db("vat_reports").where("id", id).del();
+  }
+
+  async deleteAllVatReports(): Promise<number> {
+    const count = await db("vat_reports").count("id as cnt").first();
+    const total = Number(count?.cnt || 0);
+    await db("vat_change_logs").del();
+    await db("vat_reports").del();
+    return total;
   }
 
   async getVatRisks(vatReportId: number): Promise<VatRisk[]> {
