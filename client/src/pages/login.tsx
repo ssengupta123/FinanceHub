@@ -43,6 +43,9 @@ export default function LoginPage() {
     if (ssoAttempted.current) return;
     ssoAttempted.current = true;
 
+    const isAzure = window.location.hostname.includes("azurewebsites.net");
+    if (!isAzure) return;
+
     setSsoLoading(true);
 
     const autoSsoLogin = async () => {
@@ -53,11 +56,9 @@ export default function LoginPage() {
           window.location.href = data.authUrl;
         } else {
           setSsoLoading(false);
-          setShowManualLogin(true);
         }
       } catch {
         setSsoLoading(false);
-        setShowManualLogin(true);
       }
     };
 
