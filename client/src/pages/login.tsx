@@ -1,22 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { DollarSign, Loader2, Shield } from "lucide-react";
+import { DollarSign, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function LoginPage() {
   const { loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
+  const [showManualLogin, setShowManualLogin] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoLoading, setSsoLoading] = useState(true);
+  const ssoAttempted = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -34,7 +36,31 @@ export default function LoginPage() {
         variant: "destructive",
       });
       window.history.replaceState({}, "", "/");
+      setSsoLoading(false);
+      setShowManualLogin(true);
+      return;
     }
+
+    if (ssoAttempted.current) return;
+    ssoAttempted.current = true;
+
+    const autoSsoLogin = async () => {
+      try {
+        const res = await apiRequest("GET", "/api/auth/sso/login");
+        const data = await res.json();
+        if (data.authUrl) {
+          window.location.href = data.authUrl;
+        } else {
+          setSsoLoading(false);
+          setShowManualLogin(true);
+        }
+      } catch {
+        setSsoLoading(false);
+        setShowManualLogin(true);
+      }
+    };
+
+    autoSsoLogin();
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,32 +72,30 @@ export default function LoginPage() {
     }
   };
 
-  const handleSsoLogin = async () => {
-    setSsoLoading(true);
-    try {
-      const res = await apiRequest("GET", "/api/auth/sso/login");
-      const data = await res.json();
-      if (data.authUrl) {
-        window.location.href = data.authUrl;
-      } else {
-        toast({
-          title: "SSO unavailable",
-          description: "Azure AD SSO is not configured.",
-          variant: "destructive",
-        });
-        setSsoLoading(false);
-      }
-    } catch (error: any) {
-      toast({
-        title: "SSO error",
-        description: error.message || "Failed to start SSO login.",
-        variant: "destructive",
-      });
-      setSsoLoading(false);
-    }
-  };
-
   const isPending = loginMutation.isPending || registerMutation.isPending;
+
+  if (ssoLoading && !showManualLogin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary">
+                <DollarSign className="h-5 w-5 text-primary-foreground" />
+              </div>
+            </div>
+            <CardTitle data-testid="text-login-title">Signing you in...</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Redirecting to Microsoft for authentication
+            </p>
+          </CardHeader>
+          <CardContent className="flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -84,37 +108,10 @@ export default function LoginPage() {
           </div>
           <CardTitle data-testid="text-login-title">{isRegister ? "Create Account" : "Sign In"}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            {isRegister ? "Create an account to access FinanceHub" : "Sign in to FinanceHub"}
+            {isRegister ? "Create an account to access FinanceHub" : "Sign in to FinanceHub with your credentials"}
           </p>
         </CardHeader>
         <CardContent>
-          {!isRegister && (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full mb-4 gap-2"
-                data-testid="button-sso-login"
-                onClick={handleSsoLogin}
-                disabled={ssoLoading}
-              >
-                {ssoLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Shield className="h-4 w-4" />
-                )}
-                Sign in with Microsoft
-              </Button>
-              <div className="relative mb-4">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">or</span>
-                </div>
-              </div>
-            </>
-          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
