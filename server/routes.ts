@@ -1810,15 +1810,19 @@ Your role:
   // ─── VAT AI Structured Suggestions (per-field) ───
   app.post("/api/vat-reports/ai-suggest-fields", async (req, res) => {
     try {
-      const { vatName, reportId } = req.body;
+      const { vatName, reportId, userRisks, userActionNotes } = req.body;
       if (!vatName || typeof vatName !== "string") return res.status(400).json({ message: "vatName is required" });
 
       const pipelineOpps = await storage.getPipelineByVat(vatName);
       let existingReport: any = null;
       let risks: any[] = [];
+      let actionItems: any[] = [];
+      let plannerTasks: any[] = [];
       if (reportId) {
         existingReport = await storage.getVatReport(reportId);
         risks = await storage.getVatRisks(reportId);
+        actionItems = await storage.getVatActionItems(reportId);
+        plannerTasks = await storage.getVatPlannerTasks(reportId);
       }
 
       const pipelineSummary = pipelineOpps.map(o => {
@@ -1828,9 +1832,29 @@ Your role:
         return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
       }).join("\n");
 
-      const riskSummary = risks.map(r =>
-        `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
+      const riskSummary = (userRisks && Array.isArray(userRisks) && userRisks.length > 0)
+        ? userRisks.map((r: any) =>
+            `- ${r.description} (Impact: ${r.impactRating || "N/A"}, Likelihood: ${r.likelihood || "N/A"}, Status: ${r.status || "Open"}, Owner: ${r.owner || "Unassigned"})`
+          ).join("\n")
+        : risks.map(r =>
+            `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Status: ${r.status || "Open"}, Owner: ${r.owner})`
+          ).join("\n");
+
+      const completedActions = actionItems.filter((a: any) => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
+      const openActions = actionItems.filter((a: any) => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
+      const completedActionsSummary = completedActions.map((a: any) =>
+        `- ${a.description} (Owner: ${a.owner || "N/A"}, Section: ${a.section || "General"})`
       ).join("\n");
+      const openActionsSummary = openActions.map((a: any) =>
+        `- ${a.description} (Owner: ${a.owner || "N/A"}, Status: ${a.status || "Open"}, Due: ${a.dueDate || "N/A"})`
+      ).join("\n");
+
+      const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
+      const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
+      const plannerSummary = [
+        ...(completedTasks.length > 0 ? [`Completed:\n${completedTasks.map((t: any) => `  - ${t.taskName} (Bucket: ${t.bucketName || "N/A"})`).join("\n")}`] : []),
+        ...(inProgressTasks.length > 0 ? [`In Progress:\n${inProgressTasks.map((t: any) => `  - ${t.taskName} (${t.progress || "N/A"}, Due: ${t.dueDate || "N/A"})`).join("\n")}`] : []),
+      ].join("\n");
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
@@ -1841,28 +1865,44 @@ Your role:
 PIPELINE DATA for ${vatName}:
 ${pipelineSummary || "No pipeline data available"}
 
-${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
-${existingReport ? `EXISTING REPORT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
+${riskSummary ? `CURRENT RISKS & ISSUES (reviewed by user):\n${riskSummary}` : "No risks currently recorded."}
 
-Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values where available. Be concise and actionable.
+${completedActionsSummary ? `RECENTLY COMPLETED ACTIONS:\n${completedActionsSummary}` : "No completed action items."}
+
+${openActionsSummary ? `OPEN ACTION ITEMS:\n${openActionsSummary}` : ""}
+
+${plannerSummary ? `PLANNER TASK STATUS:\n${plannerSummary}` : ""}
+
+${existingReport ? `PREVIOUS REPORT CONTENT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
+
+${userActionNotes ? `USER NOTES ON WHAT CHANGED:\n${userActionNotes}` : ""}
+
+IMPORTANT INSTRUCTIONS:
+- Reference SPECIFIC opportunity names, dollar values, risk descriptions, and completed actions from the data above.
+- Do NOT generate generic or templated content. Every bullet point must reference real data provided.
+- Highlight completed actions as achievements in the status summary.
+- Address open risks directly in relevant sections.
+- If no data is available for a field, say "No data available - please update manually" rather than making up content.
+
+Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun).
 
 Return this exact JSON structure:
 {
-  "statusSummary": "bullet points summarising overall VAT status, key wins, pipeline health",
-  "openOppsSummary": "bullet points about open opportunities, their values and status",
-  "bigPlays": "bullet points about major strategic opportunities being pursued",
-  "approachToShortfall": "bullet points on strategies to address revenue target gaps",
-  "accountGoals": "bullet points on key account objectives and targets",
-  "relationships": "bullet points on key stakeholder relationships and engagement status",
-  "research": "bullet points on market research, competitor insights, or industry trends",
-  "otherActivities": "bullet points on other notable activities, events, or initiatives"
+  "statusSummary": "bullet points summarising overall VAT status including completed actions as achievements, key wins, pipeline health, and current risk posture",
+  "openOppsSummary": "bullet points about specific open opportunities from the pipeline data with their values and classification",
+  "bigPlays": "bullet points about the largest strategic opportunities being pursued with dollar values",
+  "approachToShortfall": "bullet points on strategies to address revenue gaps, referencing specific pipeline opportunities that could close",
+  "accountGoals": "bullet points on key account objectives based on pipeline and open actions",
+  "relationships": "bullet points on key stakeholder relationships referencing risk owners and action item owners",
+  "research": "bullet points on market positioning based on pipeline classifications and opportunity types",
+  "otherActivities": "bullet points on completed planner tasks, in-progress activities, and upcoming milestones"
 }`;
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate a complete structured report draft for the ${vatName} VAT based on the available pipeline and risk data.` },
+          { role: "user", content: `Generate a complete structured report draft for the ${vatName} VAT. Use the specific risks, completed actions, planner tasks, and pipeline data provided. Do NOT repeat or restate the previous report content—generate fresh, updated content that reflects what has changed.` },
         ],
         max_tokens: 3000,
         response_format: { type: "json_object" },

@@ -31,7 +31,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   FileText, Plus, Save, Trash2, Edit2, AlertTriangle, Sparkles,
   Clock, ChevronDown, ChevronUp, History, CheckCircle2,
-  Shield, Target, Users, Search as SearchIcon, Loader2,
+  Shield, Target, Users, Search as SearchIcon, Loader2, ArrowRight, ArrowLeft, MessageSquare,
 } from "lucide-react";
 import type {
   VatReport, VatRisk, VatActionItem, VatPlannerTask, VatChangeLog,
@@ -1205,9 +1205,27 @@ const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
 
 function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }) {
   const { toast } = useToast();
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [suggestions, setSuggestions] = useState<Partial<ReportDraftFields> | null>(null);
   const [loading, setLoading] = useState(false);
   const [appliedFields, setAppliedFields] = useState<Set<string>>(new Set());
+  const [risks, setRisks] = useState<VatRisk[]>([]);
+  const [actionItems, setActionItems] = useState<VatActionItem[]>([]);
+  const [risksLoading, setRisksLoading] = useState(false);
+  const [userNotes, setUserNotes] = useState("");
+
+  useEffect(() => {
+    if (reportId) {
+      setRisksLoading(true);
+      Promise.all([
+        fetch(`/api/vat-reports/${reportId}/risks`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+        fetch(`/api/vat-reports/${reportId}/actions`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+      ]).then(([riskData, actionData]) => {
+        setRisks(riskData);
+        setActionItems(actionData);
+      }).catch(() => {}).finally(() => setRisksLoading(false));
+    }
+  }, [reportId]);
 
   const generateSuggestions = useCallback(async () => {
     setLoading(true);
@@ -1218,7 +1236,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vatName, reportId }),
+        body: JSON.stringify({ vatName, reportId, userRisks: risks, userActionNotes: userNotes || undefined }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "AI failed" }));
@@ -1228,11 +1246,12 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
       }
       const data = await res.json();
       setSuggestions(data.fields || {});
+      setStep(3);
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Connection failed", variant: "destructive" });
     }
     setLoading(false);
-  }, [vatName, reportId, toast]);
+  }, [vatName, reportId, risks, userNotes, toast]);
 
   const handleApply = (field: keyof ReportDraftFields, content: string) => {
     onApplyContent(field, content);
@@ -1254,30 +1273,178 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
     toast({ title: `Applied ${applied.size} fields to the report` });
   };
 
-  return (
-    <div className="flex flex-col h-[420px]">
-      {!suggestions && !loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-6 space-y-4">
-          <Sparkles className="h-10 w-10 text-purple-500" />
-          <div className="text-center space-y-1">
-            <p className="text-sm font-medium">AI Report Assistant</p>
-            <p className="text-xs text-muted-foreground">Generate draft content for each report field based on {vatName}'s pipeline data, risks, and opportunities.</p>
+  const completedActions = actionItems.filter(a => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
+  const openActions = actionItems.filter(a => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
+
+  const stepIndicator = (
+    <div className="flex items-center gap-1 mb-3">
+      {[1, 2, 3].map((s) => (
+        <div key={s} className="flex items-center gap-1">
+          <button
+            onClick={() => { if (s < 3 || suggestions) setStep(s as 1|2|3); }}
+            className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold transition-colors ${
+              step === s ? "bg-purple-500 text-white" : step > s ? "bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300" : "bg-muted text-muted-foreground"
+            }`}
+            data-testid={`step-indicator-${s}`}
+          >
+            {s}
+          </button>
+          <span className={`text-[10px] ${step === s ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+            {s === 1 ? "Risks" : s === 2 ? "Actions" : "Generate"}
+          </span>
+          {s < 3 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />}
+        </div>
+      ))}
+    </div>
+  );
+
+  if (step === 1) {
+    return (
+      <div className="flex flex-col h-[420px]">
+        {stepIndicator}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-muted-foreground">Review and update risks before generating the report.</p>
+        </div>
+        {risksLoading ? (
+          <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-purple-500" /></div>
+        ) : !reportId ? (
+          <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-4 space-y-2">
+            <AlertTriangle className="h-8 w-8 text-amber-500" />
+            <p className="text-xs text-muted-foreground text-center">No existing report selected. Risks will be empty — you can still generate suggestions based on pipeline data.</p>
+            <Button size="sm" onClick={() => setStep(2)} className="gap-1" data-testid="button-skip-risks">
+              Skip to Actions <ArrowRight className="h-3 w-3" />
+            </Button>
           </div>
-          <Button onClick={generateSuggestions} className="gap-2" data-testid="button-generate-suggestions">
-            <Sparkles className="h-4 w-4" />Generate Suggestions
+        ) : (
+          <ScrollArea className="flex-1">
+            <div className="space-y-2 pr-2">
+              {risks.length === 0 ? (
+                <div className="border rounded-lg p-4 text-center bg-muted/30">
+                  <p className="text-xs text-muted-foreground">No risks recorded for this report yet.</p>
+                </div>
+              ) : risks.map((risk, i) => (
+                <div key={risk.id} className="border rounded-lg p-2.5 bg-background space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-medium flex-1">{risk.description}</p>
+                    <Badge variant={risk.riskType === "issue" ? "destructive" : "secondary"} className="text-[9px] px-1.5 shrink-0">
+                      {risk.riskType || "risk"}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                    <span>Impact: <strong>{risk.impactRating || "N/A"}</strong></span>
+                    <span>Likelihood: <strong>{risk.likelihood || "N/A"}</strong></span>
+                    <span>Status: <strong>{risk.status || "Open"}</strong></span>
+                    <span>Owner: <strong>{risk.owner || "Unassigned"}</strong></span>
+                  </div>
+                  <Select
+                    value={risk.status || "Open"}
+                    onValueChange={(v) => {
+                      setRisks(prev => prev.map((r, idx) => idx === i ? { ...r, status: v } : r));
+                    }}
+                  >
+                    <SelectTrigger className="h-6 text-[10px] w-[120px]" data-testid={`select-risk-status-${risk.id}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Open">Open</SelectItem>
+                      <SelectItem value="Mitigating">Mitigating</SelectItem>
+                      <SelectItem value="Closed">Closed</SelectItem>
+                      <SelectItem value="Escalated">Escalated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+        <div className="flex justify-end mt-2">
+          <Button size="sm" onClick={() => setStep(2)} className="gap-1" data-testid="button-next-to-actions">
+            Next: Review Actions <ArrowRight className="h-3 w-3" />
           </Button>
         </div>
-      ) : loading ? (
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <div className="flex flex-col h-[420px]">
+        {stepIndicator}
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-muted-foreground">Review completed actions and add notes for the AI to use.</p>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="space-y-3 pr-2">
+            {completedActions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-bold flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> Completed Actions ({completedActions.length})</p>
+                {completedActions.map(a => (
+                  <div key={a.id} className="border rounded-lg p-2 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+                    <p className="text-xs">{a.description}</p>
+                    <p className="text-[10px] text-muted-foreground">Owner: {a.owner || "N/A"} · Section: {a.section || "General"}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {openActions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-bold flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-500" /> Open Actions ({openActions.length})</p>
+                {openActions.map(a => (
+                  <div key={a.id} className="border rounded-lg p-2 bg-background">
+                    <p className="text-xs">{a.description}</p>
+                    <p className="text-[10px] text-muted-foreground">Owner: {a.owner || "N/A"} · Status: {a.status || "Open"} · Due: {a.dueDate || "N/A"}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {actionItems.length === 0 && (
+              <div className="border rounded-lg p-4 text-center bg-muted/30">
+                <p className="text-xs text-muted-foreground">No action items recorded for this report.</p>
+              </div>
+            )}
+            <div className="space-y-1.5 pt-1">
+              <p className="text-xs font-bold flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5 text-blue-500" /> Additional Notes (optional)</p>
+              <Textarea
+                value={userNotes}
+                onChange={(e) => setUserNotes(e.target.value)}
+                placeholder="Add any context the AI should know, e.g. 'We won the DAFF contract last week', 'Key meeting with Minister next Tuesday'..."
+                rows={3}
+                className="text-xs"
+                data-testid="input-user-notes"
+              />
+            </div>
+          </div>
+        </ScrollArea>
+        <div className="flex justify-between mt-2">
+          <Button size="sm" variant="outline" onClick={() => setStep(1)} className="gap-1" data-testid="button-back-to-risks">
+            <ArrowLeft className="h-3 w-3" /> Back: Risks
+          </Button>
+          <Button size="sm" onClick={generateSuggestions} disabled={loading} className="gap-1" data-testid="button-generate-suggestions">
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            Generate Suggestions
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-[420px]">
+      {stepIndicator}
+      {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-6 space-y-3">
           <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
-          <p className="text-sm text-muted-foreground">Generating suggestions for each field...</p>
-          <p className="text-xs text-muted-foreground">This may take a moment while AI analyses the pipeline data.</p>
+          <p className="text-sm text-muted-foreground">Generating suggestions based on risks, actions, and pipeline...</p>
+          <p className="text-xs text-muted-foreground">This may take a moment.</p>
         </div>
       ) : (
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs text-muted-foreground">Review each suggestion and apply individually or all at once.</p>
             <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => setStep(1)} data-testid="button-restart-flow">
+                <ArrowLeft className="h-3 w-3 mr-1" />Restart
+              </Button>
               <Button size="sm" variant="outline" className="text-xs h-7" onClick={generateSuggestions} data-testid="button-regenerate">
                 <Loader2 className="h-3 w-3 mr-1" />Regenerate
               </Button>
@@ -1595,7 +1762,7 @@ export default function VatReportsPage() {
                 <label className="text-sm font-medium flex items-center gap-2 mb-2">
                   <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
                 </label>
-                <p className="text-xs text-muted-foreground mb-2">Get AI suggestions then use "Apply to field" to fill the report sections.</p>
+                <p className="text-xs text-muted-foreground mb-2">Review risks and actions, then generate AI suggestions to fill the report.</p>
                 <VatAISuggestions
                   vatName={activeVat}
                   reportId={latestReports[activeVat]?.id}
