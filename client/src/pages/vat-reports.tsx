@@ -1182,6 +1182,7 @@ function ChangeLogPanel({ reportId }: { reportId: number }) {
 }
 
 type ReportDraftFields = {
+  overallStatus: string;
   statusSummary: string;
   openOppsSummary: string;
   bigPlays: string;
@@ -1201,7 +1202,13 @@ const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
   { key: "relationships", label: "Relationships" },
   { key: "research", label: "Research" },
   { key: "otherActivities", label: "Other Activities" },
+
 ];
+
+const EMPTY_DRAFT: ReportDraftFields = {
+  overallStatus: "", statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "",
+  accountGoals: "", relationships: "", research: "", otherActivities: "",
+};
 
 function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }) {
   const { toast } = useToast();
@@ -1213,6 +1220,11 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
   const [actionItems, setActionItems] = useState<VatActionItem[]>([]);
   const [risksLoading, setRisksLoading] = useState(false);
   const [userNotes, setUserNotes] = useState("");
+  const [showAddRisk, setShowAddRisk] = useState(false);
+  const [newRiskDesc, setNewRiskDesc] = useState("");
+  const [newRiskType, setNewRiskType] = useState("risk");
+  const [newRiskImpact, setNewRiskImpact] = useState("Medium");
+  const [newRiskLikelihood, setNewRiskLikelihood] = useState("Medium");
 
   useEffect(() => {
     if (reportId) {
@@ -1298,37 +1310,117 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
     </div>
   );
 
+  const addNewRisk = () => {
+    if (!newRiskDesc.trim()) return;
+    const tempRisk: VatRisk = {
+      id: -(Date.now()),
+      vatReportId: reportId || 0,
+      description: newRiskDesc.trim(),
+      riskType: newRiskType,
+      impactRating: newRiskImpact,
+      likelihood: newRiskLikelihood,
+      status: "Open",
+      owner: null,
+      raisedBy: null,
+      impact: null,
+      dateBecomesIssue: null,
+      mitigation: null,
+      comments: null,
+      riskRating: null,
+      sortOrder: risks.length,
+    };
+    setRisks(prev => [...prev, tempRisk]);
+    setNewRiskDesc("");
+    setNewRiskType("risk");
+    setNewRiskImpact("Medium");
+    setNewRiskLikelihood("Medium");
+    setShowAddRisk(false);
+  };
+
   if (step === 1) {
     return (
       <div className="flex flex-col h-[420px]">
         {stepIndicator}
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted-foreground">Review and update risks before generating the report.</p>
+          <p className="text-xs text-muted-foreground">Review risks for AI context. Changes here are used for suggestions only.</p>
+          <Button size="sm" variant="outline" className="text-xs h-7 gap-1" onClick={() => setShowAddRisk(!showAddRisk)} data-testid="button-add-risk">
+            <Plus className="h-3 w-3" />Add Risk
+          </Button>
         </div>
+        {showAddRisk && (
+          <div className="border rounded-lg p-2.5 mb-2 bg-muted/30 space-y-2">
+            <Input
+              value={newRiskDesc}
+              onChange={(e) => setNewRiskDesc(e.target.value)}
+              placeholder="Describe the risk or issue..."
+              className="text-xs h-7"
+              data-testid="input-new-risk-desc"
+            />
+            <div className="flex gap-2">
+              <Select value={newRiskType} onValueChange={setNewRiskType}>
+                <SelectTrigger className="h-6 text-[10px] flex-1" data-testid="select-new-risk-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="risk">Risk</SelectItem>
+                  <SelectItem value="issue">Issue</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={newRiskImpact} onValueChange={setNewRiskImpact}>
+                <SelectTrigger className="h-6 text-[10px] flex-1" data-testid="select-new-risk-impact">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Low">Low Impact</SelectItem>
+                  <SelectItem value="Medium">Medium Impact</SelectItem>
+                  <SelectItem value="High">High Impact</SelectItem>
+                  <SelectItem value="Critical">Critical Impact</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={newRiskLikelihood} onValueChange={setNewRiskLikelihood}>
+                <SelectTrigger className="h-6 text-[10px] flex-1" data-testid="select-new-risk-likelihood">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Low">Low Likelihood</SelectItem>
+                  <SelectItem value="Medium">Medium Likelihood</SelectItem>
+                  <SelectItem value="High">High Likelihood</SelectItem>
+                  <SelectItem value="Very High">Very High</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-6 text-[10px] px-2" onClick={addNewRisk} disabled={!newRiskDesc.trim()} data-testid="button-confirm-add-risk">
+                Add
+              </Button>
+            </div>
+          </div>
+        )}
         {risksLoading ? (
           <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-purple-500" /></div>
-        ) : !reportId ? (
-          <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-4 space-y-2">
-            <AlertTriangle className="h-8 w-8 text-amber-500" />
-            <p className="text-xs text-muted-foreground text-center">No existing report selected. Risks will be empty — you can still generate suggestions based on pipeline data.</p>
-            <Button size="sm" onClick={() => setStep(2)} className="gap-1" data-testid="button-skip-risks">
-              Skip to Actions <ArrowRight className="h-3 w-3" />
-            </Button>
-          </div>
         ) : (
           <ScrollArea className="flex-1">
             <div className="space-y-2 pr-2">
               {risks.length === 0 ? (
                 <div className="border rounded-lg p-4 text-center bg-muted/30">
-                  <p className="text-xs text-muted-foreground">No risks recorded for this report yet.</p>
+                  <p className="text-xs text-muted-foreground">No risks recorded yet. Use "Add Risk" above to add risks for the AI to consider.</p>
                 </div>
               ) : risks.map((risk, i) => (
                 <div key={risk.id} className="border rounded-lg p-2.5 bg-background space-y-1.5">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-xs font-medium flex-1">{risk.description}</p>
-                    <Badge variant={risk.riskType === "issue" ? "destructive" : "secondary"} className="text-[9px] px-1.5 shrink-0">
-                      {risk.riskType || "risk"}
-                    </Badge>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant={risk.riskType === "issue" ? "destructive" : "secondary"} className="text-[9px] px-1.5">
+                        {risk.riskType || "risk"}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setRisks(prev => prev.filter((_, idx) => idx !== i))}
+                        data-testid={`button-remove-risk-${i}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
                     <span>Impact: <strong>{risk.impactRating || "N/A"}</strong></span>
@@ -1642,10 +1734,7 @@ export default function VatReportsPage() {
   const [activeVat, setActiveVat] = useState<string>("DAFF");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newReportDate, setNewReportDate] = useState(new Date().toISOString().split("T")[0]);
-  const [draftFields, setDraftFields] = useState<ReportDraftFields>({
-    statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "",
-    accountGoals: "", relationships: "", research: "", otherActivities: "",
-  });
+  const [draftFields, setDraftFields] = useState<ReportDraftFields>({ ...EMPTY_DRAFT });
   const [selectedReportIds, setSelectedReportIds] = useState<Record<string, number>>({});
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
@@ -1678,7 +1767,7 @@ export default function VatReportsPage() {
     onSuccess: (data: VatReport) => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       setShowCreateDialog(false);
-      setDraftFields({ statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "", accountGoals: "", relationships: "", research: "", otherActivities: "" });
+      setDraftFields({ ...EMPTY_DRAFT });
       setSelectedReportIds(prev => ({ ...prev, [data.vatName]: data.id }));
       toast({ title: `${data.vatName} report created` });
     },
@@ -1730,11 +1819,31 @@ export default function VatReportsPage() {
         </div>
         <div className="flex items-center gap-3">
           <FySelector value={selectedFY} options={availableFYs} onChange={handleFYChange} />
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <Dialog open={showCreateDialog} onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (open) {
+            const lastReport = latestReports[activeVat];
+            if (lastReport) {
+              setDraftFields({
+                overallStatus: lastReport.overallStatus || "",
+                statusSummary: lastReport.statusSummary || "",
+                openOppsSummary: lastReport.openOppsSummary || "",
+                bigPlays: lastReport.bigPlays || "",
+                approachToShortfall: lastReport.approachToShortfall || "",
+                accountGoals: lastReport.accountGoals || "",
+                relationships: lastReport.relationships || "",
+                research: lastReport.research || "",
+                otherActivities: lastReport.otherActivities || "",
+              });
+            } else {
+              setDraftFields({ ...EMPTY_DRAFT });
+            }
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden">
+          <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Create New VAT Report</DialogTitle>
               <DialogDescription>Use the AI assistant to draft content, then apply it to the report fields.</DialogDescription>
@@ -1742,7 +1851,25 @@ export default function VatReportsPage() {
             <div className="grid grid-cols-2 gap-4 py-2">
               <div>
                 <label className="text-sm font-medium">VAT</label>
-                <Select value={activeVat} onValueChange={setActiveVat}>
+                <Select value={activeVat} onValueChange={(v) => {
+                  setActiveVat(v);
+                  const lastReport = latestReports[v];
+                  if (lastReport) {
+                    setDraftFields({
+                      overallStatus: lastReport.overallStatus || "",
+                      statusSummary: lastReport.statusSummary || "",
+                      openOppsSummary: lastReport.openOppsSummary || "",
+                      bigPlays: lastReport.bigPlays || "",
+                      approachToShortfall: lastReport.approachToShortfall || "",
+                      accountGoals: lastReport.accountGoals || "",
+                      relationships: lastReport.relationships || "",
+                      research: lastReport.research || "",
+                      otherActivities: lastReport.otherActivities || "",
+                    });
+                  } else {
+                    setDraftFields({ ...EMPTY_DRAFT });
+                  }
+                }}>
                   <SelectTrigger data-testid="select-new-report-vat"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {VAT_NAMES.map((v) => (
@@ -1757,8 +1884,8 @@ export default function VatReportsPage() {
               </div>
             </div>
             <Separator />
-            <div className="grid grid-cols-2 gap-4 overflow-hidden">
-              <div className="flex flex-col">
+            <div className="grid grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+              <div className="flex flex-col min-h-0">
                 <label className="text-sm font-medium flex items-center gap-2 mb-2">
                   <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
                 </label>
@@ -1769,10 +1896,29 @@ export default function VatReportsPage() {
                   onApplyContent={(field: keyof ReportDraftFields, content: string) => setDraftFields(prev => ({ ...prev, [field]: content }))}
                 />
               </div>
-              <div className="flex flex-col overflow-hidden">
+              <div className="flex flex-col min-h-0 overflow-hidden">
                 <label className="text-sm font-medium mb-2">Report Content</label>
-                <ScrollArea className="flex-1 pr-3" style={{ maxHeight: "420px" }}>
+                <ScrollArea className="flex-1 pr-3">
                   <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-bold mb-1 block">Overall Status</label>
+                      <Select value={draftFields.overallStatus || ""} onValueChange={(v) => setDraftFields(prev => ({ ...prev, overallStatus: v }))}>
+                        <SelectTrigger className="h-8" data-testid="select-draft-overallStatus">
+                          <SelectValue placeholder="Select status..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="GREEN">
+                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />GREEN</span>
+                          </SelectItem>
+                          <SelectItem value="AMBER">
+                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />AMBER</span>
+                          </SelectItem>
+                          <SelectItem value="RED">
+                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-500" />RED</span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {DRAFT_FIELD_LABELS.map(({ key, label }) => (
                       <div key={key}>
                         <label className="text-xs font-bold mb-1 block flex items-center justify-between">
@@ -1793,7 +1939,7 @@ export default function VatReportsPage() {
                 </ScrollArea>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="shrink-0 pt-3 border-t">
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
               <Button onClick={() => {
                 const nonEmptyDraft: Partial<ReportDraftFields> = {};
