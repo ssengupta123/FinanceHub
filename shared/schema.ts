@@ -334,6 +334,84 @@ export const insertResourceCostSchema = z.object({
 export type InsertResourceCost = z.infer<typeof insertResourceCostSchema>;
 export type ResourceCost = InsertResourceCost & { id: number };
 
+export const VAT_NAMES = ["DAFF", "SAU", "VICGov", "DISR", "Growth", "P&P", "Emerging"] as const;
+
+export const insertVatReportSchema = z.object({
+  vatName: z.string(),
+  reportDate: z.string(),
+  overallStatus: z.string().nullable().optional(),
+  statusSummary: z.string().nullable().optional(),
+  openOppsSummary: z.string().nullable().optional(),
+  bigPlays: z.string().nullable().optional(),
+  accountGoals: z.string().nullable().optional(),
+  relationships: z.string().nullable().optional(),
+  research: z.string().nullable().optional(),
+  approachToShortfall: z.string().nullable().optional(),
+  otherActivities: z.string().nullable().optional(),
+  createdBy: z.string().nullable().optional(),
+  updatedBy: z.string().nullable().optional(),
+});
+export type InsertVatReport = z.infer<typeof insertVatReportSchema>;
+export type VatReport = InsertVatReport & { id: number; createdAt: Date; updatedAt: Date };
+
+export const insertVatRiskSchema = z.object({
+  vatReportId: z.number(),
+  raisedBy: z.string().nullable().optional(),
+  description: z.string(),
+  impact: z.string().nullable().optional(),
+  dateBecomesIssue: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
+  owner: z.string().nullable().optional(),
+  impactRating: z.string().nullable().optional(),
+  likelihood: z.string().nullable().optional(),
+  mitigation: z.string().nullable().optional(),
+  comments: z.string().nullable().optional(),
+  riskRating: z.string().nullable().optional(),
+  riskType: z.string().optional().default("risk"),
+  sortOrder: z.number().nullable().optional(),
+});
+export type InsertVatRisk = z.infer<typeof insertVatRiskSchema>;
+export type VatRisk = InsertVatRisk & { id: number };
+
+export const insertVatActionItemSchema = z.object({
+  vatReportId: z.number(),
+  section: z.string(),
+  description: z.string(),
+  owner: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  status: z.string().optional().default("open"),
+  priority: z.string().nullable().optional(),
+  sortOrder: z.number().nullable().optional(),
+});
+export type InsertVatActionItem = z.infer<typeof insertVatActionItemSchema>;
+export type VatActionItem = InsertVatActionItem & { id: number };
+
+export const insertVatPlannerTaskSchema = z.object({
+  vatReportId: z.number(),
+  bucketName: z.string(),
+  taskName: z.string(),
+  progress: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  priority: z.string().nullable().optional(),
+  assignedTo: z.string().nullable().optional(),
+  labels: z.string().nullable().optional(),
+  sortOrder: z.number().nullable().optional(),
+});
+export type InsertVatPlannerTask = z.infer<typeof insertVatPlannerTaskSchema>;
+export type VatPlannerTask = InsertVatPlannerTask & { id: number };
+
+export const insertVatChangeLogSchema = z.object({
+  vatReportId: z.number(),
+  fieldName: z.string(),
+  oldValue: z.string().nullable().optional(),
+  newValue: z.string().nullable().optional(),
+  changedBy: z.string().nullable().optional(),
+  entityType: z.string().nullable().optional(),
+  entityId: z.number().nullable().optional(),
+});
+export type InsertVatChangeLog = z.infer<typeof insertVatChangeLogSchema>;
+export type VatChangeLog = InsertVatChangeLog & { id: number; changedAt: Date };
+
 export const insertConversationSchema = z.object({
   title: z.string(),
 });

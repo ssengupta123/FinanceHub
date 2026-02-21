@@ -38,6 +38,16 @@ import {
   type InsertCxRating,
   type ResourceCost,
   type InsertResourceCost,
+  type VatReport,
+  type InsertVatReport,
+  type VatRisk,
+  type InsertVatRisk,
+  type VatActionItem,
+  type InsertVatActionItem,
+  type VatPlannerTask,
+  type InsertVatPlannerTask,
+  type VatChangeLog,
+  type InsertVatChangeLog,
 } from "@shared/schema";
 
 const EMPLOYEE_FIELD_MAP_TO_DB: Record<string, string> = {
@@ -296,6 +306,32 @@ export interface IStorage {
   getResourceCostsByPhase(phase: string): Promise<ResourceCost[]>;
   createResourceCost(data: InsertResourceCost): Promise<ResourceCost>;
   deleteResourceCost(id: number): Promise<void>;
+
+  getVatReports(): Promise<VatReport[]>;
+  getVatReport(id: number): Promise<VatReport | undefined>;
+  getVatReportsByVat(vatName: string): Promise<VatReport[]>;
+  getLatestVatReports(): Promise<VatReport[]>;
+  createVatReport(data: InsertVatReport): Promise<VatReport>;
+  updateVatReport(id: number, data: Partial<InsertVatReport>): Promise<VatReport | undefined>;
+  deleteVatReport(id: number): Promise<void>;
+
+  getVatRisks(vatReportId: number): Promise<VatRisk[]>;
+  createVatRisk(data: InsertVatRisk): Promise<VatRisk>;
+  updateVatRisk(id: number, data: Partial<InsertVatRisk>): Promise<VatRisk | undefined>;
+  deleteVatRisk(id: number): Promise<void>;
+
+  getVatActionItems(vatReportId: number): Promise<VatActionItem[]>;
+  createVatActionItem(data: InsertVatActionItem): Promise<VatActionItem>;
+  updateVatActionItem(id: number, data: Partial<InsertVatActionItem>): Promise<VatActionItem | undefined>;
+  deleteVatActionItem(id: number): Promise<void>;
+
+  getVatPlannerTasks(vatReportId: number): Promise<VatPlannerTask[]>;
+  createVatPlannerTask(data: InsertVatPlannerTask): Promise<VatPlannerTask>;
+  updateVatPlannerTask(id: number, data: Partial<InsertVatPlannerTask>): Promise<VatPlannerTask | undefined>;
+  deleteVatPlannerTask(id: number): Promise<void>;
+
+  getVatChangeLogs(vatReportId: number): Promise<VatChangeLog[]>;
+  createVatChangeLog(data: InsertVatChangeLog): Promise<VatChangeLog>;
 
   getDashboardSummary(): Promise<{
     totalProjects: number;
@@ -787,6 +823,83 @@ export class DatabaseStorage implements IStorage {
         utilization: totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0,
       };
     });
+  }
+  async getVatReports(): Promise<VatReport[]> {
+    return rowsToModels<VatReport>(await db("vat_reports").select("*").orderBy("report_date", "desc"));
+  }
+  async getVatReport(id: number): Promise<VatReport | undefined> {
+    const row = await db("vat_reports").where("id", id).first();
+    return row ? rowToModel<VatReport>(row) : undefined;
+  }
+  async getVatReportsByVat(vatName: string): Promise<VatReport[]> {
+    return rowsToModels<VatReport>(await db("vat_reports").where("vat_name", vatName).orderBy("report_date", "desc"));
+  }
+  async getLatestVatReports(): Promise<VatReport[]> {
+    const subq = db("vat_reports")
+      .select("vat_name")
+      .max("report_date as max_date")
+      .groupBy("vat_name");
+    const rows = await db("vat_reports as vr")
+      .joinRaw(
+        `INNER JOIN (${subq.toQuery()}) AS latest ON vr.vat_name = latest.vat_name AND vr.report_date = latest.max_date`
+      )
+      .select("vr.*");
+    return rowsToModels<VatReport>(rows);
+  }
+  async createVatReport(data: InsertVatReport): Promise<VatReport> {
+    return insertReturning<VatReport>("vat_reports", data);
+  }
+  async updateVatReport(id: number, data: Partial<InsertVatReport>): Promise<VatReport | undefined> {
+    return updateReturning<VatReport>("vat_reports", id, { ...data, updatedAt: new Date() });
+  }
+  async deleteVatReport(id: number): Promise<void> {
+    await db("vat_reports").where("id", id).del();
+  }
+
+  async getVatRisks(vatReportId: number): Promise<VatRisk[]> {
+    return rowsToModels<VatRisk>(await db("vat_risks").where("vat_report_id", vatReportId).orderBy("sort_order", "asc"));
+  }
+  async createVatRisk(data: InsertVatRisk): Promise<VatRisk> {
+    return insertReturning<VatRisk>("vat_risks", data);
+  }
+  async updateVatRisk(id: number, data: Partial<InsertVatRisk>): Promise<VatRisk | undefined> {
+    return updateReturning<VatRisk>("vat_risks", id, data);
+  }
+  async deleteVatRisk(id: number): Promise<void> {
+    await db("vat_risks").where("id", id).del();
+  }
+
+  async getVatActionItems(vatReportId: number): Promise<VatActionItem[]> {
+    return rowsToModels<VatActionItem>(await db("vat_action_items").where("vat_report_id", vatReportId).orderBy("sort_order", "asc"));
+  }
+  async createVatActionItem(data: InsertVatActionItem): Promise<VatActionItem> {
+    return insertReturning<VatActionItem>("vat_action_items", data);
+  }
+  async updateVatActionItem(id: number, data: Partial<InsertVatActionItem>): Promise<VatActionItem | undefined> {
+    return updateReturning<VatActionItem>("vat_action_items", id, data);
+  }
+  async deleteVatActionItem(id: number): Promise<void> {
+    await db("vat_action_items").where("id", id).del();
+  }
+
+  async getVatPlannerTasks(vatReportId: number): Promise<VatPlannerTask[]> {
+    return rowsToModels<VatPlannerTask>(await db("vat_planner_tasks").where("vat_report_id", vatReportId).orderBy("sort_order", "asc"));
+  }
+  async createVatPlannerTask(data: InsertVatPlannerTask): Promise<VatPlannerTask> {
+    return insertReturning<VatPlannerTask>("vat_planner_tasks", data);
+  }
+  async updateVatPlannerTask(id: number, data: Partial<InsertVatPlannerTask>): Promise<VatPlannerTask | undefined> {
+    return updateReturning<VatPlannerTask>("vat_planner_tasks", id, data);
+  }
+  async deleteVatPlannerTask(id: number): Promise<void> {
+    await db("vat_planner_tasks").where("id", id).del();
+  }
+
+  async getVatChangeLogs(vatReportId: number): Promise<VatChangeLog[]> {
+    return rowsToModels<VatChangeLog>(await db("vat_change_logs").where("vat_report_id", vatReportId).orderBy("changed_at", "desc"));
+  }
+  async createVatChangeLog(data: InsertVatChangeLog): Promise<VatChangeLog> {
+    return insertReturning<VatChangeLog>("vat_change_logs", data);
   }
 }
 

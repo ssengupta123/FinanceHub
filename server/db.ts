@@ -454,5 +454,99 @@ export async function runIncrementalMigrations() {
     console.log("Added fy_year column to reference_data");
   }
 
+  const hasVatReports = await db.schema.hasTable("vat_reports");
+  if (!hasVatReports) {
+    await db.schema.createTable("vat_reports", (t) => {
+      t.increments("id").primary();
+      t.text("vat_name").notNullable();
+      t.text("report_date").notNullable();
+      t.text("overall_status");
+      t.text("status_summary");
+      t.text("open_opps_summary");
+      t.text("big_plays");
+      t.text("account_goals");
+      t.text("relationships");
+      t.text("research");
+      t.text("approach_to_shortfall");
+      t.text("other_activities");
+      t.text("created_by");
+      t.text("updated_by");
+      t.timestamp("created_at").defaultTo(db.fn.now());
+      t.timestamp("updated_at").defaultTo(db.fn.now());
+    });
+    console.log("Created vat_reports table");
+  }
+
+  const hasVatRisks = await db.schema.hasTable("vat_risks");
+  if (!hasVatRisks) {
+    await db.schema.createTable("vat_risks", (t) => {
+      t.increments("id").primary();
+      t.integer("vat_report_id").notNullable().references("id").inTable("vat_reports").onDelete("CASCADE");
+      t.text("raised_by");
+      t.text("description").notNullable();
+      t.text("impact");
+      t.text("date_becomes_issue");
+      t.text("status");
+      t.text("owner");
+      t.text("impact_rating");
+      t.text("likelihood");
+      t.text("mitigation");
+      t.text("comments");
+      t.text("risk_rating");
+      t.text("risk_type").defaultTo("risk");
+      t.integer("sort_order");
+    });
+    console.log("Created vat_risks table");
+  }
+
+  const hasVatActionItems = await db.schema.hasTable("vat_action_items");
+  if (!hasVatActionItems) {
+    await db.schema.createTable("vat_action_items", (t) => {
+      t.increments("id").primary();
+      t.integer("vat_report_id").notNullable().references("id").inTable("vat_reports").onDelete("CASCADE");
+      t.text("section").notNullable();
+      t.text("description").notNullable();
+      t.text("owner");
+      t.text("due_date");
+      t.text("status").defaultTo("open");
+      t.text("priority");
+      t.integer("sort_order");
+    });
+    console.log("Created vat_action_items table");
+  }
+
+  const hasVatPlannerTasks = await db.schema.hasTable("vat_planner_tasks");
+  if (!hasVatPlannerTasks) {
+    await db.schema.createTable("vat_planner_tasks", (t) => {
+      t.increments("id").primary();
+      t.integer("vat_report_id").notNullable().references("id").inTable("vat_reports").onDelete("CASCADE");
+      t.text("bucket_name").notNullable();
+      t.text("task_name").notNullable();
+      t.text("progress");
+      t.text("due_date");
+      t.text("priority");
+      t.text("assigned_to");
+      t.text("labels");
+      t.integer("sort_order");
+    });
+    console.log("Created vat_planner_tasks table");
+  }
+
+  const hasVatChangeLogs = await db.schema.hasTable("vat_change_logs");
+  if (!hasVatChangeLogs) {
+    await db.schema.createTable("vat_change_logs", (t) => {
+      t.increments("id").primary();
+      t.integer("vat_report_id").notNullable().references("id").inTable("vat_reports").onDelete("CASCADE");
+      t.text("field_name").notNullable();
+      t.text("old_value");
+      t.text("new_value");
+      t.text("changed_by");
+      t.text("entity_type");
+      t.integer("entity_id");
+      t.timestamp("changed_at").defaultTo(db.fn.now());
+    });
+    console.log("Created vat_change_logs table");
+  }
+
   console.log("Incremental migrations completed");
 }

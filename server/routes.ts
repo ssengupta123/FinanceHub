@@ -24,6 +24,12 @@ import {
   insertScenarioSchema,
   insertScenarioAdjustmentSchema,
   insertReferenceDataSchema,
+  insertVatReportSchema,
+  insertVatRiskSchema,
+  insertVatActionItemSchema,
+  insertVatPlannerTaskSchema,
+  insertVatChangeLogSchema,
+  VAT_NAMES,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -1498,6 +1504,281 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       res.end();
     } catch (error: any) {
       console.error("AI insights error:", error);
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ error: error.message || "AI analysis failed" })}\n\n`);
+        res.end();
+      } else {
+        res.status(500).json({ message: error.message || "AI analysis failed" });
+      }
+    }
+  });
+
+  // ─── VAT Reports ───
+  app.get("/api/vat-reports", async (_req, res) => {
+    const data = await storage.getVatReports();
+    res.json(data);
+  });
+  app.get("/api/vat-reports/latest", async (_req, res) => {
+    const data = await storage.getLatestVatReports();
+    res.json(data);
+  });
+  app.get("/api/vat-reports/vat/:vatName", async (req, res) => {
+    const data = await storage.getVatReportsByVat(req.params.vatName);
+    res.json(data);
+  });
+  app.get("/api/vat-reports/:id", async (req, res) => {
+    const data = await storage.getVatReport(Number(req.params.id));
+    if (!data) return res.status(404).json({ message: "Not found" });
+    res.json(data);
+  });
+  app.post("/api/vat-reports", async (req, res) => {
+    const parsed = insertVatReportSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createVatReport(parsed.data);
+    res.json(data);
+  });
+  app.patch("/api/vat-reports/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const existing = await storage.getVatReport(id);
+    if (!existing) return res.status(404).json({ message: "Not found" });
+    const changedBy = req.body._changedBy || null;
+    delete req.body._changedBy;
+    const changes: { field: string; old: string | null; new_: string | null }[] = [];
+    for (const [key, value] of Object.entries(req.body)) {
+      const oldVal = (existing as any)[key];
+      if (oldVal !== value) {
+        changes.push({ field: key, old: oldVal ?? null, new_: (value as string) ?? null });
+      }
+    }
+    const updated = await storage.updateVatReport(id, req.body);
+    for (const c of changes) {
+      await storage.createVatChangeLog({
+        vatReportId: id,
+        fieldName: c.field,
+        oldValue: c.old,
+        newValue: c.new_,
+        changedBy,
+        entityType: "report",
+        entityId: id,
+      });
+    }
+    res.json(updated);
+  });
+  app.delete("/api/vat-reports/:id", async (req, res) => {
+    await storage.deleteVatReport(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── VAT Risks ───
+  app.get("/api/vat-reports/:reportId/risks", async (req, res) => {
+    const data = await storage.getVatRisks(Number(req.params.reportId));
+    res.json(data);
+  });
+  app.post("/api/vat-reports/:reportId/risks", async (req, res) => {
+    const parsed = insertVatRiskSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createVatRisk(parsed.data);
+    await storage.createVatChangeLog({
+      vatReportId: Number(req.params.reportId),
+      fieldName: "risk_added",
+      newValue: data.description,
+      changedBy: req.body._changedBy || null,
+      entityType: "risk",
+      entityId: data.id,
+    });
+    res.json(data);
+  });
+  app.patch("/api/vat-risks/:id", async (req, res) => {
+    const changedBy = req.body._changedBy || null;
+    delete req.body._changedBy;
+    const updated = await storage.updateVatRisk(Number(req.params.id), req.body);
+    if (!updated) return res.status(404).json({ message: "Not found" });
+    await storage.createVatChangeLog({
+      vatReportId: updated.vatReportId,
+      fieldName: "risk_updated",
+      newValue: updated.description,
+      changedBy,
+      entityType: "risk",
+      entityId: updated.id,
+    });
+    res.json(updated);
+  });
+  app.delete("/api/vat-risks/:id", async (req, res) => {
+    await storage.deleteVatRisk(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── VAT Action Items ───
+  app.get("/api/vat-reports/:reportId/actions", async (req, res) => {
+    const data = await storage.getVatActionItems(Number(req.params.reportId));
+    res.json(data);
+  });
+  app.post("/api/vat-reports/:reportId/actions", async (req, res) => {
+    const parsed = insertVatActionItemSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createVatActionItem(parsed.data);
+    await storage.createVatChangeLog({
+      vatReportId: Number(req.params.reportId),
+      fieldName: "action_added",
+      newValue: `${data.section}: ${data.description}`,
+      changedBy: req.body._changedBy || null,
+      entityType: "action",
+      entityId: data.id,
+    });
+    res.json(data);
+  });
+  app.patch("/api/vat-actions/:id", async (req, res) => {
+    const changedBy = req.body._changedBy || null;
+    delete req.body._changedBy;
+    const updated = await storage.updateVatActionItem(Number(req.params.id), req.body);
+    if (!updated) return res.status(404).json({ message: "Not found" });
+    await storage.createVatChangeLog({
+      vatReportId: updated.vatReportId,
+      fieldName: "action_updated",
+      newValue: `${updated.section}: ${updated.description}`,
+      changedBy,
+      entityType: "action",
+      entityId: updated.id,
+    });
+    res.json(updated);
+  });
+  app.delete("/api/vat-actions/:id", async (req, res) => {
+    await storage.deleteVatActionItem(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── VAT Planner Tasks ───
+  app.get("/api/vat-reports/:reportId/planner", async (req, res) => {
+    const data = await storage.getVatPlannerTasks(Number(req.params.reportId));
+    res.json(data);
+  });
+  app.post("/api/vat-reports/:reportId/planner", async (req, res) => {
+    const parsed = insertVatPlannerTaskSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.createVatPlannerTask(parsed.data);
+    await storage.createVatChangeLog({
+      vatReportId: Number(req.params.reportId),
+      fieldName: "planner_task_added",
+      newValue: `${data.bucketName}: ${data.taskName}`,
+      changedBy: req.body._changedBy || null,
+      entityType: "planner",
+      entityId: data.id,
+    });
+    res.json(data);
+  });
+  app.patch("/api/vat-planner/:id", async (req, res) => {
+    const changedBy = req.body._changedBy || null;
+    delete req.body._changedBy;
+    const updated = await storage.updateVatPlannerTask(Number(req.params.id), req.body);
+    if (!updated) return res.status(404).json({ message: "Not found" });
+    await storage.createVatChangeLog({
+      vatReportId: updated.vatReportId,
+      fieldName: "planner_task_updated",
+      newValue: `${updated.bucketName}: ${updated.taskName} (${updated.progress})`,
+      changedBy,
+      entityType: "planner",
+      entityId: updated.id,
+    });
+    res.json(updated);
+  });
+  app.delete("/api/vat-planner/:id", async (req, res) => {
+    await storage.deleteVatPlannerTask(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── VAT Change Logs ───
+  app.get("/api/vat-reports/:reportId/changelog", async (req, res) => {
+    const data = await storage.getVatChangeLogs(Number(req.params.reportId));
+    res.json(data);
+  });
+
+  // ─── VAT Full Report (report + risks + actions + planner) ───
+  app.get("/api/vat-reports/:id/full", async (req, res) => {
+    const id = Number(req.params.id);
+    const report = await storage.getVatReport(id);
+    if (!report) return res.status(404).json({ message: "Not found" });
+    const [risks, actions, plannerTasks, changeLogs] = await Promise.all([
+      storage.getVatRisks(id),
+      storage.getVatActionItems(id),
+      storage.getVatPlannerTasks(id),
+      storage.getVatChangeLogs(id),
+    ]);
+    res.json({ report, risks, actions, plannerTasks, changeLogs });
+  });
+
+  // ─── VAT AI Suggestions ───
+  app.post("/api/vat-reports/:id/ai-suggestions", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const report = await storage.getVatReport(id);
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      const [risks, pipelineOpps] = await Promise.all([
+        storage.getVatRisks(id),
+        storage.getPipelineByVat(report.vatName),
+      ]);
+
+      const pipelineSummary = pipelineOpps.map(o => {
+        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
+          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
+          .reduce((s, v) => s + parseFloat(v || "0"), 0);
+        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
+      }).join("\n");
+
+      const riskSummary = risks.map(r =>
+        `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
+      ).join("\n");
+
+      const openai = new OpenAI();
+      const systemPrompt = `You are a strategic advisor for an Australian professional services firm's VAT (Virtual Account Team) Sales Committee. Provide actionable suggestions based on the VAT's current pipeline, risks, and status. Be specific, referencing actual opportunity names and dollar values. Use Australian Financial Year (Jul-Jun).`;
+      const userPrompt = `Analyze the ${report.vatName} VAT and provide strategic suggestions.
+
+Current Status: ${report.overallStatus || "Unknown"}
+Status Summary: ${report.statusSummary || "No summary"}
+Open Opps Summary: ${report.openOppsSummary || "No data"}
+Big Plays: ${report.bigPlays || "None listed"}
+Approach to Shortfall: ${report.approachToShortfall || "Not specified"}
+
+Pipeline Opportunities for ${report.vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+Current Risks:
+${riskSummary || "No risks registered"}
+
+Provide suggestions across:
+1. **Pipeline Health**: Actions to strengthen the pipeline, opportunities to accelerate or drop
+2. **Risk Mitigation**: Specific actions to address current risks
+3. **Revenue Acceleration**: Quick wins to close revenue gaps
+4. **Relationship Strategy**: Key stakeholder actions needed
+5. **Operational Improvements**: Process or planning improvements
+
+Be concise and actionable. Use specific names and values from the data.`;
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        stream: true,
+        max_tokens: 2048,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    } catch (error: any) {
+      console.error("VAT AI suggestions error:", error);
       if (res.headersSent) {
         res.write(`data: ${JSON.stringify({ error: error.message || "AI analysis failed" })}\n\n`);
         res.end();
