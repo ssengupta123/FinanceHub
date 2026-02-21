@@ -441,6 +441,19 @@ function RisksTable({ reportId }: { reportId: number }) {
               </SelectContent>
             </Select>
           </TableCell>
+          <TableCell>
+            <Select value={editForm.riskRating || "NONE"} onValueChange={(v) => setEditForm({ ...editForm, riskRating: v === "NONE" ? "" : v })}>
+              <SelectTrigger className="h-8 text-xs border-0 p-1" style={{ backgroundColor: STATUS_BG[(editForm.riskRating || "").toUpperCase()] || "transparent" }}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span></SelectItem>
+                <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span></SelectItem>
+                <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span></SelectItem>
+                <SelectItem value="NONE"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span></SelectItem>
+              </SelectContent>
+            </Select>
+          </TableCell>
           <TableCell><Input value={editForm.mitigation || ""} onChange={(e) => setEditForm({ ...editForm, mitigation: e.target.value })} className="h-8 text-xs" /></TableCell>
           <TableCell><Input value={editForm.comments || ""} onChange={(e) => setEditForm({ ...editForm, comments: e.target.value })} className="h-8 text-xs" /></TableCell>
           <TableCell>
@@ -455,6 +468,8 @@ function RisksTable({ reportId }: { reportId: number }) {
       );
     }
 
+    const riskRatingColor = STATUS_BG[(risk.riskRating || "").toUpperCase()] || "transparent";
+
     return (
       <TableRow key={risk.id}>
         <TableCell className="text-xs">{risk.raisedBy || "—"}</TableCell>
@@ -465,6 +480,9 @@ function RisksTable({ reportId }: { reportId: number }) {
         <TableCell className="text-xs">{risk.owner || "—"}</TableCell>
         <TableCell className={`text-xs ${IMPACT_COLORS[risk.impactRating?.toUpperCase() || ""] || ""}`}>{risk.impactRating || "—"}</TableCell>
         <TableCell className={`text-xs ${IMPACT_COLORS[risk.likelihood?.toUpperCase() || ""] || ""}`}>{risk.likelihood || "—"}</TableCell>
+        <TableCell className="p-0" style={{ backgroundColor: riskRatingColor }}>
+          <div className="w-full h-full min-h-[32px]" />
+        </TableCell>
         <TableCell className="text-xs max-w-[200px]">{risk.mitigation || "—"}</TableCell>
         <TableCell className="text-xs max-w-[200px]">{risk.comments || "—"}</TableCell>
         <TableCell>
@@ -501,6 +519,7 @@ function RisksTable({ reportId }: { reportId: number }) {
               <TableHead className="text-xs w-[100px]">Risk / Issue Owner</TableHead>
               <TableHead className="text-xs w-[80px]">Impact Rating</TableHead>
               <TableHead className="text-xs w-[80px]">Likelihood</TableHead>
+              <TableHead className="text-xs w-[90px]">Risk Rating</TableHead>
               <TableHead className="text-xs">Mitigation / Action</TableHead>
               <TableHead className="text-xs">Comments</TableHead>
               <TableHead className="text-xs w-[70px]">Actions</TableHead>
@@ -508,7 +527,7 @@ function RisksTable({ reportId }: { reportId: number }) {
           </TableHeader>
           <TableBody>
             {items.length === 0 ? (
-              <TableRow><TableCell colSpan={11} className="text-center text-xs text-muted-foreground py-4">No {type}s registered</TableCell></TableRow>
+              <TableRow><TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-4">No {type}s registered</TableCell></TableRow>
             ) : (
               items.map((risk) => renderRiskRow(risk, editingId === risk.id))
             )}
@@ -588,6 +607,18 @@ function RisksTable({ reportId }: { reportId: number }) {
                       <SelectItem value="HIGH">HIGH</SelectItem>
                       <SelectItem value="MEDIUM">MEDIUM</SelectItem>
                       <SelectItem value="LOW">LOW</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Risk Rating (RAG)</label>
+                  <Select value={newRisk.riskRating || "NONE"} onValueChange={(v) => setNewRisk({ ...newRisk, riskRating: v === "NONE" ? "" : v })}>
+                    <SelectTrigger className="h-8 text-xs" data-testid="select-risk-rating"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span></SelectItem>
+                      <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span></SelectItem>
+                      <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span></SelectItem>
+                      <SelectItem value="NONE"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span></SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
