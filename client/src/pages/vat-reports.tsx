@@ -492,14 +492,14 @@ function RisksTable({ reportId }: { reportId: number }) {
           <TableHeader>
             <TableRow>
               <TableHead className="text-xs w-[80px]">Raised By</TableHead>
-              <TableHead className="text-xs">Description</TableHead>
-              <TableHead className="text-xs">Impact</TableHead>
-              <TableHead className="text-xs w-[100px]">Date</TableHead>
-              <TableHead className="text-xs w-[80px]">Status</TableHead>
-              <TableHead className="text-xs w-[80px]">Owner</TableHead>
-              <TableHead className="text-xs w-[80px]">Impact</TableHead>
+              <TableHead className="text-xs">Risk / Issue Description</TableHead>
+              <TableHead className="text-xs">Impact of Risk / Issue</TableHead>
+              <TableHead className="text-xs w-[120px]">Date risk becomes issue</TableHead>
+              <TableHead className="text-xs w-[100px]">Status (Open / Closed)</TableHead>
+              <TableHead className="text-xs w-[100px]">Risk / Issue Owner</TableHead>
+              <TableHead className="text-xs w-[80px]">Impact Rating</TableHead>
               <TableHead className="text-xs w-[80px]">Likelihood</TableHead>
-              <TableHead className="text-xs">Mitigation</TableHead>
+              <TableHead className="text-xs">Mitigation / Action</TableHead>
               <TableHead className="text-xs w-[70px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
