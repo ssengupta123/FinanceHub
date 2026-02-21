@@ -44,6 +44,11 @@ export default function LoginPage() {
     if (ssoAttempted.current) return;
     ssoAttempted.current = true;
 
+    const fallbackTimer = setTimeout(() => {
+      setSsoLoading(false);
+      setShowManualLogin(true);
+    }, 5000);
+
     const autoSsoLogin = async () => {
       try {
         const res = await apiRequest("GET", "/api/auth/sso/login");
@@ -51,16 +56,20 @@ export default function LoginPage() {
         if (data.authUrl) {
           window.location.href = data.authUrl;
         } else {
+          clearTimeout(fallbackTimer);
           setSsoLoading(false);
           setShowManualLogin(true);
         }
       } catch {
+        clearTimeout(fallbackTimer);
         setSsoLoading(false);
         setShowManualLogin(true);
       }
     };
 
     autoSsoLogin();
+
+    return () => clearTimeout(fallbackTimer);
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -89,8 +98,16 @@ export default function LoginPage() {
               Redirecting to Microsoft for authentication
             </p>
           </CardHeader>
-          <CardContent className="flex justify-center py-8">
+          <CardContent className="flex flex-col items-center py-8 gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <Button
+              variant="link"
+              className="text-sm text-muted-foreground"
+              data-testid="button-manual-login"
+              onClick={() => { setSsoLoading(false); setShowManualLogin(true); }}
+            >
+              Sign in manually instead
+            </Button>
           </CardContent>
         </Card>
       </div>
