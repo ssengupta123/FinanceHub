@@ -1941,15 +1941,8 @@ export default function VatReportsPage() {
             const lastReport = latestReports[activeVat];
             if (lastReport) {
               setDraftFields({
+                ...EMPTY_DRAFT,
                 overallStatus: lastReport.overallStatus || "",
-                statusSummary: "",
-                openOppsSummary: lastReport.openOppsSummary || "",
-                bigPlays: lastReport.bigPlays || "",
-                approachToShortfall: lastReport.approachToShortfall || "",
-                accountGoals: lastReport.accountGoals || "",
-                relationships: lastReport.relationships || "",
-                research: lastReport.research || "",
-                otherActivities: lastReport.otherActivities || "",
                 openOppsStatus: lastReport.openOppsStatus || "",
                 bigPlaysStatus: lastReport.bigPlaysStatus || "",
                 accountGoalsStatus: lastReport.accountGoalsStatus || "",
@@ -1977,15 +1970,8 @@ export default function VatReportsPage() {
                   const lastReport = latestReports[v];
                   if (lastReport) {
                     setDraftFields({
+                      ...EMPTY_DRAFT,
                       overallStatus: lastReport.overallStatus || "",
-                      statusSummary: "",
-                      openOppsSummary: lastReport.openOppsSummary || "",
-                      bigPlays: lastReport.bigPlays || "",
-                      approachToShortfall: lastReport.approachToShortfall || "",
-                      accountGoals: lastReport.accountGoals || "",
-                      relationships: lastReport.relationships || "",
-                      research: lastReport.research || "",
-                      otherActivities: lastReport.otherActivities || "",
                       openOppsStatus: lastReport.openOppsStatus || "",
                       bigPlaysStatus: lastReport.bigPlaysStatus || "",
                       accountGoalsStatus: lastReport.accountGoalsStatus || "",
