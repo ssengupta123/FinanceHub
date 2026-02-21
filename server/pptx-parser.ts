@@ -237,12 +237,11 @@ function extractStatusSummary(table: string[][]): {
     researchStatus: "",
   };
 
-  const statusLines: string[] = [];
-  const sectionStatusMap: Record<string, keyof typeof result> = {
-    "STATUS OVERALL": "statusSummary",
+  const sectionLabelToField: Record<string, string> = {
     "OPEN OPPS": "openOppsStatus",
     "OPEN OPPS ACTIONS": "openOppsStatus",
     "BIG PLAYS": "bigPlaysStatus",
+    "BIG PLAY": "bigPlaysStatus",
     "ACCOUNT GOALS": "accountGoalsStatus",
     "RELATIONSHIPS": "relationshipsStatus",
     "RESEARCH": "researchStatus",
@@ -251,25 +250,39 @@ function extractStatusSummary(table: string[][]): {
   for (const row of table) {
     const col0 = (row[0] || "").trim();
     const col1 = (row[1] || "").trim();
+    const col2 = (row[2] || "").trim();
+    const col1Upper = col1.toUpperCase();
+    const col0Upper = col0.toUpperCase();
 
-    if (col0 && !col0.toUpperCase().startsWith("OVERALL STATUS")) {
-      statusLines.push(col0);
+    if (col0Upper.startsWith("OVERALL STATUS")) continue;
+
+    if (col1Upper === "STATUS OVERALL" || col1Upper.startsWith("STATUS OVERALL")) {
+      if (col0) result.statusSummary = col0;
+      continue;
     }
 
-    const col1Upper = col1.toUpperCase();
-    for (const [marker, field] of Object.entries(sectionStatusMap)) {
+    let matched = false;
+    for (const [marker, field] of Object.entries(sectionLabelToField)) {
       if (col1Upper === marker || col1Upper.startsWith(marker)) {
-        if (field !== "statusSummary") {
-          const ragMatch = col1Upper.match(/(GREEN|AMBER|RED|N\/A)/);
-          if (ragMatch) {
-            (result as any)[field] = ragMatch[1];
-          }
+        const allCols = [col0Upper, col1Upper, col2.toUpperCase()].join(" ");
+        const ragMatch = allCols.match(/(GREEN|AMBER|RED|N\/A)/);
+        if (ragMatch) {
+          (result as any)[field] = ragMatch[1];
         }
+        matched = true;
+        break;
+      }
+    }
+
+    if (!matched && col0) {
+      if (result.statusSummary) {
+        result.statusSummary += "\n" + col0;
+      } else {
+        result.statusSummary = col0;
       }
     }
   }
 
-  result.statusSummary = statusLines.join("\n").trim();
   return result;
 }
 
@@ -336,57 +349,111 @@ function parsePlannerTable(table: string[][]): ParsedPlannerTask[] {
   return tasks;
 }
 
-function extractContentFromParagraphs(paragraphs: string[]): {
+type ContentSection = "status" | "openOpps" | "bigPlays" | "accountGoals" | "relationships" | "research" | "approach" | "other";
+
+interface ParagraphContent {
   statusSummary: string;
+  openOppsSummary: string;
+  bigPlays: string;
+  accountGoals: string;
+  relationships: string;
+  research: string;
   approachToShortfall: string;
   otherActivities: string;
-} {
-  const statusLines: string[] = [];
-  const approachLines: string[] = [];
-  const otherLines: string[] = [];
-  let section: "status" | "approach" | "other" = "status";
+}
+
+function detectSectionFromParagraph(upper: string): { section: ContentSection; afterHeader: string; original: string } | null {
+  const tests: { pattern: RegExp; section: ContentSection; stripPattern?: RegExp }[] = [
+    { pattern: /^APPROACH TO\b.*(?:SHORTFALL|TARGET)/i, section: "approach", stripPattern: /^Approach to[^:]*:\s*/i },
+    { pattern: /^OTHER VAT\b|^OTHER ACTIVITIES/i, section: "other", stripPattern: /^Other[^:]*:\s*/i },
+    { pattern: /^OPEN OPP/i, section: "openOpps", stripPattern: /^Open Opp[^:]*:\s*/i },
+    { pattern: /^BIG PLAY/i, section: "bigPlays", stripPattern: /^Big Play[^:]*:\s*/i },
+    { pattern: /^ACCOUNT GOAL/i, section: "accountGoals", stripPattern: /^Account Goal[^:]*:\s*/i },
+    { pattern: /^RELATIONSHIP/i, section: "relationships", stripPattern: /^Relationship[^:]*:\s*/i },
+    { pattern: /^RESEARCH/i, section: "research", stripPattern: /^Research[^:]*:\s*/i },
+  ];
+
+  for (const t of tests) {
+    if (t.pattern.test(upper)) {
+      return { section: t.section, afterHeader: "", original: "" };
+    }
+  }
+  return null;
+}
+
+function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
+  const sections: Record<ContentSection, string[]> = {
+    status: [], openOpps: [], bigPlays: [], accountGoals: [],
+    relationships: [], research: [], approach: [], other: [],
+  };
+  let currentSection: ContentSection = "status";
 
   let skipCount = 0;
-  for (let i = 0; i < Math.min(3, paragraphs.length); i++) {
+  for (let i = 0; i < Math.min(5, paragraphs.length); i++) {
     const upper = paragraphs[i].toUpperCase();
-    if (upper.includes("REPORT") || upper.includes("OVERALL STATUS") || /^\d/.test(paragraphs[i])) {
+    if (upper.includes("VAT REPORT") || upper.includes("OVERALL STATUS") || /^\d{1,2}\s/.test(paragraphs[i]) || /^\d{4}$/.test(paragraphs[i].trim())) {
       skipCount = i + 1;
     }
   }
 
+  const skipMarkers = new Set([
+    "STATUS OVERALL", "RAISED BY", "DESCRIPTION", "IMPACT",
+    "DATE RISK BECOMES ISSUE", "STATUS", "OWNER", "IMPACT RATING",
+    "LIKELIHOOD", "MITIGATION", "COMMENTS", "RISK RATING",
+    "ISSUE RATING", "RISKS", "ISSUES", "RISK", "ISSUE",
+    "PEOPLE", "PROCESS", "PEOPLE PROCESS", "WEEK ENDING",
+  ]);
+
   for (let i = skipCount; i < paragraphs.length; i++) {
     const p = paragraphs[i].trim();
+    if (!p) continue;
     const upper = p.toUpperCase();
 
-    if (upper.includes("APPROACH TO") && (upper.includes("SHORTFALL") || upper.includes("TARGET"))) {
-      section = "approach";
-      const afterColon = p.replace(/Approach to.*?:\s*/i, "").trim();
-      if (afterColon) approachLines.push(afterColon);
-      continue;
-    }
-    if (upper.includes("OTHER VAT") || upper.includes("OTHER ACTIVITIES")) {
-      section = "other";
-      const afterColon = p.replace(/Other.*?:\s*/i, "").trim();
-      if (afterColon) otherLines.push(afterColon);
+    if (upper === "GREEN" || upper === "AMBER" || upper === "RED" || upper === "N/A") continue;
+    if (skipMarkers.has(upper)) continue;
+    if (/^WEEK ENDING/i.test(upper)) continue;
+    if (upper.includes("VAT REPORT") && upper.length < 30) continue;
+
+    const sectionMatch = detectSectionFromParagraph(upper);
+    if (sectionMatch) {
+      currentSection = sectionMatch.section;
+      const colonIdx = p.indexOf(":");
+      if (colonIdx >= 0 && colonIdx < 40) {
+        const afterColon = p.substring(colonIdx + 1).trim();
+        if (afterColon) {
+          sections[currentSection].push(afterColon);
+        }
+      } else if (p.trim().length > 0) {
+        sections[currentSection].push(p);
+      }
       continue;
     }
 
-    if (upper === "GREEN" || upper === "AMBER" || upper === "RED") continue;
-    const isSectionMarker = ["STATUS OVERALL", "OPEN OPPS", "OPEN OPPS ACTIONS", "BIG PLAYS", "ACCOUNT GOALS", "RELATIONSHIPS", "RESEARCH"].includes(upper);
-    if (isSectionMarker) continue;
-    if (upper.includes("RAISED BY") || upper === "DESCRIPTION" || upper === "IMPACT") continue;
-    if (upper.includes("VAT REPORT") || upper.includes("REPORT")) continue;
+    const isStandaloneLabel = [
+      "OPEN OPPS", "OPEN OPPS ACTIONS", "BIG PLAYS", "BIG PLAY",
+      "ACCOUNT GOALS", "RELATIONSHIPS", "RESEARCH",
+      "STATUS OVERALL",
+    ].includes(upper);
+    if (isStandaloneLabel) continue;
 
-    if (section === "approach") approachLines.push(p);
-    else if (section === "other") otherLines.push(p);
-    else statusLines.push(p);
+    sections[currentSection].push(p);
   }
 
   return {
-    statusSummary: statusLines.join("\n").trim(),
-    approachToShortfall: approachLines.join("\n").trim(),
-    otherActivities: otherLines.join("\n").trim(),
+    statusSummary: sections.status.join("\n").trim(),
+    openOppsSummary: sections.openOpps.join("\n").trim(),
+    bigPlays: sections.bigPlays.join("\n").trim(),
+    accountGoals: sections.accountGoals.join("\n").trim(),
+    relationships: sections.relationships.join("\n").trim(),
+    research: sections.research.join("\n").trim(),
+    approachToShortfall: sections.approach.join("\n").trim(),
+    otherActivities: sections.other.join("\n").trim(),
   };
+}
+
+export function debugPptxSlides(buffer: Buffer): { slides: { index: number; paragraphs: string[]; tables: string[][][]; size: number }[] } {
+  const slides = extractSlides(buffer);
+  return { slides };
 }
 
 export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; summary: string } {
@@ -491,14 +558,22 @@ export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; sum
       }
 
       const extraContent = extractContentFromParagraphs(slide.paragraphs);
-      if (extraContent.approachToShortfall && !report.approachToShortfall) {
-        report.approachToShortfall = extraContent.approachToShortfall;
-      }
-      if (extraContent.otherActivities && !report.otherActivities) {
-        report.otherActivities = extraContent.otherActivities;
-      }
       if (extraContent.statusSummary && !report.statusSummary) {
         report.statusSummary = extraContent.statusSummary;
+      }
+      const appendFields: (keyof typeof extraContent)[] = [
+        "openOppsSummary", "bigPlays", "accountGoals",
+        "relationships", "research", "approachToShortfall", "otherActivities"
+      ];
+      for (const field of appendFields) {
+        if (extraContent[field]) {
+          const key = field as keyof ParsedVatReport;
+          if (report[key]) {
+            (report as any)[key] += "\n" + extraContent[field];
+          } else {
+            (report as any)[key] = extraContent[field];
+          }
+        }
       }
     }
 

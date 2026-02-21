@@ -1516,6 +1516,17 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   // ─── VAT PPTX Upload ───
   const { parsePptxFile } = await import("./pptx-parser");
 
+  app.post("/api/upload/vat-pptx/debug", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { debugPptxSlides } = await import("./pptx-parser");
+      const result = debugPptxSlides(req.file.buffer);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/upload/vat-pptx/preview", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -1527,8 +1538,17 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
           reportDate: r.reportDate,
           overallStatus: r.overallStatus,
           statusSummaryPreview: (r.statusSummary || "").substring(0, 200),
+          openOppsStatus: r.openOppsStatus,
+          bigPlaysStatus: r.bigPlaysStatus,
+          accountGoalsStatus: r.accountGoalsStatus,
+          relationshipsStatus: r.relationshipsStatus,
+          researchStatus: r.researchStatus,
           risksCount: r.risks.length,
           plannerTasksCount: r.plannerTasks.length,
+          hasOpenOpps: !!r.openOppsSummary,
+          hasBigPlays: !!r.bigPlays,
+          hasApproach: !!r.approachToShortfall,
+          hasOtherActivities: !!r.otherActivities,
         })),
         summary: result.summary,
       });
