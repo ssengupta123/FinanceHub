@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -495,6 +495,13 @@ function RisksTable({ reportId }: { reportId: number }) {
     status: "OPEN", owner: "", impactRating: "MEDIUM", likelihood: "MEDIUM",
     mitigation: "", comments: "", riskType: "risk",
   });
+  const editFormRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if ((showAdd || editingId !== null) && editFormRef.current) {
+      editFormRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [showAdd, editingId]);
 
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -643,20 +650,22 @@ function RisksTable({ reportId }: { reportId: number }) {
         {issueItems.length > 0 && renderTable(issueItems, "Issues", "issue")}
 
         {(showAdd || editingId !== null) && (
-          <RiskEditDialog
-            risk={editingId !== null ? editForm : newRisk}
-            isNew={editingId === null}
-            employees={employees}
-            onSave={(data) => {
-              if (editingId !== null) {
-                updateMutation.mutate({ id: editingId, data });
-              } else {
-                addMutation.mutate(data);
-              }
-            }}
-            onCancel={() => { setShowAdd(false); setEditingId(null); }}
-            isPending={editingId !== null ? updateMutation.isPending : addMutation.isPending}
-          />
+          <div ref={editFormRef}>
+            <RiskEditDialog
+              risk={editingId !== null ? editForm : newRisk}
+              isNew={editingId === null}
+              employees={employees}
+              onSave={(data) => {
+                if (editingId !== null) {
+                  updateMutation.mutate({ id: editingId, data });
+                } else {
+                  addMutation.mutate(data);
+                }
+              }}
+              onCancel={() => { setShowAdd(false); setEditingId(null); }}
+              isPending={editingId !== null ? updateMutation.isPending : addMutation.isPending}
+            />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1242,7 +1251,7 @@ function AISuggestionsPanel({ reportId }: { reportId: number }) {
   );
 }
 
-function VatReportView({ report }: { report: VatReport }) {
+function VatReportView({ report, allReportsForVat, onSelectReport }: { report: VatReport; allReportsForVat: VatReport[]; onSelectReport: (r: VatReport) => void }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
@@ -1262,12 +1271,37 @@ function VatReportView({ report }: { report: VatReport }) {
     },
   });
 
+  const formatReportDate = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr + "T00:00:00");
+      return d.toLocaleDateString("en-AU", { month: "short", year: "numeric" });
+    } catch { return dateStr; }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold" data-testid={`text-vat-title-${report.vatName}`}>{report.vatName} VAT Report</h2>
-          <Badge variant="outline" className="text-xs">{report.reportDate}</Badge>
+          {allReportsForVat.length > 1 ? (
+            <Select value={String(report.id)} onValueChange={(v) => {
+              const selected = allReportsForVat.find(r => String(r.id) === v);
+              if (selected) onSelectReport(selected);
+            }}>
+              <SelectTrigger className="h-8 w-[160px] text-xs" data-testid="select-report-date">
+                <SelectValue>{formatReportDate(report.reportDate)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {allReportsForVat.map(r => (
+                  <SelectItem key={r.id} value={String(r.id)}>
+                    {formatReportDate(r.reportDate)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge variant="outline" className="text-xs">{formatReportDate(report.reportDate)}</Badge>
+          )}
         </div>
         <Sheet>
           <SheetTrigger asChild>
@@ -1315,12 +1349,28 @@ function VatReportView({ report }: { report: VatReport }) {
   );
 }
 
+function findClosestReport(reports: VatReport[]): VatReport | undefined {
+  if (reports.length === 0) return undefined;
+  const today = new Date().toISOString().split("T")[0];
+  let closest = reports[0];
+  let closestDiff = Math.abs(new Date(closest.reportDate).getTime() - new Date(today).getTime());
+  for (const r of reports) {
+    const diff = Math.abs(new Date(r.reportDate).getTime() - new Date(today).getTime());
+    if (diff < closestDiff) {
+      closestDiff = diff;
+      closest = r;
+    }
+  }
+  return closest;
+}
+
 export default function VatReportsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeVat, setActiveVat] = useState<string>("DAFF");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newReportDate, setNewReportDate] = useState(new Date().toISOString().split("T")[0]);
+  const [selectedReportIds, setSelectedReportIds] = useState<Record<string, number>>({});
 
   const { data: reports = [], isLoading } = useQuery<VatReport[]>({
     queryKey: ["/api/vat-reports"],
@@ -1337,18 +1387,34 @@ export default function VatReportsPage() {
     onSuccess: (data: VatReport) => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       setShowCreateDialog(false);
+      setSelectedReportIds(prev => ({ ...prev, [data.vatName]: data.id }));
       toast({ title: `${data.vatName} report created` });
     },
   });
 
-  const latestReports: Record<string, VatReport> = {};
+  const reportsByVat: Record<string, VatReport[]> = {};
   for (const r of reports) {
-    if (!latestReports[r.vatName] || r.reportDate > latestReports[r.vatName].reportDate) {
-      latestReports[r.vatName] = r;
-    }
+    if (!reportsByVat[r.vatName]) reportsByVat[r.vatName] = [];
+    reportsByVat[r.vatName].push(r);
+  }
+  for (const vat of Object.keys(reportsByVat)) {
+    reportsByVat[vat].sort((a, b) => b.reportDate.localeCompare(a.reportDate));
   }
 
-  const activeReport = latestReports[activeVat];
+  const getActiveReport = (vat: string): VatReport | undefined => {
+    const vatReports = reportsByVat[vat] || [];
+    if (vatReports.length === 0) return undefined;
+    if (selectedReportIds[vat]) {
+      const found = vatReports.find(r => r.id === selectedReportIds[vat]);
+      if (found) return found;
+    }
+    return findClosestReport(vatReports);
+  };
+
+  const latestReports: Record<string, VatReport | undefined> = {};
+  for (const vat of VAT_NAMES) {
+    latestReports[vat] = getActiveReport(vat);
+  }
 
   if (isLoading) {
     return (
@@ -1411,7 +1477,7 @@ export default function VatReportsPage() {
           {VAT_NAMES.map((vat) => (
             <TabsTrigger key={vat} value={vat} className="relative" data-testid={`tab-vat-${vat}`}>
               {latestReports[vat] && (
-                <StatusDot status={latestReports[vat].overallStatus} />
+                <StatusDot status={latestReports[vat]!.overallStatus} />
               )}
               <span className="ml-1">{vat}</span>
             </TabsTrigger>
@@ -1421,7 +1487,11 @@ export default function VatReportsPage() {
         {VAT_NAMES.map((vat) => (
           <TabsContent key={vat} value={vat} className="mt-4">
             {latestReports[vat] ? (
-              <VatReportView report={latestReports[vat]} />
+              <VatReportView
+                report={latestReports[vat]!}
+                allReportsForVat={reportsByVat[vat] || []}
+                onSelectReport={(r) => setSelectedReportIds(prev => ({ ...prev, [vat]: r.id }))}
+              />
             ) : (
               <Card>
                 <CardContent className="py-12 text-center">

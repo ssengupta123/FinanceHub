@@ -1732,29 +1732,25 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       if (!openai) {
         return res.status(503).json({ message: "AI suggestions are not available. Configure OPENAI_API_KEY in environment variables." });
       }
-      const systemPrompt = `You are a strategic advisor for an Australian professional services firm's VAT (Virtual Account Team) Sales Committee. Provide actionable suggestions based on the VAT's current pipeline, risks, and status. Be specific, referencing actual opportunity names and dollar values. Use Australian Financial Year (Jul-Jun).`;
-      const userPrompt = `Analyze the ${report.vatName} VAT and provide strategic suggestions.
+      const systemPrompt = `You are a strategic advisor for an Australian professional services firm's VAT (Virtual Account Team) Sales Committee. Your role is to provide SHORT, SPECIFIC, ACTIONABLE suggestions — NOT a report or analysis. Each suggestion should be a concrete next step someone can act on THIS WEEK. Reference actual opportunity names and dollar values where available. Use Australian Financial Year (Jul-Jun). Do NOT summarise or restate the data — jump straight to recommendations.`;
+      const userPrompt = `Based on the ${report.vatName} VAT data below, provide 5-8 specific actionable suggestions. Each suggestion should be 1-2 sentences with a clear action and owner.
 
-Current Status: ${report.overallStatus || "Unknown"}
-Status Summary: ${report.statusSummary || "No summary"}
-Open Opps Summary: ${report.openOppsSummary || "No data"}
-Big Plays: ${report.bigPlays || "None listed"}
-Approach to Shortfall: ${report.approachToShortfall || "Not specified"}
+DATA:
+- Status: ${report.overallStatus || "Unknown"}
+- Summary: ${report.statusSummary || "No summary"}
+- Open Opps: ${report.openOppsSummary || "No data"}
+- Big Plays: ${report.bigPlays || "None listed"}
+- Shortfall Approach: ${report.approachToShortfall || "Not specified"}
+- Pipeline: ${pipelineSummary || "None"}
+- Risks: ${riskSummary || "None"}
 
-Pipeline Opportunities for ${report.vatName}:
-${pipelineSummary || "No pipeline data available"}
+FORMAT your response as numbered suggestions grouped under these headings:
+**Pipeline Actions** — What to chase, accelerate, or deprioritise
+**Risk Actions** — Specific mitigations for current risks
+**Quick Wins** — Revenue opportunities closeable this month
+**Relationship Actions** — Key stakeholder meetings or conversations needed
 
-Current Risks:
-${riskSummary || "No risks registered"}
-
-Provide suggestions across:
-1. **Pipeline Health**: Actions to strengthen the pipeline, opportunities to accelerate or drop
-2. **Risk Mitigation**: Specific actions to address current risks
-3. **Revenue Acceleration**: Quick wins to close revenue gaps
-4. **Relationship Strategy**: Key stakeholder actions needed
-5. **Operational Improvements**: Process or planning improvements
-
-Be concise and actionable. Use specific names and values from the data.`;
+Keep each suggestion to 1-2 lines. Be direct and specific — no preamble or summary.`;
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
