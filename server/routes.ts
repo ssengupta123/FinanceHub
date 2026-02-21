@@ -948,6 +948,98 @@ export async function registerRoutes(
     });
   });
 
+  // ─── Azure AD SSO ───
+  const msalConfig = {
+    auth: {
+      clientId: process.env.AZURE_CLIENT_ID || "",
+      authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || "common"}`,
+      clientSecret: process.env.AZURE_CLIENT_SECRET || "",
+    },
+  };
+
+  let msalClient: any = null;
+  async function getMsalClient() {
+    if (!msalClient && msalConfig.auth.clientId) {
+      const msal = await import("@azure/msal-node");
+      msalClient = new msal.ConfidentialClientApplication(msalConfig);
+    }
+    return msalClient;
+  }
+
+  function getSsoRedirectUri(req: any): string {
+    const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+    return `${proto}://${host}/api/auth/sso/callback`;
+  }
+
+  app.get("/api/auth/sso/login", async (req, res) => {
+    try {
+      const client = await getMsalClient();
+      if (!client) {
+        return res.status(500).json({ message: "Azure AD SSO is not configured. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID." });
+      }
+      const redirectUri = getSsoRedirectUri(req);
+      const authUrl = await client.getAuthCodeUrl({
+        scopes: ["openid", "profile", "email", "User.Read"],
+        redirectUri,
+        prompt: "select_account",
+      });
+      res.json({ authUrl });
+    } catch (error: any) {
+      console.error("[SSO] Login redirect error:", error);
+      res.status(500).json({ message: error.message || "SSO login failed" });
+    }
+  });
+
+  app.get("/api/auth/sso/callback", async (req, res) => {
+    try {
+      const client = await getMsalClient();
+      if (!client) {
+        return res.redirect("/?sso_error=not_configured");
+      }
+      const code = req.query.code as string;
+      if (!code) {
+        return res.redirect("/?sso_error=no_code");
+      }
+      const redirectUri = getSsoRedirectUri(req);
+      const tokenResponse = await client.acquireTokenByCode({
+        code,
+        scopes: ["openid", "profile", "email", "User.Read"],
+        redirectUri,
+      });
+
+      const account = tokenResponse.account;
+      const email = (account?.username || tokenResponse.idTokenClaims?.preferred_username || tokenResponse.idTokenClaims?.email || "") as string;
+      const displayName = (account?.name || tokenResponse.idTokenClaims?.name || email.split("@")[0]) as string;
+
+      if (!email) {
+        return res.redirect("/?sso_error=no_email");
+      }
+
+      let user = await storage.getUserByEmail(email);
+      if (!user) {
+        const bcrypt = await import("bcryptjs");
+        const randomPassword = await bcrypt.hash(Math.random().toString(36) + Date.now().toString(36), 10);
+        user = await storage.createUser({
+          username: email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "_"),
+          password: randomPassword,
+          email,
+          displayName,
+          role: "user",
+        });
+      }
+
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.role = (user as any).role || "user";
+
+      res.redirect("/");
+    } catch (error: any) {
+      console.error("[SSO] Callback error:", error);
+      res.redirect("/?sso_error=auth_failed");
+    }
+  });
+
   // ─── Delete All Data ───
   app.delete("/api/data/all", async (req, res) => {
     try {
