@@ -126,7 +126,7 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
   if (editing) {
     return (
       <div className="border rounded-lg overflow-hidden shadow-md">
-        <div className="bg-teal-700 text-white px-4 py-2 flex items-center justify-between">
+        <div style={{ backgroundColor: "#2a9d8f" }} className="text-white px-4 py-2 flex items-center justify-between">
           <span className="font-semibold text-sm">Editing Status Overview</span>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setEditing(false)} data-testid="button-cancel-edit">Cancel</Button>
@@ -206,14 +206,14 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
 
   return (
     <div className="border rounded-lg overflow-hidden shadow-md" data-testid="vat-slide-view">
-      <div className="bg-teal-700 text-white px-4 py-2 flex items-center justify-between">
+      <div style={{ backgroundColor: "#2a9d8f" }} className="text-white px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm">Overall Status :</span>
           <span className={STATUS_HEADER_BADGE[overallStatus] || "bg-gray-400 text-white px-2 py-0.5 font-bold text-sm"}>
             {overallStatus || "NOT SET"}
           </span>
         </div>
-        <Button size="sm" variant="ghost" className="text-white hover:bg-teal-600 h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-status">
+        <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-status">
           <Edit2 className="h-3 w-3 mr-1" />Edit
         </Button>
       </div>
@@ -280,7 +280,7 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
           </div>
         </div>
 
-        <div className="w-[140px] shrink-0 border-l">
+        <div className="w-[160px] shrink-0 border-l">
           {CATEGORY_LABELS.map(({ key, label }) => {
             const status = (reportData[key] || "").toUpperCase();
             const bgColor = STATUS_BG[status] || "transparent";
@@ -290,13 +290,40 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
                 className="border-b last:border-b-0 flex items-center h-[36px]"
                 data-testid={`status-indicator-${key}`}
               >
-                <div className="flex-1 px-2 text-[10px] font-semibold text-gray-800 dark:text-gray-200">
+                <div className="flex-1 px-2 text-[10px] font-semibold text-gray-800 dark:text-gray-200 border-r">
                   {label}
                 </div>
-                <div
-                  className="w-[36px] h-full shrink-0"
-                  style={{ backgroundColor: bgColor }}
-                />
+                <Select
+                  value={status || "NONE"}
+                  onValueChange={(v) => {
+                    const val = v === "NONE" ? "" : v;
+                    onUpdate({ [key]: val });
+                  }}
+                >
+                  <SelectTrigger
+                    className="w-[44px] h-full border-0 rounded-none p-0 focus:ring-0 [&>svg]:hidden"
+                    style={{ backgroundColor: bgColor }}
+                    data-testid={`rag-select-${key}`}
+                  >
+                    <SelectValue>
+                      <span />
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="GREEN">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span>
+                    </SelectItem>
+                    <SelectItem value="AMBER">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span>
+                    </SelectItem>
+                    <SelectItem value="RED">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span>
+                    </SelectItem>
+                    <SelectItem value="NONE">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             );
           })}
