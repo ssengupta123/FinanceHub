@@ -44,24 +44,28 @@ const STATUS_COLORS: Record<string, string> = {
   GREEN: "bg-green-500",
   AMBER: "bg-amber-500",
   RED: "bg-red-500",
+  "N/A": "bg-gray-400",
 };
 
 const STATUS_BG: Record<string, string> = {
   GREEN: "#22c55e",
   AMBER: "#f59e0b",
   RED: "#ef4444",
+  "N/A": "#9ca3af",
 };
 
 const STATUS_BADGE: Record<string, string> = {
   GREEN: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   AMBER: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   RED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  "N/A": "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
 };
 
 const STATUS_HEADER_BADGE: Record<string, string> = {
   GREEN: "bg-green-500 text-white px-2 py-0.5 font-bold text-sm",
   AMBER: "bg-amber-400 text-black px-2 py-0.5 font-bold text-sm",
   RED: "bg-red-500 text-white px-2 py-0.5 font-bold text-sm",
+  "N/A": "bg-gray-400 text-white px-2 py-0.5 font-bold text-sm",
 };
 
 const IMPACT_COLORS: Record<string, string> = {
@@ -146,9 +150,9 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
               <Select value={form.overallStatus} onValueChange={(v) => setForm({ ...form, overallStatus: v })}>
                 <SelectTrigger className="h-8 text-xs" data-testid="select-overall-status"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="GREEN">GREEN</SelectItem>
-                  <SelectItem value="AMBER">AMBER</SelectItem>
-                  <SelectItem value="RED">RED</SelectItem>
+                  <SelectItem value="GREEN">Green</SelectItem>
+                  <SelectItem value="AMBER">Amber</SelectItem>
+                  <SelectItem value="RED">Red</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -158,9 +162,10 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
                 <Select value={(form as Record<string, any>)[key] || ""} onValueChange={(v) => setForm({ ...form, [key]: v })}>
                   <SelectTrigger className="h-8 text-xs" data-testid={`select-${key}`}><SelectValue placeholder="Not set" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="GREEN">GREEN</SelectItem>
-                    <SelectItem value="AMBER">AMBER</SelectItem>
-                    <SelectItem value="RED">RED</SelectItem>
+                    <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />Green</span></SelectItem>
+                    <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />Amber</span></SelectItem>
+                    <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-500" />Red</span></SelectItem>
+                    <SelectItem value="N/A"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-gray-400" />N/A</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -324,6 +329,9 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
                     </SelectItem>
                     <SelectItem value="RED">
                       <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span>
+                    </SelectItem>
+                    <SelectItem value="N/A">
+                      <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-400 inline-block" /> N/A</span>
                     </SelectItem>
                     <SelectItem value="NONE">
                       <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span>
@@ -1297,6 +1305,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
   const [newRiskType, setNewRiskType] = useState("risk");
   const [newRiskImpact, setNewRiskImpact] = useState("Medium");
   const [newRiskLikelihood, setNewRiskLikelihood] = useState("Medium");
+  const [plannerTasks, setPlannerTasks] = useState<VatPlannerTask[]>([]);
 
   useEffect(() => {
     if (reportId) {
@@ -1304,9 +1313,11 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
       Promise.all([
         fetch(`/api/vat-reports/${reportId}/risks`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
         fetch(`/api/vat-reports/${reportId}/actions`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
-      ]).then(([riskData, actionData]) => {
+        fetch(`/api/vat-reports/${reportId}/planner`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+      ]).then(([riskData, actionData, plannerData]) => {
         setRisks(riskData);
         setActionItems(actionData);
+        setPlannerTasks(plannerData);
       }).catch(() => {}).finally(() => setRisksLoading(false));
     }
   }, [reportId]);
@@ -1374,7 +1385,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
             {s}
           </button>
           <span className={`text-[10px] ${step === s ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-            {s === 1 ? "Risks" : s === 2 ? "Actions" : "Generate"}
+            {s === 1 ? "Risks" : s === 2 ? "Planner Actions" : "Generate"}
           </span>
           {s < 3 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />}
         </div>
@@ -1523,22 +1534,55 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
         )}
         <div className="flex justify-end mt-2">
           <Button size="sm" onClick={() => setStep(2)} className="gap-1" data-testid="button-next-to-actions">
-            Next: Review Actions <ArrowRight className="h-3 w-3" />
+            Next: Planner Actions <ArrowRight className="h-3 w-3" />
           </Button>
         </div>
       </div>
     );
   }
 
+  const completedPlannerTasks = plannerTasks.filter(t => t.progress === "Completed");
+  const activePlannerTasks = plannerTasks.filter(t => t.progress !== "Completed");
+
   if (step === 2) {
     return (
       <div className="flex flex-col h-full">
         {stepIndicator}
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted-foreground">Review completed actions and add notes for the AI to use.</p>
+          <p className="text-xs text-muted-foreground">Review planner tasks, actions, and add notes for the AI.</p>
         </div>
         <ScrollArea className="flex-1">
           <div className="space-y-3 pr-2">
+            {plannerTasks.length > 0 && (
+              <>
+                {completedPlannerTasks.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> Completed Planner Tasks ({completedPlannerTasks.length})</p>
+                    {completedPlannerTasks.map(t => (
+                      <div key={t.id} className="border rounded-lg p-2 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+                        <p className="text-xs font-medium">{t.taskName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t.bucketName ? `Bucket: ${t.bucketName} · ` : ""}Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {activePlannerTasks.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-blue-500" /> Active Planner Tasks ({activePlannerTasks.length})</p>
+                    {activePlannerTasks.map(t => (
+                      <div key={t.id} className="border rounded-lg p-2 bg-background">
+                        <p className="text-xs font-medium">{t.taskName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t.bucketName ? `Bucket: ${t.bucketName} · ` : ""}Progress: {t.progress || "Not started"} · Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
             {completedActions.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-xs font-bold flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> Completed Actions ({completedActions.length})</p>
@@ -1561,9 +1605,9 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
                 ))}
               </div>
             )}
-            {actionItems.length === 0 && (
+            {actionItems.length === 0 && plannerTasks.length === 0 && (
               <div className="border rounded-lg p-4 text-center bg-muted/30">
-                <p className="text-xs text-muted-foreground">No action items recorded for this report.</p>
+                <p className="text-xs text-muted-foreground">No planner tasks or action items recorded for this report.</p>
               </div>
             )}
             <div className="space-y-1.5 pt-1">
@@ -1898,7 +1942,7 @@ export default function VatReportsPage() {
             if (lastReport) {
               setDraftFields({
                 overallStatus: lastReport.overallStatus || "",
-                statusSummary: lastReport.statusSummary || "",
+                statusSummary: "",
                 openOppsSummary: lastReport.openOppsSummary || "",
                 bigPlays: lastReport.bigPlays || "",
                 approachToShortfall: lastReport.approachToShortfall || "",
@@ -1925,7 +1969,7 @@ export default function VatReportsPage() {
               <DialogTitle>Create New VAT Report</DialogTitle>
               <DialogDescription>Use the AI assistant to draft content, then apply it to the report fields.</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="grid grid-cols-3 gap-4 py-2">
               <div>
                 <label className="text-sm font-medium">VAT</label>
                 <Select value={activeVat} onValueChange={(v) => {
@@ -1934,7 +1978,7 @@ export default function VatReportsPage() {
                   if (lastReport) {
                     setDraftFields({
                       overallStatus: lastReport.overallStatus || "",
-                      statusSummary: lastReport.statusSummary || "",
+                      statusSummary: "",
                       openOppsSummary: lastReport.openOppsSummary || "",
                       bigPlays: lastReport.bigPlays || "",
                       approachToShortfall: lastReport.approachToShortfall || "",
@@ -1964,6 +2008,25 @@ export default function VatReportsPage() {
                 <label className="text-sm font-medium">Report Date</label>
                 <Input type="date" value={newReportDate} onChange={(e) => setNewReportDate(e.target.value)} data-testid="input-new-report-date" />
               </div>
+              <div>
+                <label className="text-sm font-medium">Overall Status</label>
+                <Select value={draftFields.overallStatus || ""} onValueChange={(v) => setDraftFields(prev => ({ ...prev, overallStatus: v }))}>
+                  <SelectTrigger data-testid="select-draft-overallStatus">
+                    <SelectValue placeholder="Select status..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GREEN">
+                      <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />Green</span>
+                    </SelectItem>
+                    <SelectItem value="AMBER">
+                      <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />Amber</span>
+                    </SelectItem>
+                    <SelectItem value="RED">
+                      <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-500" />Red</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <Separator />
             <div className="grid grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
@@ -1982,25 +2045,6 @@ export default function VatReportsPage() {
                 <label className="text-sm font-medium mb-2">Report Content</label>
                 <ScrollArea className="flex-1 pr-3">
                   <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-bold mb-1 block">Overall Status</label>
-                      <Select value={draftFields.overallStatus || ""} onValueChange={(v) => setDraftFields(prev => ({ ...prev, overallStatus: v }))}>
-                        <SelectTrigger className="h-8" data-testid="select-draft-overallStatus">
-                          <SelectValue placeholder="Select status..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="GREEN">
-                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />GREEN</span>
-                          </SelectItem>
-                          <SelectItem value="AMBER">
-                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" />AMBER</span>
-                          </SelectItem>
-                          <SelectItem value="RED">
-                            <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-500" />RED</span>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                     {DRAFT_FIELD_LABELS.map(({ key, label }) => {
                       const ragKey = ({
                         openOppsSummary: "openOppsStatus",
@@ -2020,9 +2064,10 @@ export default function VatReportsPage() {
                                     <SelectValue placeholder="RAG" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="GREEN"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />G</span></SelectItem>
-                                    <SelectItem value="AMBER"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />A</span></SelectItem>
-                                    <SelectItem value="RED"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />R</span></SelectItem>
+                                    <SelectItem value="GREEN"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />Green</span></SelectItem>
+                                    <SelectItem value="AMBER"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />Amber</span></SelectItem>
+                                    <SelectItem value="RED"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />Red</span></SelectItem>
+                                    <SelectItem value="N/A"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400" />N/A</span></SelectItem>
                                   </SelectContent>
                                 </Select>
                               )}
