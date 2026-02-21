@@ -967,9 +967,14 @@ export async function registerRoutes(
   }
 
   function getSsoRedirectUri(req: any): string {
+    if (process.env.SSO_REDIRECT_URI) {
+      return process.env.SSO_REDIRECT_URI;
+    }
     const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
     const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
-    return `${proto}://${host}/api/auth/sso/callback`;
+    const uri = `${proto}://${host}/api/auth/sso/callback`;
+    console.log(`[SSO] Computed redirect URI: ${uri}`);
+    return uri;
   }
 
   app.get("/api/auth/sso/login", async (req, res) => {
