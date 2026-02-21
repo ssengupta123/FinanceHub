@@ -1729,7 +1729,9 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
       ).join("\n");
 
-      const openai = new OpenAI();
+      if (!openai) {
+        return res.status(503).json({ message: "AI suggestions are not available. Configure OPENAI_API_KEY in environment variables." });
+      }
       const systemPrompt = `You are a strategic advisor for an Australian professional services firm's VAT (Virtual Account Team) Sales Committee. Provide actionable suggestions based on the VAT's current pipeline, risks, and status. Be specific, referencing actual opportunity names and dollar values. Use Australian Financial Year (Jul-Jun).`;
       const userPrompt = `Analyze the ${report.vatName} VAT and provide strategic suggestions.
 

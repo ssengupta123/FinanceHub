@@ -333,6 +333,157 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
   );
 }
 
+interface Employee { id: number; firstName: string; lastName: string; }
+
+function UserSelect({ value, onChange, employees, label }: { value: string; onChange: (v: string) => void; employees: Employee[]; label: string }) {
+  const [search, setSearch] = useState("");
+  const filtered = employees.filter(e => {
+    const name = `${e.firstName} ${e.lastName}`.toLowerCase();
+    return name.includes(search.toLowerCase());
+  }).slice(0, 20);
+
+  return (
+    <div>
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <Select value={value || "custom"} onValueChange={(v) => { if (v !== "custom") onChange(v); }}>
+        <SelectTrigger className="h-8 text-xs" data-testid={`select-${label.toLowerCase().replace(/\s/g, "-")}`}>
+          <SelectValue placeholder="Select person" />
+        </SelectTrigger>
+        <SelectContent>
+          <div className="p-1">
+            <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-7 text-xs mb-1" data-testid="input-user-search" />
+          </div>
+          {value && !employees.some(e => `${e.firstName} ${e.lastName}` === value) && (
+            <SelectItem value={value}>{value}</SelectItem>
+          )}
+          {filtered.map(e => (
+            <SelectItem key={e.id} value={`${e.firstName} ${e.lastName}`}>{e.firstName} {e.lastName}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input value={value || ""} onChange={(e) => onChange(e.target.value)} className="h-7 text-xs mt-1" placeholder="Or type name..." />
+    </div>
+  );
+}
+
+function RiskEditDialog({ risk, isNew, employees, onSave, onCancel, isPending }: {
+  risk: Partial<VatRisk>;
+  isNew: boolean;
+  employees: Employee[];
+  onSave: (data: Partial<VatRisk>) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const riskId = isNew ? "new" : (risk as any)?.id;
+  const [form, setForm] = useState<Partial<VatRisk>>({ ...risk });
+  const [trackedId, setTrackedId] = useState(riskId);
+  if (trackedId !== riskId) {
+    setTrackedId(riskId);
+    setForm({ ...risk });
+  }
+
+  return (
+    <Card className="border-2 border-primary/20">
+      <CardContent className="pt-4 space-y-4">
+        <h4 className="text-sm font-semibold">{isNew ? "New Risk / Issue" : "Edit Risk / Issue"}</h4>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {isNew && (
+            <div>
+              <label className="text-xs text-muted-foreground">Type</label>
+              <Select value={form.riskType || "risk"} onValueChange={(v) => setForm({ ...form, riskType: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-risk-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="risk">Risk</SelectItem>
+                  <SelectItem value="issue">Issue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <UserSelect value={form.raisedBy || ""} onChange={(v) => setForm({ ...form, raisedBy: v })} employees={employees} label="Raised By" />
+          <UserSelect value={form.owner || ""} onChange={(v) => setForm({ ...form, owner: v })} employees={employees} label="Risk / Issue Owner" />
+          <div>
+            <label className="text-xs text-muted-foreground">Date risk becomes issue</label>
+            <Input type="date" value={form.dateBecomesIssue || ""} onChange={(e) => setForm({ ...form, dateBecomesIssue: e.target.value })} className="h-8 text-xs" data-testid="input-risk-date" />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Risk / Issue Description</label>
+          <Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="text-xs" data-testid="input-risk-description" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Impact of Risk / Issue</label>
+          <Textarea value={form.impact || ""} onChange={(e) => setForm({ ...form, impact: e.target.value })} rows={2} className="text-xs" data-testid="input-risk-impact" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className="text-xs text-muted-foreground">Status</label>
+            <Select value={form.status || "OPEN"} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-status"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="OPEN">OPEN</SelectItem>
+                <SelectItem value="CLOSED">CLOSED</SelectItem>
+                <SelectItem value="MITIGATED">MITIGATED</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Impact Rating</label>
+            <Select value={form.impactRating || "MEDIUM"} onValueChange={(v) => setForm({ ...form, impactRating: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-impact-rating"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
+                <SelectItem value="HIGH">HIGH</SelectItem>
+                <SelectItem value="MEDIUM">MEDIUM</SelectItem>
+                <SelectItem value="LOW">LOW</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Likelihood</label>
+            <Select value={form.likelihood || "MEDIUM"} onValueChange={(v) => setForm({ ...form, likelihood: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-likelihood"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
+                <SelectItem value="HIGH">HIGH</SelectItem>
+                <SelectItem value="MEDIUM">MEDIUM</SelectItem>
+                <SelectItem value="LOW">LOW</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Risk Rating (RAG)</label>
+            <Select value={form.riskRating || "NONE"} onValueChange={(v) => setForm({ ...form, riskRating: v === "NONE" ? "" : v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-risk-rating">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span></SelectItem>
+                <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span></SelectItem>
+                <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span></SelectItem>
+                <SelectItem value="NONE"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span></SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Mitigation / Action</label>
+          <Textarea value={form.mitigation || ""} onChange={(e) => setForm({ ...form, mitigation: e.target.value })} rows={2} className="text-xs" data-testid="input-risk-mitigation" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Comments</label>
+          <Textarea value={form.comments || ""} onChange={(e) => setForm({ ...form, comments: e.target.value })} rows={2} className="text-xs" data-testid="input-risk-comments" />
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button size="sm" onClick={() => onSave(form)} disabled={!form.description || isPending} data-testid="button-submit-risk">
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : isNew ? "Add" : "Save"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RisksTable({ reportId }: { reportId: number }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -343,6 +494,15 @@ function RisksTable({ reportId }: { reportId: number }) {
     description: "", raisedBy: "", impact: "", dateBecomesIssue: "",
     status: "OPEN", owner: "", impactRating: "MEDIUM", likelihood: "MEDIUM",
     mitigation: "", comments: "", riskType: "risk",
+  });
+
+  const { data: employees = [] } = useQuery<Employee[]>({
+    queryKey: ["/api/employees"],
+    queryFn: async () => {
+      const res = await fetch("/api/employees", { credentials: "include" });
+      const data = await res.json();
+      return data.map((e: any) => ({ id: e.id, firstName: e.firstName || e.first_name, lastName: e.lastName || e.last_name }));
+    },
   });
 
   const { data: risks = [], isLoading } = useQuery<VatRisk[]>({
@@ -400,74 +560,7 @@ function RisksTable({ reportId }: { reportId: number }) {
     setEditForm({ ...risk });
   };
 
-  const renderRiskRow = (risk: VatRisk, isEditing: boolean) => {
-    if (isEditing) {
-      return (
-        <TableRow key={risk.id}>
-          <TableCell><Input value={editForm.raisedBy || ""} onChange={(e) => setEditForm({ ...editForm, raisedBy: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell><Input value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell><Input value={editForm.impact || ""} onChange={(e) => setEditForm({ ...editForm, impact: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell><Input value={editForm.dateBecomesIssue || ""} onChange={(e) => setEditForm({ ...editForm, dateBecomesIssue: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell>
-            <Select value={editForm.status || "OPEN"} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="OPEN">OPEN</SelectItem>
-                <SelectItem value="CLOSED">CLOSED</SelectItem>
-                <SelectItem value="MITIGATED">MITIGATED</SelectItem>
-              </SelectContent>
-            </Select>
-          </TableCell>
-          <TableCell><Input value={editForm.owner || ""} onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell>
-            <Select value={editForm.impactRating || "MEDIUM"} onValueChange={(v) => setEditForm({ ...editForm, impactRating: v })}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
-                <SelectItem value="HIGH">HIGH</SelectItem>
-                <SelectItem value="MEDIUM">MEDIUM</SelectItem>
-                <SelectItem value="LOW">LOW</SelectItem>
-              </SelectContent>
-            </Select>
-          </TableCell>
-          <TableCell>
-            <Select value={editForm.likelihood || "MEDIUM"} onValueChange={(v) => setEditForm({ ...editForm, likelihood: v })}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
-                <SelectItem value="HIGH">HIGH</SelectItem>
-                <SelectItem value="MEDIUM">MEDIUM</SelectItem>
-                <SelectItem value="LOW">LOW</SelectItem>
-              </SelectContent>
-            </Select>
-          </TableCell>
-          <TableCell>
-            <Select value={editForm.riskRating || "NONE"} onValueChange={(v) => setEditForm({ ...editForm, riskRating: v === "NONE" ? "" : v })}>
-              <SelectTrigger className="h-8 text-xs border-0 p-1" style={{ backgroundColor: STATUS_BG[(editForm.riskRating || "").toUpperCase()] || "transparent" }}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span></SelectItem>
-                <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span></SelectItem>
-                <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span></SelectItem>
-                <SelectItem value="NONE"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span></SelectItem>
-              </SelectContent>
-            </Select>
-          </TableCell>
-          <TableCell><Input value={editForm.mitigation || ""} onChange={(e) => setEditForm({ ...editForm, mitigation: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell><Input value={editForm.comments || ""} onChange={(e) => setEditForm({ ...editForm, comments: e.target.value })} className="h-8 text-xs" /></TableCell>
-          <TableCell>
-            <div className="flex gap-1">
-              <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: risk.id, data: editForm })} data-testid={`button-save-risk-${risk.id}`}>
-                <Save className="h-3 w-3" />
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><ChevronUp className="h-3 w-3" /></Button>
-            </div>
-          </TableCell>
-        </TableRow>
-      );
-    }
-
+  const renderRiskRow = (risk: VatRisk) => {
     const riskRatingColor = STATUS_BG[(risk.riskRating || "").toUpperCase()] || "transparent";
 
     return (
@@ -529,7 +622,7 @@ function RisksTable({ reportId }: { reportId: number }) {
             {items.length === 0 ? (
               <TableRow><TableCell colSpan={12} className="text-center text-xs text-muted-foreground py-4">No {type}s registered</TableCell></TableRow>
             ) : (
-              items.map((risk) => renderRiskRow(risk, editingId === risk.id))
+              items.map((risk) => renderRiskRow(risk))
             )}
           </TableBody>
         </Table>
@@ -549,96 +642,21 @@ function RisksTable({ reportId }: { reportId: number }) {
         {renderTable(riskItems, "Risks", "risk")}
         {issueItems.length > 0 && renderTable(issueItems, "Issues", "issue")}
 
-        {showAdd && (
-          <Card className="border-dashed">
-            <CardContent className="pt-4 space-y-3">
-              <h4 className="text-sm font-semibold">New Risk / Issue</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">Type</label>
-                  <Select value={newRisk.riskType || "risk"} onValueChange={(v) => setNewRisk({ ...newRisk, riskType: v })}>
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-risk-type"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="risk">Risk</SelectItem>
-                      <SelectItem value="issue">Issue</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Raised By</label>
-                  <Input value={newRisk.raisedBy || ""} onChange={(e) => setNewRisk({ ...newRisk, raisedBy: e.target.value })} className="h-8 text-xs" data-testid="input-risk-raised-by" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Owner</label>
-                  <Input value={newRisk.owner || ""} onChange={(e) => setNewRisk({ ...newRisk, owner: e.target.value })} className="h-8 text-xs" data-testid="input-risk-owner" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Date Becomes Issue</label>
-                  <Input value={newRisk.dateBecomesIssue || ""} onChange={(e) => setNewRisk({ ...newRisk, dateBecomesIssue: e.target.value })} className="h-8 text-xs" data-testid="input-risk-date" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Description</label>
-                <Textarea value={newRisk.description || ""} onChange={(e) => setNewRisk({ ...newRisk, description: e.target.value })} rows={2} className="text-xs" data-testid="input-risk-description" />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">Impact</label>
-                  <Input value={newRisk.impact || ""} onChange={(e) => setNewRisk({ ...newRisk, impact: e.target.value })} className="h-8 text-xs" data-testid="input-risk-impact" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Impact Rating</label>
-                  <Select value={newRisk.impactRating || "MEDIUM"} onValueChange={(v) => setNewRisk({ ...newRisk, impactRating: v })}>
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-impact-rating"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
-                      <SelectItem value="HIGH">HIGH</SelectItem>
-                      <SelectItem value="MEDIUM">MEDIUM</SelectItem>
-                      <SelectItem value="LOW">LOW</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Likelihood</label>
-                  <Select value={newRisk.likelihood || "MEDIUM"} onValueChange={(v) => setNewRisk({ ...newRisk, likelihood: v })}>
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-likelihood"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="VERY HIGH">VERY HIGH</SelectItem>
-                      <SelectItem value="HIGH">HIGH</SelectItem>
-                      <SelectItem value="MEDIUM">MEDIUM</SelectItem>
-                      <SelectItem value="LOW">LOW</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Risk Rating (RAG)</label>
-                  <Select value={newRisk.riskRating || "NONE"} onValueChange={(v) => setNewRisk({ ...newRisk, riskRating: v === "NONE" ? "" : v })}>
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-risk-rating"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-green-500 inline-block" /> Green</span></SelectItem>
-                      <SelectItem value="AMBER"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Amber</span></SelectItem>
-                      <SelectItem value="RED"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /> Red</span></SelectItem>
-                      <SelectItem value="NONE"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded-sm bg-gray-200 inline-block" /> None</span></SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Mitigation / Action</label>
-                  <Input value={newRisk.mitigation || ""} onChange={(e) => setNewRisk({ ...newRisk, mitigation: e.target.value })} className="h-8 text-xs" data-testid="input-risk-mitigation" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Comments</label>
-                <Input value={newRisk.comments || ""} onChange={(e) => setNewRisk({ ...newRisk, comments: e.target.value })} className="h-8 text-xs" data-testid="input-risk-comments" />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => addMutation.mutate(newRisk)} disabled={!newRisk.description} data-testid="button-submit-risk">
-                  {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        {(showAdd || editingId !== null) && (
+          <RiskEditDialog
+            risk={editingId !== null ? editForm : newRisk}
+            isNew={editingId === null}
+            employees={employees}
+            onSave={(data) => {
+              if (editingId !== null) {
+                updateMutation.mutate({ id: editingId, data });
+              } else {
+                addMutation.mutate(data);
+              }
+            }}
+            onCancel={() => { setShowAdd(false); setEditingId(null); }}
+            isPending={editingId !== null ? updateMutation.isPending : addMutation.isPending}
+          />
         )}
       </CardContent>
     </Card>
@@ -1160,6 +1178,12 @@ function AISuggestionsPanel({ reportId }: { reportId: number }) {
         method: "POST",
         credentials: "include",
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "AI analysis failed" }));
+        setContent("Failed to get AI suggestions: " + (err.message || "Unknown error"));
+        setLoading(false);
+        return;
+      }
       const reader = res.body?.getReader();
       if (!reader) return;
       const decoder = new TextDecoder();
@@ -1176,6 +1200,9 @@ function AISuggestionsPanel({ reportId }: { reportId: number }) {
               const data = JSON.parse(line.slice(6));
               if (data.content) {
                 setContent(prev => prev + data.content);
+              }
+              if (data.error) {
+                setContent(prev => prev + "\n\nError: " + data.error);
               }
             } catch {}
           }
