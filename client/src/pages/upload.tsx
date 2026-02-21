@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -12,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, FileUp, Trash2, AlertTriangle } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, FileUp, Trash2, AlertTriangle, Presentation } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -479,6 +481,320 @@ export default function UploadPage() {
           )}
         </>
       )}
+
+      <Separator className="my-6" />
+
+      <VatPptxUpload />
     </div>
+  );
+}
+
+interface VatPreviewReport {
+  vatName: string;
+  reportDate: string;
+  overallStatus: string;
+  statusSummaryPreview: string;
+  risksCount: number;
+  plannerTasksCount: number;
+}
+
+interface VatImportResult {
+  imported: boolean;
+  reportId: number;
+  risksImported: number;
+  plannerTasksImported: number;
+  errors: string[];
+}
+
+const STATUS_DOT: Record<string, string> = {
+  GREEN: "bg-green-500",
+  AMBER: "bg-amber-500",
+  RED: "bg-red-500",
+};
+
+function VatPptxUpload() {
+  const [pptxFile, setPptxFile] = useState<File | null>(null);
+  const [previews, setPreviews] = useState<VatPreviewReport[]>([]);
+  const [selectedVats, setSelectedVats] = useState<Set<string>>(new Set());
+  const [reportDate, setReportDate] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [results, setResults] = useState<Record<string, VatImportResult> | null>(null);
+  const pptxInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  async function handlePptxSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setPptxFile(f);
+    setPreviews([]);
+    setSelectedVats(new Set());
+    setResults(null);
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", f);
+      const res = await fetch("/api/upload/vat-pptx/preview", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Preview failed");
+      }
+      const data = await res.json();
+      setPreviews(data.reports);
+      setSelectedVats(new Set(data.reports.map((r: VatPreviewReport) => r.vatName)));
+      if (data.reports.length > 0 && data.reports[0].reportDate) {
+        setReportDate(data.reports[0].reportDate);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePptxImport() {
+    if (!pptxFile || selectedVats.size === 0) return;
+    setImporting(true);
+    setResults(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", pptxFile);
+      formData.append("selectedVats", JSON.stringify(Array.from(selectedVats)));
+      if (reportDate) formData.append("reportDate", reportDate);
+      const res = await fetch("/api/upload/vat-pptx/import", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Import failed");
+      }
+      const data = await res.json();
+      setResults(data.results);
+
+      const totalImported = Object.values(data.results as Record<string, VatImportResult>).filter(r => r.imported).length;
+      toast({
+        title: "Import Complete",
+        description: `${totalImported} VAT report${totalImported !== 1 ? "s" : ""} imported successfully`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports/latest"] });
+    } catch (err: any) {
+      toast({ title: "Import Error", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function toggleVat(vatName: string) {
+    setSelectedVats(prev => {
+      const next = new Set(prev);
+      if (next.has(vatName)) next.delete(vatName);
+      else next.add(vatName);
+      return next;
+    });
+  }
+
+  function clearPptx() {
+    setPptxFile(null);
+    setPreviews([]);
+    setSelectedVats(new Set());
+    setResults(null);
+    setReportDate("");
+    if (pptxInputRef.current) pptxInputRef.current.value = "";
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Presentation className="h-5 w-5" />
+            Upload VAT SC Report (PowerPoint)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Upload a VAT Sales Committee Report PowerPoint file to import all VAT reports, risks, and planner tasks.
+          </p>
+          {!pptxFile ? (
+            <div
+              className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate"
+              onClick={() => pptxInputRef.current?.click()}
+              data-testid="drop-zone-pptx"
+            >
+              <Presentation className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
+              <p className="text-lg font-medium mb-1">Click to select your VAT SC Report PowerPoint</p>
+              <p className="text-sm text-muted-foreground">Supports .pptx files</p>
+              <input
+                ref={pptxInputRef}
+                type="file"
+                accept=".pptx"
+                className="hidden"
+                onChange={handlePptxSelect}
+                data-testid="input-pptx-file"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <Presentation className="h-8 w-8 text-blue-600" />
+                <div>
+                  <p className="font-medium" data-testid="text-pptx-filename">{pptxFile.name}</p>
+                  <p className="text-sm text-muted-foreground">{(pptxFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={clearPptx} data-testid="button-clear-pptx">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Remove
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {loading && (
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </CardContent>
+        </Card>
+      )}
+
+      {previews.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Detected VAT Reports ({previews.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-4">
+              <label className="text-sm font-medium block mb-1">Report Date (override)</label>
+              <Input
+                type="date"
+                value={reportDate}
+                onChange={(e) => setReportDate(e.target.value)}
+                className="w-48"
+                data-testid="input-pptx-report-date"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Set a single date for all imported reports, or leave as detected</p>
+            </div>
+            <div className="space-y-2">
+              {previews.map(report => {
+                const isSelected = selectedVats.has(report.vatName);
+                const result = results?.[report.vatName];
+
+                return (
+                  <div
+                    key={report.vatName}
+                    className={`flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer hover-elevate ${isSelected ? "bg-primary/5 border-primary/30" : ""}`}
+                    onClick={() => toggleVat(report.vatName)}
+                    data-testid={`pptx-vat-row-${report.vatName.toLowerCase().replace(/[&\s]/g, "-")}`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleVat(report.vatName)}
+                        data-testid={`checkbox-pptx-${report.vatName.toLowerCase().replace(/[&\s]/g, "-")}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{report.vatName}</p>
+                          {report.overallStatus && (
+                            <span className={`w-2.5 h-2.5 rounded-full ${STATUS_DOT[report.overallStatus] || "bg-gray-400"}`} />
+                          )}
+                          {report.overallStatus && (
+                            <span className="text-xs text-muted-foreground">{report.overallStatus}</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {report.statusSummaryPreview || "No status summary"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                      <Badge variant="secondary">{report.risksCount} risks</Badge>
+                      <Badge variant="secondary">{report.plannerTasksCount} tasks</Badge>
+                      {result && result.imported && (
+                        <Badge variant="default">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Imported
+                        </Badge>
+                      )}
+                      {result && result.errors.length > 0 && (
+                        <Badge variant="destructive">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          {result.errors.length} errors
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-4 mt-6 flex-wrap">
+              <p className="text-sm text-muted-foreground">
+                {selectedVats.size} of {previews.length} VAT reports selected
+              </p>
+              <Button
+                onClick={handlePptxImport}
+                disabled={importing || selectedVats.size === 0}
+                data-testid="button-import-pptx"
+              >
+                {importing ? "Importing..." : `Import ${selectedVats.size} VAT Report${selectedVats.size !== 1 ? "s" : ""}`}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {results && (
+        <Card>
+          <CardHeader>
+            <CardTitle>VAT Import Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Object.entries(results).map(([vatName, result]) => (
+                <div key={vatName} className="p-3 rounded-md border">
+                  <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                    <p className="font-medium">{vatName}</p>
+                    <div className="flex items-center gap-2">
+                      {result.imported && (
+                        <Badge variant="default">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Report created
+                        </Badge>
+                      )}
+                      {result.risksImported > 0 && (
+                        <Badge variant="secondary">{result.risksImported} risks</Badge>
+                      )}
+                      {result.plannerTasksImported > 0 && (
+                        <Badge variant="secondary">{result.plannerTasksImported} tasks</Badge>
+                      )}
+                      {result.errors.length > 0 && (
+                        <Badge variant="destructive">{result.errors.length} errors</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {result.errors.length > 0 && (
+                    <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
+                      {result.errors.slice(0, 5).map((err, idx) => (
+                        <p key={idx} className="text-xs text-destructive">{err}</p>
+                      ))}
+                      {result.errors.length > 5 && (
+                        <p className="text-xs text-muted-foreground">...and {result.errors.length - 5} more errors</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </>
   );
 }

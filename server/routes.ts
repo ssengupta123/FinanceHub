@@ -1513,6 +1513,144 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     }
   });
 
+  // ─── VAT PPTX Upload ───
+  const { parsePptxFile } = await import("./pptx-parser");
+
+  app.post("/api/upload/vat-pptx/preview", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const result = parsePptxFile(req.file.buffer);
+      res.json({
+        fileName: req.file.originalname,
+        reports: result.reports.map(r => ({
+          vatName: r.vatName,
+          reportDate: r.reportDate,
+          overallStatus: r.overallStatus,
+          statusSummaryPreview: (r.statusSummary || "").substring(0, 200),
+          risksCount: r.risks.length,
+          plannerTasksCount: r.plannerTasks.length,
+        })),
+        summary: result.summary,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to parse PPTX file" });
+    }
+  });
+
+  app.post("/api/upload/vat-pptx/import", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const selectedVats: string[] = JSON.parse(req.body.selectedVats || "[]");
+      const reportDate: string = req.body.reportDate || "";
+      const username = (req.session as any)?.username || "pptx-import";
+
+      const { reports } = parsePptxFile(req.file.buffer);
+      if (reports.length === 0) {
+        return res.status(400).json({ message: "No VAT reports found in the PPTX file. Make sure it follows the VAT SC Report template." });
+      }
+
+      const validVatNames = new Set(VAT_NAMES);
+      const toImport = (selectedVats.length > 0
+        ? reports.filter(r => selectedVats.includes(r.vatName))
+        : reports
+      ).filter(r => validVatNames.has(r.vatName));
+
+      if (toImport.length === 0) {
+        return res.status(400).json({ message: "No valid VAT reports selected for import." });
+      }
+
+      const results: Record<string, { imported: boolean; reportId: number; risksImported: number; plannerTasksImported: number; errors: string[] }> = {};
+
+      for (const report of toImport) {
+        const vatResult = { imported: false, reportId: 0, risksImported: 0, plannerTasksImported: 0, errors: [] as string[] };
+        try {
+          const created = await storage.createVatReport({
+            vatName: report.vatName,
+            reportDate: reportDate || report.reportDate,
+            overallStatus: report.overallStatus || null,
+            statusSummary: report.statusSummary || null,
+            openOppsSummary: report.openOppsSummary || null,
+            bigPlays: report.bigPlays || null,
+            accountGoals: report.accountGoals || null,
+            relationships: report.relationships || null,
+            research: report.research || null,
+            approachToShortfall: report.approachToShortfall || null,
+            otherActivities: report.otherActivities || null,
+            openOppsStatus: report.openOppsStatus || null,
+            bigPlaysStatus: report.bigPlaysStatus || null,
+            accountGoalsStatus: report.accountGoalsStatus || null,
+            relationshipsStatus: report.relationshipsStatus || null,
+            researchStatus: report.researchStatus || null,
+            createdBy: username,
+            updatedBy: username,
+          });
+
+          vatResult.imported = true;
+          vatResult.reportId = created.id;
+
+          for (const risk of report.risks) {
+            try {
+              await storage.createVatRisk({
+                vatReportId: created.id,
+                raisedBy: risk.raisedBy || null,
+                description: risk.description,
+                impact: risk.impact || null,
+                dateBecomesIssue: risk.dateBecomesIssue || null,
+                status: risk.status || null,
+                owner: risk.owner || null,
+                impactRating: risk.impactRating || null,
+                likelihood: risk.likelihood || null,
+                mitigation: risk.mitigation || null,
+                comments: risk.comments || null,
+                riskRating: risk.riskRating || null,
+                riskType: risk.riskType || "risk",
+              });
+              vatResult.risksImported++;
+            } catch (e: any) {
+              vatResult.errors.push(`Risk "${risk.description.substring(0, 50)}": ${e.message}`);
+            }
+          }
+
+          for (const task of report.plannerTasks) {
+            try {
+              await storage.createVatPlannerTask({
+                vatReportId: created.id,
+                bucketName: task.bucketName,
+                taskName: task.taskName,
+                progress: task.progress || null,
+                dueDate: task.dueDate || null,
+                priority: task.priority || null,
+                assignedTo: task.assignedTo || null,
+                labels: task.labels || null,
+              });
+              vatResult.plannerTasksImported++;
+            } catch (e: any) {
+              vatResult.errors.push(`Planner task "${task.taskName.substring(0, 50)}": ${e.message}`);
+            }
+          }
+
+          await storage.createVatChangeLog({
+            vatReportId: created.id,
+            fieldName: "pptx_import",
+            oldValue: null,
+            newValue: `Imported from PPTX: ${report.risks.length} risks, ${report.plannerTasks.length} planner tasks`,
+            changedBy: username,
+          });
+
+        } catch (e: any) {
+          vatResult.errors.push(`Failed to create report: ${e.message}`);
+        }
+
+        results[report.vatName] = vatResult;
+      }
+
+      res.json({ results });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to import PPTX file" });
+    }
+  });
+
   // ─── VAT Reports ───
   app.get("/api/vat-reports", async (_req, res) => {
     const data = await storage.getVatReports();
