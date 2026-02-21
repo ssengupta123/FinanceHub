@@ -255,6 +255,7 @@ export interface IStorage {
 
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(data: InsertUser): Promise<User>;
 
   getProjectMonthly(): Promise<ProjectMonthly[]>;
@@ -558,6 +559,10 @@ export class DatabaseStorage implements IStorage {
   }
   async getUserByUsername(username: string): Promise<User | undefined> {
     const row = await db("users").where("username", username).first();
+    return row ? rowToModel<User>(row) : undefined;
+  }
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const row = await db("users").where("email", email).first();
     return row ? rowToModel<User>(row) : undefined;
   }
   async createUser(data: InsertUser): Promise<User> {
