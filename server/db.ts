@@ -544,6 +544,15 @@ export async function runIncrementalMigrations() {
     console.log("Created vat_planner_tasks table");
   }
 
+  // Incremental migration: add external_id column for Planner sync
+  const plannerCols = await db.raw(`SELECT column_name FROM information_schema.columns WHERE table_name = 'vat_planner_tasks' AND column_name = 'external_id'`);
+  if (plannerCols.rows.length === 0) {
+    await db.schema.alterTable("vat_planner_tasks", (t) => {
+      t.text("external_id").nullable();
+    });
+    console.log("Added external_id column to vat_planner_tasks");
+  }
+
   const hasVatChangeLogs = await db.schema.hasTable("vat_change_logs");
   if (!hasVatChangeLogs) {
     await db.schema.createTable("vat_change_logs", (t) => {

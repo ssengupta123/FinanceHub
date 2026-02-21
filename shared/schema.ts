@@ -401,6 +401,7 @@ export const insertVatPlannerTaskSchema = z.object({
   assignedTo: z.string().nullable().optional(),
   labels: z.string().nullable().optional(),
   sortOrder: z.number().nullable().optional(),
+  externalId: z.string().nullable().optional(),
 });
 export type InsertVatPlannerTask = z.infer<typeof insertVatPlannerTaskSchema>;
 export type VatPlannerTask = InsertVatPlannerTask & { id: number };

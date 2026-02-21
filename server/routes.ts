@@ -1699,6 +1699,154 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     res.json({ success: true });
   });
 
+  // ─── Microsoft Planner Sync ───
+  app.post("/api/vat-reports/:reportId/planner/sync", async (req, res) => {
+    try {
+      if (!req.session?.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const reportId = Number(req.params.reportId);
+      const { planId } = req.body;
+      if (!planId || typeof planId !== "string") {
+        return res.status(400).json({ message: "planId is required" });
+      }
+
+      const clientId = process.env.AZURE_CLIENT_ID;
+      const clientSecret = process.env.AZURE_CLIENT_SECRET;
+      const tenantId = process.env.AZURE_TENANT_ID;
+      if (!clientId || !clientSecret || !tenantId) {
+        return res.status(503).json({ message: "Azure AD is not configured. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID." });
+      }
+
+      const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          scope: "https://graph.microsoft.com/.default",
+          grant_type: "client_credentials",
+        }),
+      });
+      if (!tokenRes.ok) {
+        const err = await tokenRes.text();
+        console.error("[Planner Sync] Token error:", err);
+        return res.status(502).json({ message: "Failed to authenticate with Microsoft Graph. Ensure the app has Tasks.Read.All permission." });
+      }
+      const tokenData = await tokenRes.json() as { access_token: string };
+
+      const graphRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/tasks`, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (!graphRes.ok) {
+        const err = await graphRes.text();
+        console.error("[Planner Sync] Graph error:", err);
+        return res.status(502).json({ message: `Failed to fetch planner tasks. Verify Plan ID and permissions. Status: ${graphRes.status}` });
+      }
+      const graphData = await graphRes.json() as { value: any[] };
+      const plannerTasks = graphData.value || [];
+
+      const existingTasks = await storage.getVatPlannerTasks(reportId);
+      const existingByExtId = new Map<string, any>();
+      const existingWithoutExtId: any[] = [];
+      for (const t of existingTasks) {
+        if (t.externalId) {
+          existingByExtId.set(t.externalId, t);
+        } else {
+          existingWithoutExtId.push(t);
+        }
+      }
+      const seenExtIds = new Set<string>();
+
+      const insights: string[] = [];
+      let synced = 0;
+      let newCount = 0;
+      let completedCount = 0;
+      let updatedCount = 0;
+
+      for (const pt of plannerTasks) {
+        const extId = pt.id;
+        const taskName = pt.title || "Untitled";
+        const bucketName = pt.bucketId || "";
+        const percentComplete = pt.percentComplete || 0;
+        const progress = percentComplete === 100 ? "Completed" : percentComplete > 0 ? "In progress" : "Not started";
+        const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
+        const priority = pt.priority === 1 ? "Important" : pt.priority === 5 ? "Low" : "Medium";
+        const assignedTo = pt.assignments ? Object.keys(pt.assignments).join(", ") : "";
+        seenExtIds.add(extId);
+
+        let existing = existingByExtId.get(extId);
+        if (!existing) {
+          const nameMatch = existingWithoutExtId.find(t => t.taskName === taskName);
+          if (nameMatch) {
+            existing = nameMatch;
+            existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
+          }
+        }
+
+        if (existing) {
+          const wasCompleted = existing.progress !== "Completed" && progress === "Completed";
+          if (wasCompleted) completedCount++;
+          if (existing.progress !== progress || existing.dueDate !== dueDate || !existing.externalId) {
+            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, externalId: extId });
+            updatedCount++;
+          }
+        } else {
+          await storage.createVatPlannerTask({
+            vatReportId: reportId,
+            bucketName,
+            taskName,
+            progress,
+            dueDate,
+            priority,
+            assignedTo,
+            labels: progress === "Completed" ? "GREEN" : "AMBER",
+            sortOrder: synced,
+            externalId: extId,
+          });
+          newCount++;
+        }
+        synced++;
+      }
+
+      let removedCount = 0;
+      for (const [extId, task] of existingByExtId) {
+        if (!seenExtIds.has(extId)) {
+          await storage.deleteVatPlannerTask(task.id);
+          removedCount++;
+        }
+      }
+
+      if (completedCount > 0) insights.push(`${completedCount} task${completedCount > 1 ? "s" : ""} completed`);
+      if (newCount > 0) insights.push(`${newCount} new task${newCount > 1 ? "s" : ""} added from Planner`);
+      if (updatedCount > 0) insights.push(`${updatedCount} task${updatedCount > 1 ? "s" : ""} updated`);
+      if (removedCount > 0) insights.push(`${removedCount} task${removedCount > 1 ? "s" : ""} removed (no longer in Planner)`);
+      if (insights.length === 0) insights.push("All tasks are up to date");
+
+      await storage.createVatChangeLog({
+        vatReportId: reportId,
+        fieldName: "planner_sync",
+        oldValue: null,
+        newValue: insights.join("; "),
+        changedBy: req.session?.username || "system",
+        entityType: "planner",
+        entityId: null,
+      });
+
+      res.json({
+        synced,
+        newCount,
+        completedCount,
+        updatedCount,
+        removedCount,
+        insights,
+      });
+    } catch (error: any) {
+      console.error("[Planner Sync] Error:", error);
+      res.status(500).json({ message: error.message || "Planner sync failed" });
+    }
+  });
+
   // ─── VAT Change Logs ───
   app.get("/api/vat-reports/:reportId/changelog", async (req, res) => {
     const data = await storage.getVatChangeLogs(Number(req.params.reportId));

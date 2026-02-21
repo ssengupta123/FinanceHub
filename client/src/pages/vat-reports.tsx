@@ -687,6 +687,9 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
   const [newTask, setNewTask] = useState<Partial<VatPlannerTask>>({
     bucketName: "", taskName: "", progress: "Not started", dueDate: "", priority: "Medium", assignedTo: "", labels: "GREEN",
   });
+  const [showSync, setShowSync] = useState(false);
+  const [planId, setPlanId] = useState(() => localStorage.getItem(`planner_plan_id_${reportId}`) || "");
+  const [syncInsights, setSyncInsights] = useState<string[] | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<VatPlannerTask[]>({
     queryKey: ["/api/vat-reports", reportId, "planner"],
@@ -732,6 +735,23 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
     },
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async (syncPlanId: string) => {
+      localStorage.setItem(`planner_plan_id_${reportId}`, syncPlanId);
+      const res = await apiRequest("POST", `/api/vat-reports/${reportId}/planner/sync`, { planId: syncPlanId });
+      return res.json();
+    },
+    onSuccess: (data: { insights: string[]; synced: number; newCount: number; completedCount: number; updatedCount: number; removedCount: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports", reportId, "planner"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports", reportId, "changelog"] });
+      setSyncInsights(data.insights);
+      toast({ title: "Planner synced", description: data.insights.join(", ") });
+    },
+    onError: (err: any) => {
+      toast({ title: "Sync failed", description: err.message || "Could not sync with Microsoft Planner", variant: "destructive" });
+    },
+  });
+
   if (isLoading) return <Skeleton className="h-40" />;
 
   const buckets = Array.from(new Set(tasks.map(t => t.bucketName)));
@@ -741,10 +761,56 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Planner Status</CardTitle>
-          <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-planner-task"><Plus className="h-4 w-4 mr-1" />Add Task</Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setShowSync(!showSync); setSyncInsights(null); }} data-testid="button-sync-planner">
+              <Loader2 className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />Sync with Planner
+            </Button>
+            <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-planner-task"><Plus className="h-4 w-4 mr-1" />Add Task</Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {showSync && (
+          <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="text-xs font-medium block mb-1">Microsoft Planner Plan ID</label>
+                <Input
+                  value={planId}
+                  onChange={(e) => setPlanId(e.target.value)}
+                  placeholder="Enter Plan ID from Microsoft Planner..."
+                  className="h-8 text-xs"
+                  data-testid="input-plan-id"
+                />
+              </div>
+              <Button
+                size="sm"
+                className="mt-5"
+                onClick={() => syncMutation.mutate(planId)}
+                disabled={!planId.trim() || syncMutation.isPending}
+                data-testid="button-run-sync"
+              >
+                {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Sync Now
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Find your Plan ID in Microsoft Planner URL: https://tasks.office.com/...planId=<strong>YOUR_PLAN_ID</strong>
+            </p>
+            {syncInsights && (
+              <div className="border rounded-md p-2.5 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-bold flex items-center gap-1 mb-1"><Sparkles className="h-3.5 w-3.5 text-blue-500" /> Sync Insights</p>
+                <ul className="text-xs space-y-0.5">
+                  {syncInsights.map((insight, i) => (
+                    <li key={i} className="flex items-center gap-1">
+                      <span className="text-blue-500">•</span> {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
         <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
@@ -1191,6 +1257,11 @@ type ReportDraftFields = {
   relationships: string;
   research: string;
   otherActivities: string;
+  openOppsStatus: string;
+  bigPlaysStatus: string;
+  accountGoalsStatus: string;
+  relationshipsStatus: string;
+  researchStatus: string;
 };
 
 const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
@@ -1208,6 +1279,7 @@ const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
 const EMPTY_DRAFT: ReportDraftFields = {
   overallStatus: "", statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "",
   accountGoals: "", relationships: "", research: "", otherActivities: "",
+  openOppsStatus: "", bigPlaysStatus: "", accountGoalsStatus: "", relationshipsStatus: "", researchStatus: "",
 };
 
 function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }) {
@@ -1339,12 +1411,12 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
 
   if (step === 1) {
     return (
-      <div className="flex flex-col h-[420px]">
+      <div className="flex flex-col h-full">
         {stepIndicator}
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-muted-foreground">Review risks for AI context. Changes here are used for suggestions only.</p>
           <Button size="sm" variant="outline" className="text-xs h-7 gap-1" onClick={() => setShowAddRisk(!showAddRisk)} data-testid="button-add-risk">
-            <Plus className="h-3 w-3" />Add Risk
+            <Plus className="h-3 w-3" />Add Risk/Issue
           </Button>
         </div>
         {showAddRisk && (
@@ -1460,7 +1532,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
 
   if (step === 2) {
     return (
-      <div className="flex flex-col h-[420px]">
+      <div className="flex flex-col h-full">
         {stepIndicator}
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-muted-foreground">Review completed actions and add notes for the AI to use.</p>
@@ -1521,7 +1593,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
   }
 
   return (
-    <div className="flex flex-col h-[420px]">
+    <div className="flex flex-col h-full">
       {stepIndicator}
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center border rounded-lg bg-muted/30 p-6 space-y-3">
@@ -1834,6 +1906,11 @@ export default function VatReportsPage() {
                 relationships: lastReport.relationships || "",
                 research: lastReport.research || "",
                 otherActivities: lastReport.otherActivities || "",
+                openOppsStatus: lastReport.openOppsStatus || "",
+                bigPlaysStatus: lastReport.bigPlaysStatus || "",
+                accountGoalsStatus: lastReport.accountGoalsStatus || "",
+                relationshipsStatus: lastReport.relationshipsStatus || "",
+                researchStatus: lastReport.researchStatus || "",
               });
             } else {
               setDraftFields({ ...EMPTY_DRAFT });
@@ -1843,7 +1920,7 @@ export default function VatReportsPage() {
           <DialogTrigger asChild>
             <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-5xl max-h-[85vh] flex flex-col">
+          <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Create New VAT Report</DialogTitle>
               <DialogDescription>Use the AI assistant to draft content, then apply it to the report fields.</DialogDescription>
@@ -1865,6 +1942,11 @@ export default function VatReportsPage() {
                       relationships: lastReport.relationships || "",
                       research: lastReport.research || "",
                       otherActivities: lastReport.otherActivities || "",
+                      openOppsStatus: lastReport.openOppsStatus || "",
+                      bigPlaysStatus: lastReport.bigPlaysStatus || "",
+                      accountGoalsStatus: lastReport.accountGoalsStatus || "",
+                      relationshipsStatus: lastReport.relationshipsStatus || "",
+                      researchStatus: lastReport.researchStatus || "",
                     });
                   } else {
                     setDraftFields({ ...EMPTY_DRAFT });
@@ -1919,22 +2001,45 @@ export default function VatReportsPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    {DRAFT_FIELD_LABELS.map(({ key, label }) => (
-                      <div key={key}>
-                        <label className="text-xs font-bold mb-1 block flex items-center justify-between">
-                          {label}
-                          {draftFields[key] && <Badge variant="secondary" className="text-[9px] px-1 py-0">filled</Badge>}
-                        </label>
-                        <Textarea
-                          value={draftFields[key]}
-                          onChange={(e) => setDraftFields(prev => ({ ...prev, [key]: e.target.value }))}
-                          rows={3}
-                          className="text-xs font-mono"
-                          placeholder={`Enter ${label.toLowerCase()}...`}
-                          data-testid={`input-draft-${key}`}
-                        />
-                      </div>
-                    ))}
+                    {DRAFT_FIELD_LABELS.map(({ key, label }) => {
+                      const ragKey = ({
+                        openOppsSummary: "openOppsStatus",
+                        bigPlays: "bigPlaysStatus",
+                        accountGoals: "accountGoalsStatus",
+                        relationships: "relationshipsStatus",
+                        research: "researchStatus",
+                      } as Record<string, keyof ReportDraftFields>)[key];
+                      return (
+                        <div key={key}>
+                          <label className="text-xs font-bold mb-1 block flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              {label}
+                              {ragKey && (
+                                <Select value={draftFields[ragKey] || ""} onValueChange={(v) => setDraftFields(prev => ({ ...prev, [ragKey]: v }))}>
+                                  <SelectTrigger className="h-5 w-[80px] text-[10px] border-0 bg-muted/50 px-1" data-testid={`select-draft-${ragKey}`}>
+                                    <SelectValue placeholder="RAG" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="GREEN"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500" />G</span></SelectItem>
+                                    <SelectItem value="AMBER"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" />A</span></SelectItem>
+                                    <SelectItem value="RED"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" />R</span></SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </span>
+                            {draftFields[key] && <Badge variant="secondary" className="text-[9px] px-1 py-0">filled</Badge>}
+                          </label>
+                          <Textarea
+                            value={draftFields[key]}
+                            onChange={(e) => setDraftFields(prev => ({ ...prev, [key]: e.target.value }))}
+                            rows={3}
+                            className="text-xs font-mono"
+                            placeholder={`Enter ${label.toLowerCase()}...`}
+                            data-testid={`input-draft-${key}`}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               </div>
