@@ -101,8 +101,8 @@ export default function LoginPage() {
           <CardContent className="flex flex-col items-center py-8 gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
             <Button
-              variant="link"
-              className="text-sm text-muted-foreground"
+              variant="ghost"
+              className="text-sm text-muted-foreground underline"
               data-testid="button-manual-login"
               onClick={() => { setSsoLoading(false); setShowManualLogin(true); }}
             >
