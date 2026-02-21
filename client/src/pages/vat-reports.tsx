@@ -33,6 +33,8 @@ import type {
   VatReport, VatRisk, VatActionItem, VatPlannerTask, VatChangeLog,
 } from "@shared/schema";
 import { VAT_NAMES } from "@shared/schema";
+import { FySelector } from "@/components/fy-selector";
+import { getCurrentFy, getFyFromDate, getFyOptions } from "@/lib/fy-utils";
 
 const STATUS_COLORS: Record<string, string> = {
   GREEN: "bg-green-500",
@@ -1175,28 +1177,51 @@ function ChangeLogPanel({ reportId }: { reportId: number }) {
   );
 }
 
-function AISuggestionsPanel({ reportId }: { reportId: number }) {
-  const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(false);
+type ChatMessage = { role: "user" | "assistant"; content: string };
 
-  const fetchSuggestions = useCallback(async () => {
-    setLoading(true);
-    setContent("");
+function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: number }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const sendMessage = useCallback(async () => {
+    if (!input.trim() || streaming) return;
+    const userMsg: ChatMessage = { role: "user", content: input.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput("");
+    setStreaming(true);
+
     try {
-      const res = await fetch(`/api/vat-reports/${reportId}/ai-suggestions`, {
+      const res = await fetch("/api/vat-reports/ai-chat", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vatName, reportId, messages: newMessages }),
       });
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "AI analysis failed" }));
-        setContent("Failed to get AI suggestions: " + (err.message || "Unknown error"));
-        setLoading(false);
+        const err = await res.json().catch(() => ({ message: "AI failed" }));
+        setMessages(prev => [...prev, { role: "assistant", content: "Error: " + (err.message || "AI failed") }]);
+        setStreaming(false);
         return;
       }
+
       const reader = res.body?.getReader();
-      if (!reader) return;
+      if (!reader) { setStreaming(false); return; }
       const decoder = new TextDecoder();
       let buffer = "";
+      let assistantContent = "";
+
+      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1208,46 +1233,74 @@ function AISuggestionsPanel({ reportId }: { reportId: number }) {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.content) {
-                setContent(prev => prev + data.content);
-              }
-              if (data.error) {
-                setContent(prev => prev + "\n\nError: " + data.error);
+                assistantContent += data.content;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                  return updated;
+                });
               }
             } catch {}
           }
         }
       }
     } catch (err: any) {
-      setContent("Failed to get AI suggestions: " + (err.message || "Unknown error"));
+      setMessages(prev => [...prev, { role: "assistant", content: "Error: " + (err.message || "Connection failed") }]);
     }
-    setLoading(false);
-  }, [reportId]);
+    setStreaming(false);
+  }, [input, messages, streaming, vatName, reportId]);
+
+  const quickActions = [
+    "Draft a status summary for this VAT",
+    "Summarise the open opportunities",
+    "What are the big plays?",
+    "Suggest approach to shortfall",
+  ];
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-500" />AI Suggestions
-          </CardTitle>
-          <Button size="sm" onClick={fetchSuggestions} disabled={loading} data-testid="button-get-ai-suggestions">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />}
-            {loading ? "Analysing..." : "Get Suggestions"}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {content ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm">
-            {content}
+    <div className="flex flex-col h-[350px]">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 p-3 border rounded-lg bg-muted/30 mb-3">
+        {messages.length === 0 ? (
+          <div className="text-center py-6 space-y-3">
+            <Sparkles className="h-8 w-8 mx-auto text-purple-500" />
+            <p className="text-sm text-muted-foreground">Ask the AI to help draft your report content based on {vatName}'s pipeline data.</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {quickActions.map((action, i) => (
+                <Button key={i} size="sm" variant="outline" className="text-xs" onClick={() => { setInput(action); }} data-testid={`button-quick-${i}`}>
+                  {action}
+                </Button>
+              ))}
+            </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            Click "Get Suggestions" to receive AI-powered strategic advice based on this VAT's pipeline data, risks, and current status.
-          </p>
+          messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
+                msg.role === "user"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background border"
+              }`}>
+                <div className="whitespace-pre-wrap">{msg.content || (streaming && i === messages.length - 1 ? "..." : "")}</div>
+              </div>
+            </div>
+          ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
+          placeholder={`Ask about ${vatName}...`}
+          className="text-xs h-9"
+          disabled={streaming}
+          data-testid="input-ai-chat"
+        />
+        <Button size="sm" onClick={sendMessage} disabled={streaming || !input.trim()} className="h-9" data-testid="button-send-ai-chat">
+          {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1274,7 +1327,7 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
   const formatReportDate = (dateStr: string) => {
     try {
       const d = new Date(dateStr + "T00:00:00");
-      return d.toLocaleDateString("en-AU", { month: "short", year: "numeric" });
+      return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
     } catch { return dateStr; }
   };
 
@@ -1288,7 +1341,7 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
               const selected = allReportsForVat.find(r => String(r.id) === v);
               if (selected) onSelectReport(selected);
             }}>
-              <SelectTrigger className="h-8 w-[160px] text-xs" data-testid="select-report-date">
+              <SelectTrigger className="h-8 w-[180px] text-xs" data-testid="select-report-date">
                 <SelectValue>{formatReportDate(report.reportDate)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -1322,7 +1375,6 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
           <TabsTrigger value="risks" data-testid="tab-risks">Risks & Issues</TabsTrigger>
           <TabsTrigger value="actions" data-testid="tab-actions">Action Items</TabsTrigger>
           <TabsTrigger value="planner" data-testid="tab-planner">Planner</TabsTrigger>
-          <TabsTrigger value="ai" data-testid="tab-ai">AI Suggestions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -1339,10 +1391,6 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
 
         <TabsContent value="planner" className="mt-4">
           <PlannerTasksTable reportId={report.id} />
-        </TabsContent>
-
-        <TabsContent value="ai" className="mt-4">
-          <AISuggestionsPanel reportId={report.id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1371,9 +1419,24 @@ export default function VatReportsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newReportDate, setNewReportDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedReportIds, setSelectedReportIds] = useState<Record<string, number>>({});
+  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+
+  const handleFYChange = useCallback((fy: string) => {
+    setSelectedFY(fy);
+    setSelectedReportIds({});
+  }, []);
 
   const { data: reports = [], isLoading } = useQuery<VatReport[]>({
     queryKey: ["/api/vat-reports"],
+  });
+
+  const availableFYs = getFyOptions(
+    reports.map(r => getFyFromDate(r.reportDate)).filter((fy): fy is string => fy !== null)
+  );
+
+  const filteredReports = reports.filter(r => {
+    const fy = getFyFromDate(r.reportDate);
+    return fy === selectedFY;
   });
 
   const createMutation = useMutation({
@@ -1393,7 +1456,7 @@ export default function VatReportsPage() {
   });
 
   const reportsByVat: Record<string, VatReport[]> = {};
-  for (const r of reports) {
+  for (const r of filteredReports) {
     if (!reportsByVat[r.vatName]) reportsByVat[r.vatName] = [];
     reportsByVat[r.vatName].push(r);
   }
@@ -1433,18 +1496,20 @@ export default function VatReportsPage() {
             <FileText className="h-6 w-6" />VAT Sales Committee Reports
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage VAT status reports, risks, planner tasks, and get AI-powered suggestions
+            FY {selectedFY} — Manage VAT status reports, risks, planner tasks, and AI-powered drafting
           </p>
         </div>
+        <div className="flex items-center gap-3">
+          <FySelector value={selectedFY} options={availableFYs} onChange={handleFYChange} />
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogTrigger asChild>
             <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Create New VAT Report</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4 py-2">
               <div>
                 <label className="text-sm font-medium">VAT</label>
                 <Select value={activeVat} onValueChange={setActiveVat}>
@@ -1461,6 +1526,14 @@ export default function VatReportsPage() {
                 <Input type="date" value={newReportDate} onChange={(e) => setNewReportDate(e.target.value)} data-testid="input-new-report-date" />
               </div>
             </div>
+            <Separator />
+            <div>
+              <label className="text-sm font-medium flex items-center gap-2 mb-2">
+                <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
+              </label>
+              <p className="text-xs text-muted-foreground mb-2">Ask the AI to help draft content for your report. Copy suggestions into the report after creation.</p>
+              <VatAIChatbot vatName={activeVat} reportId={latestReports[activeVat]?.id} />
+            </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
               <Button onClick={() => createMutation.mutate({ vatName: activeVat, reportDate: newReportDate })} disabled={createMutation.isPending} data-testid="button-create-report">
@@ -1470,6 +1543,7 @@ export default function VatReportsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Tabs value={activeVat} onValueChange={setActiveVat}>

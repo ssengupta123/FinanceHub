@@ -1706,17 +1706,22 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     res.json({ report, risks, actions, plannerTasks, changeLogs });
   });
 
-  // ─── VAT AI Suggestions ───
-  app.post("/api/vat-reports/:id/ai-suggestions", async (req, res) => {
+  // ─── VAT AI Chat Assistant ───
+  app.post("/api/vat-reports/ai-chat", async (req, res) => {
     try {
-      const id = Number(req.params.id);
-      const report = await storage.getVatReport(id);
-      if (!report) return res.status(404).json({ message: "Report not found" });
+      const { vatName, messages: chatMessages, reportId } = req.body;
+      if (!vatName || typeof vatName !== "string") return res.status(400).json({ message: "vatName is required" });
+      if (chatMessages && (!Array.isArray(chatMessages) || chatMessages.some((m: any) => !m.role || !m.content))) {
+        return res.status(400).json({ message: "Invalid message format" });
+      }
 
-      const [risks, pipelineOpps] = await Promise.all([
-        storage.getVatRisks(id),
-        storage.getPipelineByVat(report.vatName),
-      ]);
+      const pipelineOpps = await storage.getPipelineByVat(vatName);
+      let existingReport: any = null;
+      let risks: any[] = [];
+      if (reportId) {
+        existingReport = await storage.getVatReport(reportId);
+        risks = await storage.getVatRisks(reportId);
+      }
 
       const pipelineSummary = pipelineOpps.map(o => {
         const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
@@ -1730,38 +1735,41 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       ).join("\n");
 
       if (!openai) {
-        return res.status(503).json({ message: "AI suggestions are not available. Configure OPENAI_API_KEY in environment variables." });
+        return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
-      const systemPrompt = `You are a strategic advisor for an Australian professional services firm's VAT (Virtual Account Team) Sales Committee. Your role is to provide SHORT, SPECIFIC, ACTIONABLE suggestions — NOT a report or analysis. Each suggestion should be a concrete next step someone can act on THIS WEEK. Reference actual opportunity names and dollar values where available. Use Australian Financial Year (Jul-Jun). Do NOT summarise or restate the data — jump straight to recommendations.`;
-      const userPrompt = `Based on the ${report.vatName} VAT data below, provide 5-8 specific actionable suggestions. Each suggestion should be 1-2 sentences with a clear action and owner.
 
-DATA:
-- Status: ${report.overallStatus || "Unknown"}
-- Summary: ${report.statusSummary || "No summary"}
-- Open Opps: ${report.openOppsSummary || "No data"}
-- Big Plays: ${report.bigPlays || "None listed"}
-- Shortfall Approach: ${report.approachToShortfall || "Not specified"}
-- Pipeline: ${pipelineSummary || "None"}
-- Risks: ${riskSummary || "None"}
+      const systemPrompt = `You are an AI assistant helping create and manage VAT (Virtual Account Team) Sales Committee reports for an Australian professional services firm. You have access to the ${vatName} VAT's pipeline and risk data.
 
-FORMAT your response as numbered suggestions grouped under these headings:
-**Pipeline Actions** — What to chase, accelerate, or deprioritise
-**Risk Actions** — Specific mitigations for current risks
-**Quick Wins** — Revenue opportunities closeable this month
-**Relationship Actions** — Key stakeholder meetings or conversations needed
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
 
-Keep each suggestion to 1-2 lines. Be direct and specific — no preamble or summary.`;
+${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
+${existingReport ? `CURRENT REPORT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
+
+Your role:
+- Help draft report content (status summaries, open opps analysis, big plays, approach to shortfall)
+- Provide strategic suggestions based on the pipeline data
+- Answer questions about the VAT's pipeline performance
+- When asked to draft content, provide it in bullet point format ready to paste into the report
+- Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values
+- Be concise and actionable`;
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
+      const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: systemPrompt },
+      ];
+      if (chatMessages && Array.isArray(chatMessages)) {
+        for (const m of chatMessages) {
+          apiMessages.push({ role: m.role, content: m.content });
+        }
+      }
+
       const stream = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        messages: apiMessages,
         stream: true,
         max_tokens: 2048,
       });
@@ -1776,12 +1784,12 @@ Keep each suggestion to 1-2 lines. Be direct and specific — no preamble or sum
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (error: any) {
-      console.error("VAT AI suggestions error:", error);
+      console.error("VAT AI chat error:", error);
       if (res.headersSent) {
-        res.write(`data: ${JSON.stringify({ error: error.message || "AI analysis failed" })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: error.message || "AI chat failed" })}\n\n`);
         res.end();
       } else {
-        res.status(500).json({ message: error.message || "AI analysis failed" });
+        res.status(500).json({ message: error.message || "AI chat failed" });
       }
     }
   });
