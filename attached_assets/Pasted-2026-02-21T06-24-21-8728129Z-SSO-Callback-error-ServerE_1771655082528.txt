@@ -1,0 +1,13 @@
+2026-02-21T06:24:21.8728129Z [SSO] Callback error: ServerError: invalid_client: Error(s): 7000215 - Timestamp: 2026-02-21 06:24:21Z - Description: AADSTS7000215: Invalid client secret provided. Ensure the secret being sent in the request is the client secret value, not the client secret ID, for a secret added to app '10de8e81-4947-4bf3-be9b-db28e84b2d09'. Trace ID: fc83ed86-9b0e-4cf4-8761-ea8d69bb3700 Correlation ID: 6d528812-b3dc-4819-872a-5a6613ce4c70 Timestamp: 2026-02-21 06:24:21Z - Correlation ID: 6d528812-b3dc-4819-872a-5a6613ce4c70 - Trace ID: fc83ed86-9b0e-4cf4-8761-ea8d69bb3700
+2026-02-21T06:24:21.8728655Z     at ResponseHandler.validateTokenResponse (file:///node_modules/@azure/msal-node/node_modules/@azure/msal-common/dist/response/ResponseHandler.mjs:52:33)
+2026-02-21T06:24:21.8728687Z     at AuthorizationCodeClient.acquireToken (file:///node_modules/@azure/msal-node/node_modules/@azure/msal-common/dist/client/AuthorizationCodeClient.mjs:78:25)
+2026-02-21T06:24:21.8728708Z     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-02-21T06:24:21.8728731Z     at async ConfidentialClientApplication.acquireTokenByCode (file:///node_modules/@azure/msal-node/dist/client/ClientApplication.mjs:83:20)
+2026-02-21T06:24:21.872875Z     at async /home/site/wwwroot/dist/index.cjs:451:6294 {
+2026-02-21T06:24:21.8728803Z   errorCode: 'invalid_client',
+2026-02-21T06:24:21.8728843Z   errorMessage: "Error(s): 7000215 - Timestamp: 2026-02-21 06:24:21Z - Description: AADSTS7000215: Invalid client secret provided. Ensure the secret being sent in the request is the client secret value, not the client secret ID, for a secret added to app '10de8e81-4947-4bf3-be9b-db28e84b2d09'. Trace ID: fc83ed86-9b0e-4cf4-8761-ea8d69bb3700 Correlation ID: 6d528812-b3dc-4819-872a-5a6613ce4c70 Timestamp: 2026-02-21 06:24:21Z - Correlation ID: 6d528812-b3dc-4819-872a-5a6613ce4c70 - Trace ID: fc83ed86-9b0e-4cf4-8761-ea8d69bb3700",
+2026-02-21T06:24:21.8728861Z   subError: '',
+2026-02-21T06:24:21.8728881Z   errorNo: 7000215,
+2026-02-21T06:24:21.8728897Z   status: undefined,
+2026-02-21T06:24:21.8728917Z   correlationId: '6d528812-b3dc-4819-872a-5a6613ce4c70'
+2026-02-21T06:24:21.8728933Z }
