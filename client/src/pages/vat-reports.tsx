@@ -442,6 +442,7 @@ function RisksTable({ reportId }: { reportId: number }) {
             </Select>
           </TableCell>
           <TableCell><Input value={editForm.mitigation || ""} onChange={(e) => setEditForm({ ...editForm, mitigation: e.target.value })} className="h-8 text-xs" /></TableCell>
+          <TableCell><Input value={editForm.comments || ""} onChange={(e) => setEditForm({ ...editForm, comments: e.target.value })} className="h-8 text-xs" /></TableCell>
           <TableCell>
             <div className="flex gap-1">
               <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: risk.id, data: editForm })} data-testid={`button-save-risk-${risk.id}`}>
@@ -465,6 +466,7 @@ function RisksTable({ reportId }: { reportId: number }) {
         <TableCell className={`text-xs ${IMPACT_COLORS[risk.impactRating?.toUpperCase() || ""] || ""}`}>{risk.impactRating || "—"}</TableCell>
         <TableCell className={`text-xs ${IMPACT_COLORS[risk.likelihood?.toUpperCase() || ""] || ""}`}>{risk.likelihood || "—"}</TableCell>
         <TableCell className="text-xs max-w-[200px]">{risk.mitigation || "—"}</TableCell>
+        <TableCell className="text-xs max-w-[200px]">{risk.comments || "—"}</TableCell>
         <TableCell>
           <div className="flex gap-1">
             <Button size="sm" variant="ghost" onClick={() => startEdit(risk)} data-testid={`button-edit-risk-${risk.id}`}>
@@ -500,12 +502,13 @@ function RisksTable({ reportId }: { reportId: number }) {
               <TableHead className="text-xs w-[80px]">Impact Rating</TableHead>
               <TableHead className="text-xs w-[80px]">Likelihood</TableHead>
               <TableHead className="text-xs">Mitigation / Action</TableHead>
+              <TableHead className="text-xs">Comments</TableHead>
               <TableHead className="text-xs w-[70px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="text-center text-xs text-muted-foreground py-4">No {type}s registered</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center text-xs text-muted-foreground py-4">No {type}s registered</TableCell></TableRow>
             ) : (
               items.map((risk) => renderRiskRow(risk, editingId === risk.id))
             )}
@@ -589,9 +592,13 @@ function RisksTable({ reportId }: { reportId: number }) {
                   </Select>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">Mitigation</label>
+                  <label className="text-xs text-muted-foreground">Mitigation / Action</label>
                   <Input value={newRisk.mitigation || ""} onChange={(e) => setNewRisk({ ...newRisk, mitigation: e.target.value })} className="h-8 text-xs" data-testid="input-risk-mitigation" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Comments</label>
+                <Input value={newRisk.comments || ""} onChange={(e) => setNewRisk({ ...newRisk, comments: e.target.value })} className="h-8 text-xs" data-testid="input-risk-comments" />
               </div>
               <div className="flex gap-2 justify-end">
                 <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
