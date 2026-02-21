@@ -40,10 +40,22 @@ const STATUS_COLORS: Record<string, string> = {
   RED: "bg-red-500",
 };
 
+const STATUS_BG: Record<string, string> = {
+  GREEN: "#22c55e",
+  AMBER: "#f59e0b",
+  RED: "#ef4444",
+};
+
 const STATUS_BADGE: Record<string, string> = {
   GREEN: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   AMBER: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   RED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+};
+
+const STATUS_HEADER_BADGE: Record<string, string> = {
+  GREEN: "bg-green-500 text-white px-2 py-0.5 font-bold text-sm",
+  AMBER: "bg-amber-400 text-black px-2 py-0.5 font-bold text-sm",
+  RED: "bg-red-500 text-white px-2 py-0.5 font-bold text-sm",
 };
 
 const IMPACT_COLORS: Record<string, string> = {
@@ -53,9 +65,35 @@ const IMPACT_COLORS: Record<string, string> = {
   LOW: "text-green-600 dark:text-green-400",
 };
 
+const CATEGORY_LABELS = [
+  { key: "openOppsStatus", label: "Open Opps" },
+  { key: "bigPlaysStatus", label: "Big Plays" },
+  { key: "accountGoalsStatus", label: "Account Goals" },
+  { key: "relationshipsStatus", label: "Relationships" },
+  { key: "researchStatus", label: "Research" },
+] as const;
+
 function StatusDot({ status }: { status: string | null | undefined }) {
   const color = STATUS_COLORS[status?.toUpperCase() || ""] || "bg-gray-400";
   return <span className={`inline-block w-3 h-3 rounded-full ${color}`} />;
+}
+
+function BulletText({ text }: { text: string | null | undefined }) {
+  if (!text) return null;
+  const lines = text.split("\n").filter(l => l.trim());
+  return (
+    <ul className="list-none space-y-0.5 text-[11px] leading-[1.4]">
+      {lines.map((line, i) => {
+        const trimmed = line.replace(/^[\s•\-\*]+/, "");
+        const indent = line.match(/^(\s{2,}|\t)/);
+        return (
+          <li key={i} className={indent ? "ml-4" : ""}>
+            <span className="mr-1">•</span>{trimmed}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpdate: (data: Partial<VatReport>) => void }) {
@@ -70,6 +108,11 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
     research: report.research || "",
     approachToShortfall: report.approachToShortfall || "",
     otherActivities: report.otherActivities || "",
+    openOppsStatus: report.openOppsStatus || "",
+    bigPlaysStatus: report.bigPlaysStatus || "",
+    accountGoalsStatus: report.accountGoalsStatus || "",
+    relationshipsStatus: report.relationshipsStatus || "",
+    researchStatus: report.researchStatus || "",
   });
 
   const handleSave = () => {
@@ -77,24 +120,25 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
     setEditing(false);
   };
 
+  const overallStatus = (report.overallStatus || "").toUpperCase();
+  const reportData = report as Record<string, any>;
+
   if (editing) {
     return (
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Status Overview</CardTitle>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => setEditing(false)} data-testid="button-cancel-edit">Cancel</Button>
-              <Button size="sm" onClick={handleSave} data-testid="button-save-status"><Save className="h-4 w-4 mr-1" />Save</Button>
-            </div>
+      <div className="border rounded-lg overflow-hidden shadow-md">
+        <div className="bg-teal-700 text-white px-4 py-2 flex items-center justify-between">
+          <span className="font-semibold text-sm">Editing Status Overview</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setEditing(false)} data-testid="button-cancel-edit">Cancel</Button>
+            <Button size="sm" onClick={handleSave} className="bg-white text-teal-800 hover:bg-gray-100" data-testid="button-save-status"><Save className="h-4 w-4 mr-1" />Save</Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        </div>
+        <div className="p-4 space-y-4 bg-white dark:bg-gray-950">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-sm font-medium">Overall Status</label>
+              <label className="text-xs font-bold mb-1 block">Overall Status</label>
               <Select value={form.overallStatus} onValueChange={(v) => setForm({ ...form, overallStatus: v })}>
-                <SelectTrigger data-testid="select-overall-status"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-overall-status"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="GREEN">GREEN</SelectItem>
                   <SelectItem value="AMBER">AMBER</SelectItem>
@@ -102,96 +146,163 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
                 </SelectContent>
               </Select>
             </div>
+            {CATEGORY_LABELS.map(({ key, label }) => (
+              <div key={key}>
+                <label className="text-xs font-bold mb-1 block">{label} Status</label>
+                <Select value={(form as Record<string, any>)[key] || ""} onValueChange={(v) => setForm({ ...form, [key]: v })}>
+                  <SelectTrigger className="h-8 text-xs" data-testid={`select-${key}`}><SelectValue placeholder="Not set" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GREEN">GREEN</SelectItem>
+                    <SelectItem value="AMBER">AMBER</SelectItem>
+                    <SelectItem value="RED">RED</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+          <Separator />
+          <div>
+            <label className="text-xs font-bold mb-1 block">Status Summary (main bullet points)</label>
+            <Textarea value={form.statusSummary} onChange={(e) => setForm({ ...form, statusSummary: e.target.value })} rows={5} className="text-xs font-mono" placeholder="One bullet point per line..." data-testid="input-status-summary" />
           </div>
           <div>
-            <label className="text-sm font-medium">Status Summary</label>
-            <Textarea value={form.statusSummary} onChange={(e) => setForm({ ...form, statusSummary: e.target.value })} rows={3} data-testid="input-status-summary" />
+            <label className="text-xs font-bold mb-1 block">Approach to Target Shortfall</label>
+            <Textarea value={form.approachToShortfall} onChange={(e) => setForm({ ...form, approachToShortfall: e.target.value })} rows={4} className="text-xs font-mono" data-testid="input-approach-shortfall" />
           </div>
-          <div>
-            <label className="text-sm font-medium">Open Opps Summary</label>
-            <Textarea value={form.openOppsSummary} onChange={(e) => setForm({ ...form, openOppsSummary: e.target.value })} rows={3} data-testid="input-open-opps" />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Approach to Shortfall</label>
-            <Textarea value={form.approachToShortfall} onChange={(e) => setForm({ ...form, approachToShortfall: e.target.value })} rows={3} data-testid="input-approach-shortfall" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium">Big Plays</label>
-              <Textarea value={form.bigPlays} onChange={(e) => setForm({ ...form, bigPlays: e.target.value })} rows={3} data-testid="input-big-plays" />
+              <label className="text-xs font-bold mb-1 block">Open Opps Summary</label>
+              <Textarea value={form.openOppsSummary} onChange={(e) => setForm({ ...form, openOppsSummary: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-open-opps" />
             </div>
             <div>
-              <label className="text-sm font-medium">Account Goals</label>
-              <Textarea value={form.accountGoals} onChange={(e) => setForm({ ...form, accountGoals: e.target.value })} rows={3} data-testid="input-account-goals" />
+              <label className="text-xs font-bold mb-1 block">Big Plays</label>
+              <Textarea value={form.bigPlays} onChange={(e) => setForm({ ...form, bigPlays: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-big-plays" />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium">Relationships</label>
-              <Textarea value={form.relationships} onChange={(e) => setForm({ ...form, relationships: e.target.value })} rows={3} data-testid="input-relationships" />
+              <label className="text-xs font-bold mb-1 block">Account Goals</label>
+              <Textarea value={form.accountGoals} onChange={(e) => setForm({ ...form, accountGoals: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-account-goals" />
             </div>
             <div>
-              <label className="text-sm font-medium">Other Activities</label>
-              <Textarea value={form.otherActivities} onChange={(e) => setForm({ ...form, otherActivities: e.target.value })} rows={3} data-testid="input-other-activities" />
+              <label className="text-xs font-bold mb-1 block">Relationships</label>
+              <Textarea value={form.relationships} onChange={(e) => setForm({ ...form, relationships: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-relationships" />
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold mb-1 block">Research</label>
+              <Textarea value={form.research} onChange={(e) => setForm({ ...form, research: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-research" />
+            </div>
+            <div>
+              <label className="text-xs font-bold mb-1 block">Other VAT Activities</label>
+              <Textarea value={form.otherActivities} onChange={(e) => setForm({ ...form, otherActivities: e.target.value })} rows={3} className="text-xs font-mono" data-testid="input-other-activities" />
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg flex items-center gap-2">
-            Status Overview
-            <StatusDot status={report.overallStatus} />
-            <span className={`text-sm font-semibold ${STATUS_BADGE[report.overallStatus?.toUpperCase() || ""] ? "" : "text-muted-foreground"}`}>
-              {report.overallStatus || "Not set"}
-            </span>
-          </CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setEditing(true)} data-testid="button-edit-status">
-            <Edit2 className="h-4 w-4 mr-1" />Edit
-          </Button>
+    <div className="border rounded-lg overflow-hidden shadow-md" data-testid="vat-slide-view">
+      <div className="bg-teal-700 text-white px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-sm">Overall Status :</span>
+          <span className={STATUS_HEADER_BADGE[overallStatus] || "bg-gray-400 text-white px-2 py-0.5 font-bold text-sm"}>
+            {overallStatus || "NOT SET"}
+          </span>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {report.statusSummary && (
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Summary</h4>
-            <p className="text-sm whitespace-pre-wrap">{report.statusSummary}</p>
+        <Button size="sm" variant="ghost" className="text-white hover:bg-teal-600 h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-status">
+          <Edit2 className="h-3 w-3 mr-1" />Edit
+        </Button>
+      </div>
+
+      <div className="flex">
+        <div className="flex-1 p-3 border-r bg-white dark:bg-gray-950 min-h-[300px]">
+          <div className="space-y-2 text-[11px] leading-[1.4] text-gray-900 dark:text-gray-100">
+            {report.statusSummary && (
+              <BulletText text={report.statusSummary} />
+            )}
+
+            {report.approachToShortfall && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Approach to target shortfall:</p>
+                <BulletText text={report.approachToShortfall} />
+              </div>
+            )}
+
+            {report.openOppsSummary && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">{report.vatName}:</p>
+                <BulletText text={report.openOppsSummary} />
+              </div>
+            )}
+
+            {report.bigPlays && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Big Plays:</p>
+                <BulletText text={report.bigPlays} />
+              </div>
+            )}
+
+            {report.accountGoals && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Account Goals:</p>
+                <BulletText text={report.accountGoals} />
+              </div>
+            )}
+
+            {report.relationships && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Relationships:</p>
+                <BulletText text={report.relationships} />
+              </div>
+            )}
+
+            {report.research && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Research:</p>
+                <BulletText text={report.research} />
+              </div>
+            )}
+
+            {report.otherActivities && (
+              <div className="mt-2">
+                <p className="font-bold text-[11px] mb-0.5">Other VAT activities:</p>
+                <BulletText text={report.otherActivities} />
+              </div>
+            )}
+
+            {!report.statusSummary && !report.approachToShortfall && !report.openOppsSummary && (
+              <p className="text-xs text-muted-foreground italic py-8 text-center">Click "Edit" to add content to this slide.</p>
+            )}
           </div>
-        )}
-        {report.openOppsSummary && (
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Open Opps</h4>
-            <p className="text-sm whitespace-pre-wrap">{report.openOppsSummary}</p>
-          </div>
-        )}
-        {report.approachToShortfall && (
-          <div>
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Approach to Shortfall</h4>
-            <p className="text-sm whitespace-pre-wrap">{report.approachToShortfall}</p>
-          </div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: "Big Plays", value: report.bigPlays, icon: Target },
-            { label: "Account Goals", value: report.accountGoals, icon: CheckCircle2 },
-            { label: "Relationships", value: report.relationships, icon: Users },
-            { label: "Other Activities", value: report.otherActivities, icon: FileText },
-          ].map((item) => (
-            <div key={item.label} className="border rounded-lg p-3">
-              <h4 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                <item.icon className="h-3 w-3" />{item.label}
-              </h4>
-              <p className="text-xs whitespace-pre-wrap">{item.value || "—"}</p>
-            </div>
-          ))}
         </div>
-      </CardContent>
-    </Card>
+
+        <div className="w-[140px] shrink-0 bg-white dark:bg-gray-950">
+          {CATEGORY_LABELS.map(({ key, label }) => {
+            const status = (reportData[key] || "").toUpperCase();
+            const bgColor = STATUS_BG[status] || "transparent";
+            return (
+              <div
+                key={key}
+                className="border-b last:border-b-0 flex items-center"
+                data-testid={`status-indicator-${key}`}
+              >
+                <div className="flex-1 px-2 py-2.5 text-[10px] font-semibold text-gray-800 dark:text-gray-200 border-r">
+                  {label}
+                </div>
+                <div
+                  className="w-[40px] h-full self-stretch"
+                  style={{ backgroundColor: bgColor }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 

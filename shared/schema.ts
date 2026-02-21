@@ -348,6 +348,11 @@ export const insertVatReportSchema = z.object({
   research: z.string().nullable().optional(),
   approachToShortfall: z.string().nullable().optional(),
   otherActivities: z.string().nullable().optional(),
+  openOppsStatus: z.string().nullable().optional(),
+  bigPlaysStatus: z.string().nullable().optional(),
+  accountGoalsStatus: z.string().nullable().optional(),
+  relationshipsStatus: z.string().nullable().optional(),
+  researchStatus: z.string().nullable().optional(),
   createdBy: z.string().nullable().optional(),
   updatedBy: z.string().nullable().optional(),
 });

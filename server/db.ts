@@ -477,6 +477,18 @@ export async function runIncrementalMigrations() {
     console.log("Created vat_reports table");
   }
 
+  const hasOpenOppsStatus = await db.schema.hasColumn("vat_reports", "open_opps_status");
+  if (!hasOpenOppsStatus) {
+    await db.schema.alterTable("vat_reports", (t) => {
+      t.text("open_opps_status");
+      t.text("big_plays_status");
+      t.text("account_goals_status");
+      t.text("relationships_status");
+      t.text("research_status");
+    });
+    console.log("Added category status columns to vat_reports");
+  }
+
   const hasVatRisks = await db.schema.hasTable("vat_risks");
   if (!hasVatRisks) {
     await db.schema.createTable("vat_risks", (t) => {
