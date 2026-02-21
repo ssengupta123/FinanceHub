@@ -218,8 +218,8 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
         </Button>
       </div>
 
-      <div className="flex">
-        <div className="flex-1 p-3 border-r bg-white dark:bg-gray-950 min-h-[300px]">
+      <div className="flex items-start bg-white dark:bg-gray-950">
+        <div className="flex-1 p-3 border-r min-h-[200px]">
           <div className="space-y-2 text-[11px] leading-[1.4] text-gray-900 dark:text-gray-100">
             {report.statusSummary && (
               <BulletText text={report.statusSummary} />
@@ -280,21 +280,21 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
           </div>
         </div>
 
-        <div className="w-[140px] shrink-0 bg-white dark:bg-gray-950">
+        <div className="w-[140px] shrink-0 border-l">
           {CATEGORY_LABELS.map(({ key, label }) => {
             const status = (reportData[key] || "").toUpperCase();
             const bgColor = STATUS_BG[status] || "transparent";
             return (
               <div
                 key={key}
-                className="border-b last:border-b-0 flex items-center"
+                className="border-b last:border-b-0 flex items-center h-[36px]"
                 data-testid={`status-indicator-${key}`}
               >
-                <div className="flex-1 px-2 py-2.5 text-[10px] font-semibold text-gray-800 dark:text-gray-200 border-r">
+                <div className="flex-1 px-2 text-[10px] font-semibold text-gray-800 dark:text-gray-200">
                   {label}
                 </div>
                 <div
-                  className="w-[40px] h-full self-stretch"
+                  className="w-[36px] h-full shrink-0"
                   style={{ backgroundColor: bgColor }}
                 />
               </div>
