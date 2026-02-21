@@ -14,8 +14,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
@@ -1179,7 +1183,30 @@ function ChangeLogPanel({ reportId }: { reportId: number }) {
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
-function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: number }) {
+type ReportDraftFields = {
+  statusSummary: string;
+  openOppsSummary: string;
+  bigPlays: string;
+  approachToShortfall: string;
+  accountGoals: string;
+  relationships: string;
+  research: string;
+  otherActivities: string;
+};
+
+const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
+  { key: "statusSummary", label: "Status Summary" },
+  { key: "openOppsSummary", label: "Open Opps Summary" },
+  { key: "bigPlays", label: "Big Plays" },
+  { key: "approachToShortfall", label: "Approach to Shortfall" },
+  { key: "accountGoals", label: "Account Goals" },
+  { key: "relationships", label: "Relationships" },
+  { key: "research", label: "Research" },
+  { key: "otherActivities", label: "Other Activities" },
+];
+
+function VatAIChatbot({ vatName, reportId, onApplyContent }: { vatName: string; reportId?: number; onApplyContent?: (field: keyof ReportDraftFields, content: string) => void }) {
+  const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -1251,11 +1278,19 @@ function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: numbe
   }, [input, messages, streaming, vatName, reportId]);
 
   const quickActions = [
-    "Draft a status summary for this VAT",
-    "Summarise the open opportunities",
-    "What are the big plays?",
-    "Suggest approach to shortfall",
+    { label: "Draft full report", prompt: "Draft a complete status report for this VAT including status summary, open opportunities, big plays, and approach to shortfall. Format each section with a clear heading like **Status Summary:** followed by the content." },
+    { label: "Status summary", prompt: "Draft a status summary for this VAT with key bullet points." },
+    { label: "Open opportunities", prompt: "Summarise the open opportunities for this VAT." },
+    { label: "Big plays", prompt: "What are the big plays for this VAT?" },
+    { label: "Approach to shortfall", prompt: "Suggest an approach to the target shortfall for this VAT." },
   ];
+
+  const handleApplyToField = (content: string, field: keyof ReportDraftFields) => {
+    if (onApplyContent) {
+      onApplyContent(field, content);
+      toast({ title: `Applied to ${DRAFT_FIELD_LABELS.find(f => f.key === field)?.label || field}` });
+    }
+  };
 
   return (
     <div className="flex flex-col h-[350px]">
@@ -1266,15 +1301,15 @@ function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: numbe
             <p className="text-sm text-muted-foreground">Ask the AI to help draft your report content based on {vatName}'s pipeline data.</p>
             <div className="flex flex-wrap gap-2 justify-center">
               {quickActions.map((action, i) => (
-                <Button key={i} size="sm" variant="outline" className="text-xs" onClick={() => { setInput(action); }} data-testid={`button-quick-${i}`}>
-                  {action}
+                <Button key={i} size="sm" variant="outline" className="text-xs" onClick={() => { setInput(action.prompt); }} data-testid={`button-quick-${i}`}>
+                  {action.label}
                 </Button>
               ))}
             </div>
           </div>
         ) : (
           messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
               <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
                 msg.role === "user"
                   ? "bg-primary text-primary-foreground"
@@ -1282,6 +1317,21 @@ function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: numbe
               }`}>
                 <div className="whitespace-pre-wrap">{msg.content || (streaming && i === messages.length - 1 ? "..." : "")}</div>
               </div>
+              {msg.role === "assistant" && msg.content && !streaming && onApplyContent && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <Select onValueChange={(field) => handleApplyToField(msg.content, field as keyof ReportDraftFields)}>
+                    <SelectTrigger className="h-6 w-auto text-[10px] px-2 gap-1 border-dashed" data-testid={`button-apply-${i}`}>
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>Apply to field...</span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DRAFT_FIELD_LABELS.map(({ key, label }) => (
+                        <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           ))
         )}
@@ -1304,7 +1354,7 @@ function VatAIChatbot({ vatName, reportId }: { vatName: string; reportId?: numbe
   );
 }
 
-function VatReportView({ report, allReportsForVat, onSelectReport }: { report: VatReport; allReportsForVat: VatReport[]; onSelectReport: (r: VatReport) => void }) {
+function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteReport }: { report: VatReport; allReportsForVat: VatReport[]; onSelectReport: (r: VatReport) => void; onDeleteReport?: () => void }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
@@ -1321,6 +1371,17 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports", report.id, "changelog"] });
       toast({ title: "Report updated" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/vat-reports/${report.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
+      toast({ title: `${report.vatName} report deleted` });
+      onDeleteReport?.();
     },
   });
 
@@ -1356,17 +1417,41 @@ function VatReportView({ report, allReportsForVat, onSelectReport }: { report: V
             <Badge variant="outline" className="text-xs">{formatReportDate(report.reportDate)}</Badge>
           )}
         </div>
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button size="sm" variant="outline" data-testid="button-view-changelog"><History className="h-4 w-4 mr-1" />Change Log</Button>
-          </SheetTrigger>
-          <SheetContent>
-            <SheetHeader>
-              <SheetTitle>Change Log - {report.vatName}</SheetTitle>
-            </SheetHeader>
-            <ChangeLogPanel reportId={report.id} />
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-2">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button size="sm" variant="outline" data-testid="button-view-changelog"><History className="h-4 w-4 mr-1" />Change Log</Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Change Log - {report.vatName}</SheetTitle>
+              </SheetHeader>
+              <ChangeLogPanel reportId={report.id} />
+            </SheetContent>
+          </Sheet>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="destructive" data-testid="button-delete-report">
+                <Trash2 className="h-4 w-4 mr-1" />Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this report?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete the {report.vatName} report dated {formatReportDate(report.reportDate)} and all associated risks, action items, and planner tasks. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} data-testid="button-confirm-delete">
+                  {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  Delete Report
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1418,6 +1503,10 @@ export default function VatReportsPage() {
   const [activeVat, setActiveVat] = useState<string>("DAFF");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newReportDate, setNewReportDate] = useState(new Date().toISOString().split("T")[0]);
+  const [draftFields, setDraftFields] = useState<ReportDraftFields>({
+    statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "",
+    accountGoals: "", relationships: "", research: "", otherActivities: "",
+  });
   const [selectedReportIds, setSelectedReportIds] = useState<Record<string, number>>({});
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
@@ -1440,7 +1529,7 @@ export default function VatReportsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { vatName: string; reportDate: string }) => {
+    mutationFn: async (data: { vatName: string; reportDate: string } & Partial<ReportDraftFields>) => {
       const res = await apiRequest("POST", "/api/vat-reports", {
         ...data,
         createdBy: user?.displayName || user?.username,
@@ -1450,6 +1539,7 @@ export default function VatReportsPage() {
     onSuccess: (data: VatReport) => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       setShowCreateDialog(false);
+      setDraftFields({ statusSummary: "", openOppsSummary: "", bigPlays: "", approachToShortfall: "", accountGoals: "", relationships: "", research: "", otherActivities: "" });
       setSelectedReportIds(prev => ({ ...prev, [data.vatName]: data.id }));
       toast({ title: `${data.vatName} report created` });
     },
@@ -1505,9 +1595,10 @@ export default function VatReportsPage() {
           <DialogTrigger asChild>
             <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden">
             <DialogHeader>
               <DialogTitle>Create New VAT Report</DialogTitle>
+              <DialogDescription>Use the AI assistant to draft content, then apply it to the report fields.</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4 py-2">
               <div>
@@ -1527,16 +1618,51 @@ export default function VatReportsPage() {
               </div>
             </div>
             <Separator />
-            <div>
-              <label className="text-sm font-medium flex items-center gap-2 mb-2">
-                <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
-              </label>
-              <p className="text-xs text-muted-foreground mb-2">Ask the AI to help draft content for your report. Copy suggestions into the report after creation.</p>
-              <VatAIChatbot vatName={activeVat} reportId={latestReports[activeVat]?.id} />
+            <div className="grid grid-cols-2 gap-4 overflow-hidden">
+              <div className="flex flex-col">
+                <label className="text-sm font-medium flex items-center gap-2 mb-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />AI Assistant
+                </label>
+                <p className="text-xs text-muted-foreground mb-2">Get AI suggestions then use "Apply to field" to fill the report sections.</p>
+                <VatAIChatbot
+                  vatName={activeVat}
+                  reportId={latestReports[activeVat]?.id}
+                  onApplyContent={(field, content) => setDraftFields(prev => ({ ...prev, [field]: content }))}
+                />
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                <label className="text-sm font-medium mb-2">Report Content</label>
+                <ScrollArea className="flex-1 pr-3" style={{ maxHeight: "420px" }}>
+                  <div className="space-y-3">
+                    {DRAFT_FIELD_LABELS.map(({ key, label }) => (
+                      <div key={key}>
+                        <label className="text-xs font-bold mb-1 block flex items-center justify-between">
+                          {label}
+                          {draftFields[key] && <Badge variant="secondary" className="text-[9px] px-1 py-0">filled</Badge>}
+                        </label>
+                        <Textarea
+                          value={draftFields[key]}
+                          onChange={(e) => setDraftFields(prev => ({ ...prev, [key]: e.target.value }))}
+                          rows={3}
+                          className="text-xs font-mono"
+                          placeholder={`Enter ${label.toLowerCase()}...`}
+                          data-testid={`input-draft-${key}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
-              <Button onClick={() => createMutation.mutate({ vatName: activeVat, reportDate: newReportDate })} disabled={createMutation.isPending} data-testid="button-create-report">
+              <Button onClick={() => {
+                const nonEmptyDraft: Partial<ReportDraftFields> = {};
+                for (const [k, v] of Object.entries(draftFields)) {
+                  if (v.trim()) (nonEmptyDraft as any)[k] = v.trim();
+                }
+                createMutation.mutate({ vatName: activeVat, reportDate: newReportDate, ...nonEmptyDraft });
+              }} disabled={createMutation.isPending} data-testid="button-create-report">
                 {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                 Create Report
               </Button>
@@ -1565,6 +1691,7 @@ export default function VatReportsPage() {
                 report={latestReports[vat]!}
                 allReportsForVat={reportsByVat[vat] || []}
                 onSelectReport={(r) => setSelectedReportIds(prev => ({ ...prev, [vat]: r.id }))}
+                onDeleteReport={() => setSelectedReportIds(prev => { const next = { ...prev }; delete next[vat]; return next; })}
               />
             ) : (
               <Card>
