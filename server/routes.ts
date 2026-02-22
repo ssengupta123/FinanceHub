@@ -29,6 +29,7 @@ import {
   insertVatActionItemSchema,
   insertVatPlannerTaskSchema,
   insertVatChangeLogSchema,
+  insertVatTargetSchema,
   VAT_NAMES,
 } from "@shared/schema";
 
@@ -2229,6 +2230,60 @@ Return this exact JSON structure:
     } catch (error: any) {
       console.error("VAT AI suggest-fields error:", error);
       res.status(500).json({ message: error.message || "AI suggestion failed" });
+    }
+  });
+
+  // ─── VAT Targets ───
+  app.get("/api/vat-targets", async (req, res) => {
+    const fyYear = (req.query.fy as string) || "";
+    if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
+    const data = await storage.getVatTargetsByFy(fyYear);
+    res.json(data);
+  });
+
+  app.get("/api/vat-targets/:vatName", async (req, res) => {
+    const fyYear = (req.query.fy as string) || "";
+    if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
+    const data = await storage.getVatTargets(req.params.vatName, fyYear);
+    res.json(data);
+  });
+
+  app.post("/api/vat-targets", async (req, res) => {
+    try {
+      const parsed = insertVatTargetSchema.parse(req.body);
+      const result = await storage.upsertVatTarget(parsed);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/vat-targets/:id", async (req, res) => {
+    await storage.deleteVatTarget(Number(req.params.id));
+    res.json({ success: true });
+  });
+
+  // ─── VAT Overview ───
+  app.get("/api/vat-overview", async (req, res) => {
+    try {
+      const fyYear = (req.query.fy as string) || "";
+      if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
+      const data = await storage.getVatOverviewData(fyYear);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load overview" });
+    }
+  });
+
+  // ─── VAT List (from reference data) ───
+  app.get("/api/vats", async (_req, res) => {
+    const refVats = await db("reference_data")
+      .where({ category: "vat_category", active: true })
+      .orderBy("display_order", "asc");
+    if (refVats.length > 0) {
+      res.json(refVats.map((r: any) => ({ name: r.key, displayName: r.value, order: r.display_order })));
+    } else {
+      res.json(VAT_NAMES.map((name, i) => ({ name, displayName: name, order: i + 1 })));
     }
   });
 

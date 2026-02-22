@@ -336,6 +336,22 @@ export type ResourceCost = InsertResourceCost & { id: number };
 
 export const VAT_NAMES = ["DAFF", "SAU", "VICGov", "DISR", "Growth", "P&P", "Emerging"] as const;
 
+export const insertVatTargetSchema = z.object({
+  vatName: z.string(),
+  fyYear: z.string(),
+  metric: z.enum(["gm_contribution", "revenue", "gm_percent"]),
+  targetOk: z.string().nullable().optional(),
+  targetGood: z.string().nullable().optional(),
+  targetGreat: z.string().nullable().optional(),
+  targetAmazing: z.string().nullable().optional(),
+  q1Target: z.string().nullable().optional(),
+  q2Target: z.string().nullable().optional(),
+  q3Target: z.string().nullable().optional(),
+  q4Target: z.string().nullable().optional(),
+});
+export type InsertVatTarget = z.infer<typeof insertVatTargetSchema>;
+export type VatTarget = InsertVatTarget & { id: number };
+
 export const insertVatReportSchema = z.object({
   vatName: z.string(),
   reportDate: z.string(),

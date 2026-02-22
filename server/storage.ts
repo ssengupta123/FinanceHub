@@ -48,6 +48,8 @@ import {
   type InsertVatPlannerTask,
   type VatChangeLog,
   type InsertVatChangeLog,
+  type VatTarget,
+  type InsertVatTarget,
 } from "@shared/schema";
 
 const EMPLOYEE_FIELD_MAP_TO_DB: Record<string, string> = {
@@ -333,6 +335,17 @@ export interface IStorage {
 
   getVatChangeLogs(vatReportId: number): Promise<VatChangeLog[]>;
   createVatChangeLog(data: InsertVatChangeLog): Promise<VatChangeLog>;
+
+  getVatTargets(vatName: string, fyYear: string): Promise<VatTarget[]>;
+  getVatTargetsByFy(fyYear: string): Promise<VatTarget[]>;
+  upsertVatTarget(data: InsertVatTarget): Promise<VatTarget>;
+  deleteVatTarget(id: number): Promise<void>;
+
+  getVatOverviewData(fyYear: string): Promise<{
+    vatName: string;
+    targets: VatTarget[];
+    actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+  }[]>;
 
   getDashboardSummary(): Promise<{
     totalProjects: number;
@@ -909,6 +922,98 @@ export class DatabaseStorage implements IStorage {
   }
   async createVatChangeLog(data: InsertVatChangeLog): Promise<VatChangeLog> {
     return insertReturning<VatChangeLog>("vat_change_logs", data);
+  }
+
+  async getVatTargets(vatName: string, fyYear: string): Promise<VatTarget[]> {
+    return rowsToModels<VatTarget>(await db("vat_targets").where({ vat_name: vatName, fy_year: fyYear }));
+  }
+  async getVatTargetsByFy(fyYear: string): Promise<VatTarget[]> {
+    return rowsToModels<VatTarget>(await db("vat_targets").where({ fy_year: fyYear }));
+  }
+  async upsertVatTarget(data: InsertVatTarget): Promise<VatTarget> {
+    const existing = await db("vat_targets")
+      .where({ vat_name: data.vatName, fy_year: data.fyYear, metric: data.metric })
+      .first();
+    if (existing) {
+      const result = await updateReturning<VatTarget>("vat_targets", existing.id, data);
+      return result!;
+    }
+    return insertReturning<VatTarget>("vat_targets", data);
+  }
+  async deleteVatTarget(id: number): Promise<void> {
+    await db("vat_targets").where("id", id).del();
+  }
+
+  async getVatOverviewData(fyYear: string): Promise<{
+    vatName: string;
+    targets: VatTarget[];
+    actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+  }[]> {
+    const targets = await this.getVatTargetsByFy(fyYear);
+    const quarterFyMonths: Record<string, number[]> = {
+      Q1: [1, 2, 3],
+      Q2: [4, 5, 6],
+      Q3: [7, 8, 9],
+      Q4: [10, 11, 12],
+    };
+
+    const allProjects = await db("projects").select("id", "vat");
+    const projectsByVat: Record<string, number[]> = {};
+    for (const p of allProjects) {
+      const vat = p.vat || "Other";
+      if (!projectsByVat[vat]) projectsByVat[vat] = [];
+      projectsByVat[vat].push(p.id);
+    }
+
+    const targetModels = rowsToModels<VatTarget>(targets);
+    const vatNameSet = new Set<string>();
+    for (const t of targetModels) vatNameSet.add(t.vatName);
+    const vatNames = Array.from(vatNameSet);
+    if (vatNames.length === 0) {
+      const refVats = await db("reference_data").where({ category: "vat_category", active: true });
+      for (const rv of refVats) {
+        if (!vatNames.includes(rv.key)) vatNames.push(rv.key);
+      }
+    }
+
+    const results: {
+      vatName: string;
+      targets: VatTarget[];
+      actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+    }[] = [];
+
+    for (const vatName of vatNames) {
+      const vatTargets = targetModels.filter(t => t.vatName === vatName);
+      const projectIds = projectsByVat[vatName] || [];
+
+      const actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[] = [];
+
+      for (const [qName, months] of Object.entries(quarterFyMonths)) {
+        if (projectIds.length === 0) {
+          actuals.push({ quarter: qName, revenue: 0, gmContribution: 0, gmPercent: 0 });
+          continue;
+        }
+        const monthlyData = await db("project_monthly")
+          .join("projects", "project_monthly.project_id", "projects.id")
+          .where("projects.vat", vatName)
+          .where("project_monthly.fy_year", fyYear)
+          .whereIn("project_monthly.month", months)
+          .select(
+            db.raw("COALESCE(SUM(CAST(project_monthly.revenue AS DECIMAL(14,2))), 0) as total_revenue"),
+            db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
+          );
+
+        const revenue = parseFloat(monthlyData[0]?.total_revenue || "0");
+        const profit = parseFloat(monthlyData[0]?.total_profit || "0");
+        const gmPercent = revenue > 0 ? profit / revenue : 0;
+
+        actuals.push({ quarter: qName, revenue, gmContribution: profit, gmPercent });
+      }
+
+      results.push({ vatName, targets: vatTargets, actuals });
+    }
+
+    return results;
   }
 }
 

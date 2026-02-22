@@ -32,6 +32,7 @@ import AIInsights from "@/pages/ai-insights";
 import LoginPage from "@/pages/login";
 import AdminPage from "@/pages/admin";
 import VatReportsPage from "@/pages/vat-reports";
+import VatOverview from "@/pages/vat-overview";
 
 function Router() {
   return (
@@ -54,6 +55,7 @@ function Router() {
       <Route path="/upload" component={UploadPage} />
       <Route path="/ai-insights" component={AIInsights} />
       <Route path="/vat-reports" component={VatReportsPage} />
+      <Route path="/vat-overview" component={VatOverview} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>

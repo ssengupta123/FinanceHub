@@ -23,6 +23,7 @@ type ReferenceData = {
 
 const categoryLabels: Record<string, string> = {
   financial_target: "Financial Targets",
+  vat_financial_target: "VAT Financial Targets",
   vat_category: "VAT Categories",
   company_goal: "Company Goals",
   billing_type: "Billing Types",
@@ -178,6 +179,253 @@ function FinancialTargetsEditor({ allData, isLoading }: { allData: ReferenceData
   );
 }
 
+type VatTarget = {
+  id: number;
+  vatName: string;
+  fyYear: string;
+  metric: string;
+  targetOk: number | null;
+  targetGood: number | null;
+  targetGreat: number | null;
+  targetAmazing: number | null;
+  q1Target: number | null;
+  q2Target: number | null;
+  q3Target: number | null;
+  q4Target: number | null;
+};
+
+const vatMetrics = [
+  { key: "gm_contribution", label: "GM Contribution", type: "dollar" },
+  { key: "revenue", label: "Revenue", type: "dollar" },
+  { key: "gm_percent", label: "GM %", type: "percent" },
+] as const;
+
+const tierKeys = ["targetOk", "targetGood", "targetGreat", "targetAmazing"] as const;
+const tierLabels: Record<string, string> = {
+  targetOk: "OK",
+  targetGood: "Good",
+  targetGreat: "Great",
+  targetAmazing: "Amazing",
+};
+
+function VatFinancialTargetsEditor() {
+  const { toast } = useToast();
+  const currentFy = getCurrentFy();
+  const fyOptions = getFyOptions([
+    `${parseInt(currentFy.split("-")[0]) - 1}-${currentFy.split("-")[0]}`,
+    currentFy,
+    `${currentFy.split("-")[1]}-${String(parseInt(currentFy.split("-")[1]) + 1).padStart(2, "0")}`,
+  ]);
+  const [selectedFY, setSelectedFY] = useState(currentFy);
+  const [selectedVat, setSelectedVat] = useState("");
+  const [editValues, setEditValues] = useState<Record<string, Record<string, string>>>({});
+
+  const { data: vats = [], isLoading: vatsLoading } = useQuery<string[]>({
+    queryKey: ["/api/vats"],
+  });
+
+  const { data: existingTargets = [], isLoading: targetsLoading } = useQuery<VatTarget[]>({
+    queryKey: ["/api/vat-targets", selectedVat, { fy: selectedFY }],
+    queryFn: async () => {
+      if (!selectedVat) return [];
+      const res = await fetch(`/api/vat-targets/${encodeURIComponent(selectedVat)}?fy=${selectedFY}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    },
+    enabled: !!selectedVat,
+  });
+
+  const getExistingTarget = (metric: string): VatTarget | undefined => {
+    return existingTargets.find(t => t.metric === metric);
+  };
+
+  const getFieldValue = (metric: string, tier: string): string => {
+    const edited = editValues[metric]?.[tier];
+    if (edited !== undefined) return edited;
+    const existing = getExistingTarget(metric);
+    if (!existing) return "";
+    const val = existing[tier as keyof VatTarget];
+    return val !== null && val !== undefined ? String(val) : "";
+  };
+
+  const setFieldValue = (metric: string, tier: string, value: string) => {
+    setEditValues(prev => ({
+      ...prev,
+      [metric]: { ...(prev[metric] || {}), [tier]: value },
+    }));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: {
+      vatName: string;
+      fyYear: string;
+      metric: string;
+      targetOk: number | null;
+      targetGood: number | null;
+      targetGreat: number | null;
+      targetAmazing: number | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/vat-targets", payload);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vat-targets", selectedVat] });
+    },
+  });
+
+  const handleSaveAll = async () => {
+    if (!selectedVat) {
+      toast({ title: "Please select a VAT first", variant: "destructive" });
+      return;
+    }
+
+    let savedCount = 0;
+    for (const m of vatMetrics) {
+      const ok = getFieldValue(m.key, "targetOk");
+      const good = getFieldValue(m.key, "targetGood");
+      const great = getFieldValue(m.key, "targetGreat");
+      const amazing = getFieldValue(m.key, "targetAmazing");
+
+      if (!ok && !good && !great && !amazing) continue;
+
+      const parseVal = (v: string) => {
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      };
+
+      await saveMutation.mutateAsync({
+        vatName: selectedVat,
+        fyYear: selectedFY,
+        metric: m.key,
+        targetOk: parseVal(ok),
+        targetGood: parseVal(good),
+        targetGreat: parseVal(great),
+        targetAmazing: parseVal(amazing),
+      });
+      savedCount++;
+    }
+
+    if (savedCount > 0) {
+      toast({ title: `Saved ${savedCount} metric(s) for ${selectedVat}` });
+      setEditValues({});
+    } else {
+      toast({ title: "No values to save", variant: "destructive" });
+    }
+  };
+
+  const formatDisplay = (type: string, val: string) => {
+    const n = parseFloat(val);
+    if (isNaN(n)) return val;
+    if (type === "dollar") return `$${n.toLocaleString()}`;
+    if (type === "percent") return `${(n * 100).toFixed(1)}%`;
+    return val;
+  };
+
+  const isLoading = vatsLoading || targetsLoading;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground" />
+          <CardTitle>VAT Financial Targets</CardTitle>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={selectedFY} onValueChange={setSelectedFY}>
+            <SelectTrigger className="w-[140px]" data-testid="select-vat-target-fy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fyOptions.map(fy => (
+                <SelectItem key={fy} value={fy}>FY {fy}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedVat} onValueChange={(v) => { setSelectedVat(v); setEditValues({}); }}>
+            <SelectTrigger className="w-[200px]" data-testid="select-vat-name">
+              <SelectValue placeholder="Select VAT" />
+            </SelectTrigger>
+            <SelectContent>
+              {vats.map(v => (
+                <SelectItem key={v} value={v}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center p-4">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        ) : !selectedVat ? (
+          <p className="text-sm text-muted-foreground" data-testid="text-vat-select-prompt">
+            Select a VAT to view and edit financial targets.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="border rounded-md">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-3 text-sm font-medium">Metric</th>
+                    {tierKeys.map(t => (
+                      <th key={t} className="text-left p-3 text-sm font-medium">{tierLabels[t]}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {vatMetrics.map(m => {
+                    const existing = getExistingTarget(m.key);
+                    return (
+                      <tr key={m.key} className="border-b last:border-b-0" data-testid={`row-vat-target-${m.key}`}>
+                        <td className="p-3">
+                          <div className="text-sm font-medium">{m.label}</div>
+                          {existing && (
+                            <div className="text-xs text-muted-foreground" data-testid={`text-vat-current-${m.key}`}>
+                              Current: {tierKeys.map(t => {
+                                const v = existing[t as keyof VatTarget];
+                                return v !== null && v !== undefined ? formatDisplay(m.type, String(v)) : "-";
+                              }).join(" / ")}
+                            </div>
+                          )}
+                        </td>
+                        {tierKeys.map(t => (
+                          <td key={t} className="p-3">
+                            <Input
+                              value={getFieldValue(m.key, t)}
+                              onChange={(e) => setFieldValue(m.key, t, e.target.value)}
+                              placeholder={m.type === "percent" ? "e.g. 0.35" : "e.g. 500000"}
+                              className="max-w-[140px]"
+                              data-testid={`input-vat-target-${m.key}-${t}`}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveAll}
+                disabled={saveMutation.isPending}
+                data-testid="button-save-vat-targets"
+              >
+                {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                Save All Targets
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -238,6 +486,7 @@ export default function AdminPage() {
   };
 
   const isFinancialTarget = activeCategory === "financial_target";
+  const isVatFinancialTarget = activeCategory === "vat_financial_target";
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -262,6 +511,8 @@ export default function AdminPage() {
 
       {isFinancialTarget ? (
         <FinancialTargetsEditor allData={allData} isLoading={isLoading} />
+      ) : isVatFinancialTarget ? (
+        <VatFinancialTargetsEditor />
       ) : (
         <Card>
           <CardHeader>

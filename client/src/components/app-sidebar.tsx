@@ -68,6 +68,7 @@ const navGroups = [
       { title: "Forecasts", icon: LineChart, path: "/forecasts" },
       { title: "AI Insights", icon: Sparkles, path: "/ai-insights" },
       { title: "VAT Reports", icon: FileText, path: "/vat-reports" },
+      { title: "VAT Overview", icon: Target, path: "/vat-overview" },
     ],
   },
   {
