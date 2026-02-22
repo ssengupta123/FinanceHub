@@ -220,7 +220,7 @@ function VatFinancialTargetsEditor() {
   const [selectedVat, setSelectedVat] = useState("");
   const [editValues, setEditValues] = useState<Record<string, Record<string, string>>>({});
 
-  const { data: vats = [], isLoading: vatsLoading } = useQuery<string[]>({
+  const { data: vats = [], isLoading: vatsLoading } = useQuery<{ name: string; displayName: string; order: number }[]>({
     queryKey: ["/api/vats"],
   });
 
@@ -349,7 +349,7 @@ function VatFinancialTargetsEditor() {
             </SelectTrigger>
             <SelectContent>
               {vats.map(v => (
-                <SelectItem key={v} value={v}>{v}</SelectItem>
+                <SelectItem key={v.name} value={v.name}>{v.displayName}</SelectItem>
               ))}
             </SelectContent>
           </Select>
