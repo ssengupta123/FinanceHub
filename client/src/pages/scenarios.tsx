@@ -30,6 +30,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { FlaskConical, Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentFy } from "@/lib/fy-utils";
@@ -84,6 +85,7 @@ function riskColorClass(cls: string): string {
 
 export default function Scenarios() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: scenarios, isLoading: loadingScenarios } = useQuery<Scenario[]>({ queryKey: ["/api/scenarios"] });
   const { data: refData } = useQuery<ReferenceData[]>({ queryKey: ["/api/reference-data"] });
@@ -267,11 +269,13 @@ export default function Scenarios() {
           <Button variant="outline" size="sm" onClick={() => applyPreset("base")} data-testid="button-preset-base">Base Case</Button>
           <Button variant="outline" size="sm" onClick={() => applyPreset("optimistic")} data-testid="button-preset-optimistic">Optimistic</Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            {can("scenarios", "create") && (
             <DialogTrigger asChild>
               <Button size="sm" data-testid="button-save-scenario">
                 <Plus className="h-4 w-4 mr-1" /> Save Scenario
               </Button>
             </DialogTrigger>
+            )}
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Save Current Scenario</DialogTitle>

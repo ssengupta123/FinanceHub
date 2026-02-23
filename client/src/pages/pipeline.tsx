@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { GitBranch, Filter, Settings2, AlertTriangle, Search, ArrowUpDown } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import type { PipelineOpportunity } from "@shared/schema";
 
@@ -108,6 +109,7 @@ type SortDir = "asc" | "desc";
 const defaultVisible = new Set<PipelineColumnKey>(["name", "classification", "vat", "workType", "value", "margin", "weightedValue", "status", "dueDate", "casLead", "clientCode"]);
 
 export default function Pipeline() {
+  const { can } = useAuth();
   const [classFilter, setClassFilter] = useState("all");
   const [vatFilter, setVatFilter] = useState("all");
   const [workTypeFilter, setWorkTypeFilter] = useState("all");

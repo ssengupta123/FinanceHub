@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Users, Clock, DollarSign, ArrowUpDown } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { ResourcePlan, Employee, Project } from "@shared/schema";
 
 interface ResourceAllocation {
@@ -45,6 +46,7 @@ type SortField = "employee_name" | "project_name" | "month" | "total_hours" | "t
 
 export default function ResourcePlans() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [open, setOpen] = useState(false);
   const [employeeId, setEmployeeId] = useState("");
@@ -172,9 +174,11 @@ export default function ResourcePlans() {
             </SelectContent>
           </Select>
           <Dialog open={open} onOpenChange={setOpen}>
+            {can("resource_plans", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-resource-plan"><Plus className="mr-1 h-4 w-4" /> Add Plan</Button>
             </DialogTrigger>
+            )}
             <DialogContent>
               <DialogHeader><DialogTitle>Add Resource Plan</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">

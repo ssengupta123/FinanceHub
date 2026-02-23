@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 function formatCurrency(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "$0";
@@ -219,6 +220,7 @@ function MonthlyDetail({ projectId }: { projectId: number }) {
 export default function ProjectsList() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { can } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
@@ -352,11 +354,13 @@ export default function ProjectsList() {
         <div className="flex items-center gap-2 flex-wrap">
           <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          {can("projects", "create") && (
           <DialogTrigger asChild>
             <Button data-testid="button-add-project">
               <Plus className="mr-2 h-4 w-4" /> Add Project
             </Button>
           </DialogTrigger>
+          )}
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Project</DialogTitle>
@@ -733,6 +737,7 @@ export default function ProjectsList() {
                           </TableCell>
                         )}
                         <TableCell>
+                          {can("projects", "delete") && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -741,6 +746,7 @@ export default function ProjectsList() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                       {expandedId === project.id && (

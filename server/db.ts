@@ -657,5 +657,43 @@ export async function runIncrementalMigrations() {
     console.log("Seeded initial VAT targets for FY 25-26");
   }
 
+  const hasEmployeeUserId = await db.schema.hasColumn("employees", "user_id");
+  if (!hasEmployeeUserId) {
+    await db.schema.alterTable("employees", (t) => {
+      t.integer("user_id").nullable().references("id").inTable("users").onDelete("SET NULL");
+    });
+    console.log("Added user_id column to employees table");
+  }
+
+  const hasRolePermissions = await db.schema.hasTable("role_permissions");
+  if (!hasRolePermissions) {
+    await db.schema.createTable("role_permissions", (t) => {
+      t.increments("id").primary();
+      t.string("role", 50).notNullable();
+      t.string("resource", 100).notNullable();
+      t.string("action", 50).notNullable();
+      t.boolean("allowed").defaultTo(true);
+      t.unique(["role", "resource", "action"]);
+    });
+    console.log("Created role_permissions table");
+
+    const { DEFAULT_PERMISSIONS } = await import("@shared/schema");
+    const rows: Array<{ role: string; resource: string; action: string; allowed: boolean }> = [];
+    for (const [role, resources] of Object.entries(DEFAULT_PERMISSIONS)) {
+      for (const [resource, actions] of Object.entries(resources)) {
+        for (const action of actions) {
+          rows.push({ role, resource, action, allowed: true });
+        }
+      }
+    }
+    if (rows.length > 0) {
+      const batchSize = 50;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        await db("role_permissions").insert(rows.slice(i, i + batchSize));
+      }
+    }
+    console.log(`Seeded ${rows.length} default role permissions`);
+  }
+
   console.log("Incremental migrations completed");
 }

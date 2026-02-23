@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, FileText, Receipt, Clock, Database, AlertTriangle, CheckCircle2, CalendarClock } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { Milestone, Project, Timesheet } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined) {
@@ -149,6 +150,7 @@ function MilestoneTable({ milestones, projectMap, timesheetsByProject, showHours
 
 export default function Milestones() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"payment" | "delivery" | "all">("all");
   const [projectId, setProjectId] = useState("");
@@ -321,9 +323,11 @@ export default function Milestones() {
             </Button>
           )}
           <Dialog open={open} onOpenChange={setOpen}>
+            {can("milestones", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-milestone"><Plus className="mr-1 h-4 w-4" /> Add Milestone</Button>
             </DialogTrigger>
+            )}
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add Milestone</DialogTitle>

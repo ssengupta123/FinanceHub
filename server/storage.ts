@@ -48,6 +48,7 @@ import {
   type InsertVatPlannerTask,
   type VatChangeLog,
   type InsertVatChangeLog,
+  type RolePermission,
   type VatTarget,
   type InsertVatTarget,
 } from "@shared/schema";
@@ -375,11 +376,26 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getEmployees(): Promise<Employee[]> {
-    return rowsToModels<Employee>(await db("employees").select("*"));
+    const rows = await db("employees")
+      .leftJoin("users", "employees.user_id", "users.id")
+      .select("employees.*", "users.role as linked_user_role", "users.username as linked_user_name");
+    return rows.map((row: any) => {
+      const emp = rowToModel<Employee>(row);
+      emp.linkedUserRole = row.linked_user_role || null;
+      emp.linkedUserName = row.linked_user_name || null;
+      return emp;
+    });
   }
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const row = await db("employees").where("id", id).first();
-    return row ? rowToModel<Employee>(row) : undefined;
+    const row = await db("employees")
+      .leftJoin("users", "employees.user_id", "users.id")
+      .select("employees.*", "users.role as linked_user_role", "users.username as linked_user_name")
+      .where("employees.id", id).first();
+    if (!row) return undefined;
+    const emp = rowToModel<Employee>(row);
+    emp.linkedUserRole = row.linked_user_role || null;
+    emp.linkedUserName = row.linked_user_name || null;
+    return emp;
   }
   async getEmployeesByStatus(status: string): Promise<Employee[]> {
     return rowsToModels<Employee>(await db("employees").where("status", status));
@@ -1023,6 +1039,40 @@ export class DatabaseStorage implements IStorage {
     }
 
     return results;
+  }
+
+  async getPermissionsByRole(role: string): Promise<RolePermission[]> {
+    const rows = await db("role_permissions").where({ role });
+    return rows.map((r: any) => ({ id: r.id, role: r.role, resource: r.resource, action: r.action, allowed: !!r.allowed }));
+  }
+
+  async getAllPermissions(): Promise<RolePermission[]> {
+    const rows = await db("role_permissions");
+    return rows.map((r: any) => ({ id: r.id, role: r.role, resource: r.resource, action: r.action, allowed: !!r.allowed }));
+  }
+
+  async bulkUpdatePermissions(permissions: Array<{ role: string; resource: string; action: string; allowed: boolean }>): Promise<void> {
+    for (const p of permissions) {
+      const existing = await db("role_permissions").where({ role: p.role, resource: p.resource, action: p.action }).first();
+      if (existing) {
+        if (!p.allowed) {
+          await db("role_permissions").where({ id: existing.id }).delete();
+        }
+      } else if (p.allowed) {
+        await db("role_permissions").insert({ role: p.role, resource: p.resource, action: p.action, allowed: true });
+      }
+    }
+  }
+
+  async updateUserRole(userId: number, role: string): Promise<User | undefined> {
+    const [updated] = await db("users").where({ id: userId }).update({ role }).returning("*");
+    if (!updated) return undefined;
+    return { id: updated.id, username: updated.username, password: updated.password, role: updated.role, email: updated.email, displayName: updated.display_name };
+  }
+
+  async getAllUsers(): Promise<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>> {
+    const rows = await db("users").select("id", "username", "role", "email", "display_name");
+    return rows.map((r: any) => ({ id: r.id, username: r.username, role: r.role || "employee", email: r.email, displayName: r.display_name }));
   }
 }
 

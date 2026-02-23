@@ -15,10 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Check, X } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { Timesheet, Employee, Project } from "@shared/schema";
 
 export default function Timesheets() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [open, setOpen] = useState(false);
   const [employeeId, setEmployeeId] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -96,9 +98,11 @@ export default function Timesheets() {
         <div className="flex items-center gap-2 flex-wrap">
           <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <Dialog open={open} onOpenChange={setOpen}>
+            {can("timesheets", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-timesheet"><Plus className="mr-1 h-4 w-4" /> Add Entry</Button>
             </DialogTrigger>
+            )}
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Timesheet Entry</DialogTitle>

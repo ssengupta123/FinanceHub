@@ -44,6 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Plus, Trash2, DollarSign, Users, TrendingUp, ArrowUpDown, Clock } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 interface DerivedRate {
   role: string;
@@ -85,6 +86,7 @@ const initialForm = {
 
 export default function RateCards() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -216,11 +218,13 @@ export default function RateCards() {
             data-testid="input-filter-rates"
           />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            {can("rate_cards", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-rate-card">
                 <Plus className="mr-1 h-4 w-4" /> Add Rate Card
               </Button>
             </DialogTrigger>
+            )}
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Rate Card</DialogTitle>
@@ -442,6 +446,7 @@ export default function RateCards() {
                     <TableCell>{rc.effectiveTo || "\u2014"}</TableCell>
                     <TableCell>{rc.currency || "AUD"}</TableCell>
                     <TableCell>
+                      {can("rate_cards", "delete") && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -450,6 +455,7 @@ export default function RateCards() {
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

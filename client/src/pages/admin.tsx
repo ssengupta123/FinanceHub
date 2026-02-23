@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Trash2, Settings, Loader2, Target } from "lucide-react";
+import { Plus, Trash2, Settings, Loader2, Target, Users, Shield, Save } from "lucide-react";
 import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
+import { RESOURCE_ACTIONS, APP_ROLES } from "@shared/schema";
 
 type ReferenceData = {
   id: number;
@@ -426,9 +428,296 @@ function VatFinancialTargetsEditor() {
   );
 }
 
-export default function AdminPage() {
-  const { isAdmin } = useAuth();
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  executive: "Executive",
+  vat_lead: "VAT Lead",
+  operations: "Operations",
+  employee: "Employee",
+};
+
+const RESOURCE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  finance: "Finance",
+  utilization: "Utilisation",
+  partner_view: "Partner View",
+  vat_overview: "VAT Overview",
+  ai_insights: "AI Insights",
+  projects: "Projects",
+  resources: "Resources",
+  rate_cards: "Rate Cards",
+  resource_plans: "Resource Plans",
+  timesheets: "Timesheets",
+  costs: "Costs",
+  milestones: "Milestones",
+  pipeline: "Pipeline",
+  scenarios: "What-If Scenarios",
+  forecasts: "Forecasts",
+  vat_reports: "VAT Reports",
+  data_sources: "Data Sources",
+  upload: "Data Upload",
+  admin: "Administration",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  view: "View",
+  create: "Create",
+  edit: "Edit",
+  delete: "Delete",
+  upload: "Upload",
+  sync: "Sync",
+  manage: "Manage",
+};
+
+type PermissionRow = { id: number; role: string; resource: string; action: string; allowed: boolean };
+
+function PermissionsManager() {
   const { toast } = useToast();
+  const editableRoles = APP_ROLES.filter(r => r !== "admin");
+  const [changes, setChanges] = useState<Record<string, boolean>>({});
+  const [selectedRole, setSelectedRole] = useState<string>(editableRoles[0]);
+
+  const { data: allPerms = [], isLoading } = useQuery<PermissionRow[]>({
+    queryKey: ["/api/role-permissions"],
+  });
+
+  const permSet = new Set(allPerms.filter(p => p.allowed).map(p => `${p.role}:${p.resource}:${p.action}`));
+  for (const [key, val] of Object.entries(changes)) {
+    if (val) permSet.add(key);
+    else permSet.delete(key);
+  }
+
+  const isChecked = useCallback((role: string, resource: string, action: string) => {
+    const key = `${role}:${resource}:${action}`;
+    if (key in changes) return changes[key];
+    return permSet.has(key);
+  }, [permSet, changes]);
+
+  const toggle = useCallback((role: string, resource: string, action: string) => {
+    const key = `${role}:${resource}:${action}`;
+    const current = permSet.has(key);
+    const changeVal = changes[key];
+    if (changeVal !== undefined) {
+      const newChanges = { ...changes };
+      delete newChanges[key];
+      setChanges(newChanges);
+    } else {
+      setChanges(prev => ({ ...prev, [key]: !current }));
+    }
+  }, [permSet, changes]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const permissions = Object.entries(changes).map(([key, allowed]) => {
+        const [role, resource, action] = key.split(":");
+        return { role, resource, action, allowed };
+      });
+      await apiRequest("PUT", "/api/role-permissions", { permissions });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/role-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
+      setChanges({});
+      toast({ title: "Permissions saved successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save permissions", variant: "destructive" });
+    },
+  });
+
+  const hasChanges = Object.keys(changes).length > 0;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const resources = Object.keys(RESOURCE_ACTIONS);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Role Permissions
+          </CardTitle>
+          {hasChanges && (
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="button-save-permissions">
+              <Save className="h-4 w-4 mr-1" />
+              {saveMutation.isPending ? "Saving..." : `Save Changes (${Object.keys(changes).length})`}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {editableRoles.map(role => (
+            <Button
+              key={role}
+              variant={selectedRole === role ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedRole(role)}
+              data-testid={`button-role-tab-${role}`}
+            >
+              {ROLE_LABELS[role] || role}
+            </Button>
+          ))}
+        </div>
+
+        <div className="border rounded-md overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="text-left p-3 text-sm font-medium min-w-[160px]">Page / Resource</th>
+                {["view", "create", "edit", "delete", "upload", "sync", "manage"].map(action => (
+                  <th key={action} className="text-center p-3 text-sm font-medium min-w-[70px]">
+                    {ACTION_LABELS[action]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {resources.map(resource => {
+                const availableActions = RESOURCE_ACTIONS[resource] || [];
+                return (
+                  <tr key={resource} className="border-b last:border-b-0 hover:bg-muted/30" data-testid={`row-perm-${resource}`}>
+                    <td className="p-3 text-sm font-medium">{RESOURCE_LABELS[resource] || resource}</td>
+                    {["view", "create", "edit", "delete", "upload", "sync", "manage"].map(action => (
+                      <td key={action} className="p-3 text-center">
+                        {availableActions.includes(action) ? (
+                          <Checkbox
+                            checked={isChecked(selectedRole, resource, action)}
+                            onCheckedChange={() => toggle(selectedRole, resource, action)}
+                            data-testid={`checkbox-${selectedRole}-${resource}-${action}`}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+type UserRow = { id: number; username: string; role: string; email: string | null; displayName: string | null };
+
+function UserRoleManager() {
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+
+  const { data: users = [], isLoading } = useQuery<UserRow[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: number; role: string }) => {
+      await apiRequest("PATCH", `/api/users/${userId}/role`, { role });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "User role updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update role", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          User Roles
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="border rounded-md">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="text-left p-3 text-sm font-medium">User</th>
+                <th className="text-left p-3 text-sm font-medium">Email</th>
+                <th className="text-left p-3 text-sm font-medium">Current Role</th>
+                <th className="text-left p-3 text-sm font-medium">Change Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} className="border-b last:border-b-0" data-testid={`row-user-${u.id}`}>
+                  <td className="p-3 text-sm">
+                    {u.displayName || u.username}
+                    {u.id === currentUser?.id && (
+                      <Badge variant="outline" className="ml-2 text-xs">You</Badge>
+                    )}
+                  </td>
+                  <td className="p-3 text-sm text-muted-foreground">{u.email || "—"}</td>
+                  <td className="p-3">
+                    <Badge variant={u.role === "admin" ? "default" : "secondary"}>
+                      {ROLE_LABELS[u.role] || u.role}
+                    </Badge>
+                  </td>
+                  <td className="p-3">
+                    {u.id !== currentUser?.id ? (
+                      <Select
+                        value={u.role}
+                        onValueChange={(value) => updateRoleMutation.mutate({ userId: u.id, role: value })}
+                      >
+                        <SelectTrigger className="w-[160px]" data-testid={`select-role-${u.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {APP_ROLES.map(role => (
+                            <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Cannot change own role</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-4 text-center text-muted-foreground text-sm">No users found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function AdminPage() {
+  const { isAdmin, can } = useAuth();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"reference" | "permissions" | "users">("reference");
   const [activeCategory, setActiveCategory] = useState("financial_target");
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
@@ -463,7 +752,7 @@ export default function AdminPage() {
     },
   });
 
-  if (!isAdmin) {
+  if (!isAdmin && !can("admin", "view")) {
     return (
       <div className="flex-1 overflow-auto p-6">
         <Card>
@@ -492,24 +781,61 @@ export default function AdminPage() {
     <div className="flex-1 overflow-auto p-6 space-y-6">
       <div className="flex items-center gap-2 flex-wrap">
         <Settings className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-bold" data-testid="text-admin-title">Reference Data Management</h1>
+        <h1 className="text-2xl font-bold" data-testid="text-admin-title">Administration</h1>
         <Badge variant="secondary">Admin</Badge>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
-        {categories.map((cat) => (
-          <Button
-            key={cat}
-            variant={activeCategory === cat ? "default" : "outline"}
-            onClick={() => setActiveCategory(cat)}
-            data-testid={`button-category-${cat}`}
-          >
-            {categoryLabels[cat]}
-          </Button>
-        ))}
+      <div className="flex gap-2 flex-wrap border-b pb-3">
+        <Button
+          variant={activeTab === "reference" ? "default" : "ghost"}
+          onClick={() => setActiveTab("reference")}
+          data-testid="button-tab-reference"
+        >
+          <Settings className="h-4 w-4 mr-1" />
+          Reference Data
+        </Button>
+        {isAdmin && (
+          <>
+            <Button
+              variant={activeTab === "permissions" ? "default" : "ghost"}
+              onClick={() => setActiveTab("permissions")}
+              data-testid="button-tab-permissions"
+            >
+              <Shield className="h-4 w-4 mr-1" />
+              Permissions
+            </Button>
+            <Button
+              variant={activeTab === "users" ? "default" : "ghost"}
+              onClick={() => setActiveTab("users")}
+              data-testid="button-tab-users"
+            >
+              <Users className="h-4 w-4 mr-1" />
+              User Roles
+            </Button>
+          </>
+        )}
       </div>
 
-      {isFinancialTarget ? (
+      {activeTab === "permissions" && isAdmin && <PermissionsManager />}
+      {activeTab === "users" && isAdmin && <UserRoleManager />}
+
+      {activeTab === "reference" && (
+        <>
+          <div className="flex gap-2 flex-wrap">
+            {categories.map((cat) => (
+              <Button
+                key={cat}
+                variant={activeCategory === cat ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveCategory(cat)}
+                data-testid={`button-category-${cat}`}
+              >
+                {categoryLabels[cat]}
+              </Button>
+            ))}
+          </div>
+
+          {isFinancialTarget ? (
         <FinancialTargetsEditor allData={allData} isLoading={isLoading} />
       ) : isVatFinancialTarget ? (
         <VatFinancialTargetsEditor />
@@ -548,14 +874,16 @@ export default function AdminPage() {
                             </Badge>
                           </td>
                           <td className="p-3 text-right">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => deleteMutation.mutate(item.id)}
-                              data-testid={`button-delete-ref-${item.id}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {can("admin", "manage") && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => deleteMutation.mutate(item.id)}
+                                data-testid={`button-delete-ref-${item.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -589,15 +917,19 @@ export default function AdminPage() {
                       data-testid="input-ref-value"
                     />
                   </div>
-                  <Button onClick={handleAdd} disabled={createMutation.isPending} data-testid="button-add-ref">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add
-                  </Button>
+                  {can("admin", "manage") && (
+                    <Button onClick={handleAdd} disabled={createMutation.isPending} data-testid="button-add-ref">
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
+      )}
+        </>
       )}
     </div>
   );

@@ -72,7 +72,7 @@ export default function UploadPage() {
   const [deleteResult, setDeleteResult] = useState<{ message: string; counts: Record<string, number> } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
 
   async function handleDeleteAll() {
     setDeleting(true);
@@ -188,7 +188,7 @@ export default function UploadPage() {
           <h1 className="text-2xl font-bold" data-testid="text-upload-title">Data Upload</h1>
           <p className="text-muted-foreground text-sm">Upload the raw KPI Excel file to import data into the system</p>
         </div>
-        {isAdmin && (
+        {can("admin", "manage") && (
           <Button
             variant="destructive"
             onClick={() => setShowDeleteConfirm(true)}
@@ -388,13 +388,15 @@ export default function UploadPage() {
                 <p className="text-sm text-muted-foreground">
                   {selectedSheets.size} of {Object.keys(IMPORTABLE_SHEETS).filter(k => sheets.some(s => s.name === k)).length} importable sheets selected
                 </p>
-                <Button
-                  onClick={handleImport}
-                  disabled={importing || selectedSheets.size === 0}
-                  data-testid="button-import"
-                >
-                  {importing ? "Importing..." : `Import ${selectedSheets.size} Sheet${selectedSheets.size !== 1 ? "s" : ""}`}
-                </Button>
+                {can("upload", "upload") && (
+                  <Button
+                    onClick={handleImport}
+                    disabled={importing || selectedSheets.size === 0}
+                    data-testid="button-import"
+                  >
+                    {importing ? "Importing..." : `Import ${selectedSheets.size} Sheet${selectedSheets.size !== 1 ? "s" : ""}`}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -524,6 +526,7 @@ function VatPptxUpload() {
   const [deleting, setDeleting] = useState(false);
   const pptxInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { can } = useAuth();
 
   async function handleDeleteAll() {
     setDeleting(true);
@@ -671,7 +674,7 @@ function VatPptxUpload() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : can("admin", "manage") ? (
             <div className="mb-4">
               <Button
                 variant="outline"
@@ -685,7 +688,7 @@ function VatPptxUpload() {
               </Button>
               <p className="text-xs text-muted-foreground mt-1">Clear existing reports before importing to avoid duplicates</p>
             </div>
-          )}
+          ) : null}
 
           {!pptxFile ? (
             <div
@@ -808,13 +811,15 @@ function VatPptxUpload() {
               <p className="text-sm text-muted-foreground">
                 {selectedVats.size} of {previews.length} VAT reports selected
               </p>
-              <Button
-                onClick={handlePptxImport}
-                disabled={importing || selectedVats.size === 0}
-                data-testid="button-import-pptx"
-              >
-                {importing ? "Importing..." : `Import ${selectedVats.size} VAT Report${selectedVats.size !== 1 ? "s" : ""}`}
-              </Button>
+              {can("upload", "upload") && (
+                <Button
+                  onClick={handlePptxImport}
+                  disabled={importing || selectedVats.size === 0}
+                  data-testid="button-import-pptx"
+                >
+                  {importing ? "Importing..." : `Import ${selectedVats.size} VAT Report${selectedVats.size !== 1 ? "s" : ""}`}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, DollarSign, TrendingUp, BarChart3, ArrowUpDown } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { Cost, Project } from "@shared/schema";
 
 interface CostSummary {
@@ -54,6 +55,7 @@ type SortField = "project_name" | "month" | "total_cost" | "total_revenue" | "ma
 
 export default function Costs() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [open, setOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [category, setCategory] = useState("");
@@ -194,9 +196,11 @@ export default function Costs() {
             </SelectContent>
           </Select>
           <Dialog open={open} onOpenChange={setOpen}>
+            {can("costs", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-cost"><Plus className="mr-1 h-4 w-4" /> Add Manual Cost</Button>
             </DialogTrigger>
+            )}
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add Cost Entry</DialogTitle>
