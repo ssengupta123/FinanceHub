@@ -111,24 +111,27 @@ export default function VatOverview() {
     const revTarget = getTargetForMetric(vatData, "revenue");
     const gmpTarget = getTargetForMetric(vatData, "gm_percent");
 
-    return cumActuals.map((ca, i) => ({
-      quarter: QUARTER_LABELS[i],
-      actualGm: ca.gmContribution,
-      actualRev: ca.revenue,
-      actualGmP: ca.gmPercent,
-      targetOkGm: Number(gmTarget?.targetOk || 0) * ((i + 1) / 4),
-      targetGoodGm: Number(gmTarget?.targetGood || 0) * ((i + 1) / 4),
-      targetGreatGm: Number(gmTarget?.targetGreat || 0) * ((i + 1) / 4),
-      targetAmazingGm: Number(gmTarget?.targetAmazing || 0) * ((i + 1) / 4),
-      targetOkRev: Number(revTarget?.targetOk || 0) * ((i + 1) / 4),
-      targetGoodRev: Number(revTarget?.targetGood || 0) * ((i + 1) / 4),
-      targetGreatRev: Number(revTarget?.targetGreat || 0) * ((i + 1) / 4),
-      targetAmazingRev: Number(revTarget?.targetAmazing || 0) * ((i + 1) / 4),
-      targetOkGmP: Number(gmpTarget?.targetOk || 0),
-      targetGoodGmP: Number(gmpTarget?.targetGood || 0),
-      targetGreatGmP: Number(gmpTarget?.targetGreat || 0),
-      targetAmazingGmP: Number(gmpTarget?.targetAmazing || 0),
-    }));
+    return cumActuals.map((ca, i) => {
+      const hasData = i <= currentQuarterIndex;
+      return {
+        quarter: QUARTER_LABELS[i],
+        actualGm: hasData ? ca.gmContribution : null,
+        actualRev: hasData ? ca.revenue : null,
+        actualGmP: hasData ? ca.gmPercent : null,
+        targetOkGm: Number(gmTarget?.targetOk || 0) * ((i + 1) / 4),
+        targetGoodGm: Number(gmTarget?.targetGood || 0) * ((i + 1) / 4),
+        targetGreatGm: Number(gmTarget?.targetGreat || 0) * ((i + 1) / 4),
+        targetAmazingGm: Number(gmTarget?.targetAmazing || 0) * ((i + 1) / 4),
+        targetOkRev: Number(revTarget?.targetOk || 0) * ((i + 1) / 4),
+        targetGoodRev: Number(revTarget?.targetGood || 0) * ((i + 1) / 4),
+        targetGreatRev: Number(revTarget?.targetGreat || 0) * ((i + 1) / 4),
+        targetAmazingRev: Number(revTarget?.targetAmazing || 0) * ((i + 1) / 4),
+        targetOkGmP: Number(gmpTarget?.targetOk || 0),
+        targetGoodGmP: Number(gmpTarget?.targetGood || 0),
+        targetGreatGmP: Number(gmpTarget?.targetGreat || 0),
+        targetAmazingGmP: Number(gmpTarget?.targetAmazing || 0),
+      };
+    });
   };
 
   const getTotalYtd = (vatData: VatOverviewData) => {
