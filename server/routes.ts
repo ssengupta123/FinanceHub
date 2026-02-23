@@ -1030,14 +1030,42 @@ export async function registerRoutes(
     res.json(users);
   });
 
-  app.patch("/api/users/:id/role", requireAuth, async (req, res) => {
-    const role = (req.session as any).role || "employee";
-    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+  app.patch("/api/users/:id/role", requirePermission("admin", "manage"), async (req, res) => {
     const { role: newRole } = req.body;
     if (!APP_ROLES.includes(newRole)) return res.status(400).json({ message: "Invalid role" });
     const updated = await storage.updateUserRole(Number(req.params.id), newRole);
     if (!updated) return res.status(404).json({ message: "User not found" });
     res.json({ success: true, role: newRole });
+  });
+
+  app.post("/api/employees/:id/create-user", requirePermission("admin", "manage"), async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const employee = await storage.getEmployee(employeeId);
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
+    if (employee.userId) return res.status(400).json({ message: "Employee already has a linked user" });
+
+    const { username, role: userRole } = req.body;
+    if (!username || typeof username !== "string" || username.trim().length === 0) {
+      return res.status(400).json({ message: "Username is required" });
+    }
+    if (!APP_ROLES.includes(userRole)) return res.status(400).json({ message: "Invalid role" });
+
+    const existing = await storage.getUserByUsername(username.trim());
+    if (existing) return res.status(400).json({ message: "Username already exists" });
+
+    const bcrypt = await import("bcryptjs");
+    const crypto = await import("crypto");
+    const randomPassword = crypto.randomBytes(16).toString("hex");
+    const tempPassword = await bcrypt.hash(randomPassword, 10);
+    const newUser = await storage.createUser({
+      username: username.trim(),
+      password: tempPassword,
+      role: userRole,
+      email: employee.email || undefined,
+      displayName: `${employee.firstName} ${employee.lastName}`,
+    });
+    await storage.updateEmployee(employeeId, { userId: newUser.id });
+    res.json({ success: true, userId: newUser.id });
   });
 
   // ─── Azure AD SSO ───
