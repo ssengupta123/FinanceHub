@@ -447,3 +447,93 @@ export const insertMessageSchema = z.object({
 });
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = { id: number; conversationId: number; role: string; content: string; createdAt: Date };
+
+export const APP_ROLES = ["admin", "executive", "vat_lead", "operations", "employee"] as const;
+export type AppRole = (typeof APP_ROLES)[number];
+
+export const RESOURCES = [
+  "dashboard", "finance", "utilization", "partner_view", "vat_overview", "ai_insights",
+  "projects", "resources", "rate_cards", "resource_plans", "timesheets", "costs",
+  "milestones", "pipeline", "scenarios", "forecasts", "vat_reports",
+  "data_sources", "upload", "admin",
+] as const;
+export type Resource = (typeof RESOURCES)[number];
+
+export const ACTIONS = ["view", "create", "edit", "delete", "upload", "sync", "manage"] as const;
+export type Action = (typeof ACTIONS)[number];
+
+export const RESOURCE_ACTIONS: Record<string, string[]> = {
+  dashboard: ["view"],
+  finance: ["view"],
+  utilization: ["view"],
+  partner_view: ["view"],
+  vat_overview: ["view"],
+  ai_insights: ["view"],
+  projects: ["view", "create", "edit", "delete"],
+  resources: ["view", "create", "edit", "delete"],
+  rate_cards: ["view", "create", "edit", "delete"],
+  resource_plans: ["view", "create", "edit", "delete"],
+  timesheets: ["view", "create", "edit", "delete"],
+  costs: ["view", "create", "delete"],
+  milestones: ["view", "create", "edit", "delete"],
+  pipeline: ["view", "create", "delete"],
+  scenarios: ["view", "create", "delete"],
+  forecasts: ["view", "create"],
+  vat_reports: ["view", "create", "edit", "delete"],
+  data_sources: ["view", "create", "edit", "sync"],
+  upload: ["view", "upload"],
+  admin: ["view", "manage"],
+};
+
+export const insertRolePermissionSchema = z.object({
+  role: z.string(),
+  resource: z.string(),
+  action: z.string(),
+  allowed: z.boolean().default(true),
+});
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = InsertRolePermission & { id: number };
+
+export const DEFAULT_PERMISSIONS: Record<string, Record<string, string[]>> = {
+  executive: {
+    dashboard: ["view"], finance: ["view"], utilization: ["view"],
+    partner_view: ["view"], vat_overview: ["view"], ai_insights: ["view"],
+    projects: ["view"], resources: ["view"], rate_cards: ["view"],
+    resource_plans: ["view"], timesheets: ["view"], costs: ["view"],
+    milestones: ["view"], pipeline: ["view"], scenarios: ["view", "create", "delete"],
+    forecasts: ["view"], vat_reports: ["view"],
+    data_sources: ["view"], upload: ["view"], admin: ["view"],
+  },
+  vat_lead: {
+    dashboard: ["view"], finance: ["view"], utilization: ["view"],
+    partner_view: ["view"], vat_overview: ["view"], ai_insights: ["view"],
+    projects: ["view", "edit"], resources: ["view"],
+    rate_cards: ["view"], resource_plans: ["view"],
+    timesheets: ["view"], costs: ["view"],
+    milestones: ["view", "create", "edit"], pipeline: ["view", "create", "delete"],
+    scenarios: ["view", "create", "delete"], forecasts: ["view", "create"],
+    vat_reports: ["view", "create", "edit", "delete"],
+    data_sources: ["view"], upload: ["view"],
+  },
+  operations: {
+    dashboard: ["view"], finance: ["view"], utilization: ["view"],
+    partner_view: ["view"], vat_overview: ["view"], ai_insights: ["view"],
+    projects: ["view", "create", "edit", "delete"],
+    resources: ["view", "create", "edit", "delete"],
+    rate_cards: ["view", "create", "edit", "delete"],
+    resource_plans: ["view", "create", "edit", "delete"],
+    timesheets: ["view", "create", "edit", "delete"],
+    costs: ["view", "create", "delete"],
+    milestones: ["view", "create", "edit", "delete"],
+    pipeline: ["view", "create", "delete"],
+    scenarios: ["view", "create", "delete"],
+    forecasts: ["view", "create"],
+    vat_reports: ["view"], data_sources: ["view", "create", "edit", "sync"],
+    upload: ["view", "upload"],
+  },
+  employee: {
+    dashboard: ["view"], finance: ["view"], utilization: ["view"],
+    projects: ["view"], resources: ["view"], timesheets: ["view"],
+    milestones: ["view"], vat_overview: ["view"],
+  },
+};

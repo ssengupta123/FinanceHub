@@ -39,52 +39,60 @@ const navGroups = [
   {
     label: "Overview",
     items: [
-      { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-      { title: "Finance", icon: TrendingUp, path: "/finance" },
-      { title: "Utilisation", icon: BarChart3, path: "/utilization" },
-      { title: "Partner View", icon: Handshake, path: "/partner-view" },
+      { title: "Dashboard", icon: LayoutDashboard, path: "/", resource: "dashboard" },
+      { title: "Finance", icon: TrendingUp, path: "/finance", resource: "finance" },
+      { title: "Utilisation", icon: BarChart3, path: "/utilization", resource: "utilization" },
+      { title: "Partner View", icon: Handshake, path: "/partner-view", resource: "partner_view" },
     ],
   },
   {
     label: "Management",
     items: [
-      { title: "Projects", icon: FolderOpen, path: "/projects" },
-      { title: "Resources", icon: Users, path: "/resources" },
-      { title: "Rate Cards", icon: CreditCard, path: "/rate-cards" },
+      { title: "Projects", icon: FolderOpen, path: "/projects", resource: "projects" },
+      { title: "Resources", icon: Users, path: "/resources", resource: "resources" },
+      { title: "Rate Cards", icon: CreditCard, path: "/rate-cards", resource: "rate_cards" },
     ],
   },
   {
     label: "Operations",
     items: [
-      { title: "Resource Plans", icon: Calendar, path: "/resource-plans" },
-      { title: "Timesheets", icon: Clock, path: "/timesheets" },
-      { title: "Costs", icon: Receipt, path: "/costs" },
-      { title: "Milestones", icon: Target, path: "/milestones" },
+      { title: "Resource Plans", icon: Calendar, path: "/resource-plans", resource: "resource_plans" },
+      { title: "Timesheets", icon: Clock, path: "/timesheets", resource: "timesheets" },
+      { title: "Costs", icon: Receipt, path: "/costs", resource: "costs" },
+      { title: "Milestones", icon: Target, path: "/milestones", resource: "milestones" },
     ],
   },
   {
     label: "Pipeline & Forecast",
     items: [
-      { title: "Pipeline", icon: GitBranch, path: "/pipeline" },
-      { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios" },
-      { title: "Forecasts", icon: LineChart, path: "/forecasts" },
-      { title: "AI Insights", icon: Sparkles, path: "/ai-insights" },
-      { title: "VAT Reports", icon: FileText, path: "/vat-reports" },
-      { title: "VAT Overview", icon: Target, path: "/vat-overview" },
+      { title: "Pipeline", icon: GitBranch, path: "/pipeline", resource: "pipeline" },
+      { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios", resource: "scenarios" },
+      { title: "Forecasts", icon: LineChart, path: "/forecasts", resource: "forecasts" },
+      { title: "AI Insights", icon: Sparkles, path: "/ai-insights", resource: "ai_insights" },
+      { title: "VAT Reports", icon: FileText, path: "/vat-reports", resource: "vat_reports" },
+      { title: "VAT Overview", icon: Target, path: "/vat-overview", resource: "vat_overview" },
     ],
   },
   {
     label: "Admin",
     items: [
-      { title: "Data Sources", icon: Database, path: "/data-sources" },
-      { title: "Data Upload", icon: Upload, path: "/upload" },
+      { title: "Data Sources", icon: Database, path: "/data-sources", resource: "data_sources" },
+      { title: "Data Upload", icon: Upload, path: "/upload", resource: "upload" },
     ],
   },
 ];
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  executive: "Executive",
+  vat_lead: "VAT Lead",
+  operations: "Operations",
+  employee: "Employee",
+};
+
 export function AppSidebar() {
   const [location] = useLocation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, can, user } = useAuth();
 
   return (
     <Sidebar>
@@ -102,35 +110,39 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent>
-        {navGroups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={location === item.path}>
-                      <Link href={item.path} data-testid={`link-${item.path.replace(/\//g, "").replace(/-/g, "-") || "dashboard"}`}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-        {isAdmin && (
+        {navGroups.map((group) => {
+          const visibleItems = group.items.filter(item => can(item.resource, "view"));
+          if (visibleItems.length === 0) return null;
+          return (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton asChild isActive={location === item.path}>
+                        <Link href={item.path} data-testid={`link-${item.path.replace(/\//g, "").replace(/-/g, "-") || "dashboard"}`}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
+        {(isAdmin || can("admin", "view")) && (
           <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupLabel>Settings</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={location === "/admin"}>
                     <Link href="/admin" data-testid="link-admin">
                       <Shield className="h-4 w-4" />
-                      <span>Reference Data</span>
+                      <span>Administration</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -140,9 +152,16 @@ export function AppSidebar() {
         )}
       </SidebarContent>
       <SidebarFooter className="p-3">
-        <p className="text-xs text-muted-foreground text-center">
-          v1.0 — Azure Ready
-        </p>
+        <div className="text-center">
+          {user && (
+            <p className="text-xs text-muted-foreground" data-testid="text-user-role">
+              {ROLE_LABELS[user.role] || user.role}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            v1.0 — Azure Ready
+          </p>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

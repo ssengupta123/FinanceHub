@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ function sourceIcon(type: string) {
 
 export default function DataSources() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const { data: dataSources, isLoading } = useQuery<DataSource[]>({ queryKey: ["/api/data-sources"] });
 
   const syncMutation = useMutation({
@@ -107,7 +109,7 @@ export default function DataSources() {
           <h1 className="text-2xl font-semibold" data-testid="text-data-sources-title">Data Sources</h1>
           <p className="text-sm text-muted-foreground">Manage and monitor external data connections</p>
         </div>
-        {(!dataSources || dataSources.length === 0) && !isLoading && (
+        {(!dataSources || dataSources.length === 0) && !isLoading && can("data_sources", "create") && (
           <Button
             variant="outline"
             onClick={() => seedMutation.mutate()}
@@ -176,17 +178,19 @@ export default function DataSources() {
             <Database className="h-10 w-10 mx-auto mb-3 opacity-40" />
             <p className="font-medium">No data sources configured</p>
             <p className="text-sm mt-1">Set up connections to SharePoint, iTimesheets, and Employment Hero to start syncing data.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => seedMutation.mutate()}
-              disabled={seedMutation.isPending}
-              data-testid="button-seed-datasources-empty"
-            >
-              <Database className="mr-1 h-4 w-4" />
-              {seedMutation.isPending ? "Creating..." : "Configure Data Sources"}
-            </Button>
+            {can("data_sources", "create") && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => seedMutation.mutate()}
+                disabled={seedMutation.isPending}
+                data-testid="button-seed-datasources-empty"
+              >
+                <Database className="mr-1 h-4 w-4" />
+                {seedMutation.isPending ? "Creating..." : "Configure Data Sources"}
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -278,16 +282,18 @@ export default function DataSources() {
                   )}
 
                   <div className="flex gap-2 flex-wrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={syncMutation.isPending}
-                      onClick={() => syncMutation.mutate(ds.id)}
-                      data-testid={`button-sync-${ds.id}`}
-                    >
-                      <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending && syncMutation.variables === ds.id ? "animate-spin" : ""}`} />
-                      {syncMutation.isPending && syncMutation.variables === ds.id ? "Syncing..." : "Sync Now"}
-                    </Button>
+                    {can("data_sources", "sync") && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={syncMutation.isPending}
+                        onClick={() => syncMutation.mutate(ds.id)}
+                        data-testid={`button-sync-${ds.id}`}
+                      >
+                        <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending && syncMutation.variables === ds.id ? "animate-spin" : ""}`} />
+                        {syncMutation.isPending && syncMutation.variables === ds.id ? "Syncing..." : "Sync Now"}
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

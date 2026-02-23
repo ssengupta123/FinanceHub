@@ -51,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Plus, Trash2, Users, UserCheck, UserMinus, DollarSign, Search, Settings2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 function statusVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
@@ -137,6 +138,7 @@ const initialForm = {
 
 export default function Resources() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
@@ -289,11 +291,13 @@ export default function Resources() {
             </DropdownMenuContent>
           </DropdownMenu>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            {can("resources", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-employee">
                 <Plus className="mr-2 h-4 w-4" /> Add Employee
               </Button>
             </DialogTrigger>
+            )}
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Employee</DialogTitle>
@@ -560,6 +564,7 @@ export default function Resources() {
                         <Badge variant={statusVariant(emp.status)} data-testid={`badge-employee-status-${emp.id}`}>{emp.status}</Badge>
                       </TableCell>}
                       <TableCell>
+                        {can("resources", "delete") && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -568,6 +573,7 @@ export default function Resources() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   )) : (

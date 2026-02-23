@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { Forecast, Project, ProjectMonthly } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined) {
@@ -49,6 +50,7 @@ type VarianceRow = {
 
 export default function Forecasts() {
   const { toast } = useToast();
+  const { can } = useAuth();
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [open, setOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"forecasts" | "variance">("variance");
@@ -212,11 +214,13 @@ export default function Forecasts() {
             Forecasts
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
+            {can("forecasts", "create") && (
             <DialogTrigger asChild>
               <Button data-testid="button-add-forecast">
                 <Plus className="mr-1 h-4 w-4" /> Add Forecast
               </Button>
             </DialogTrigger>
+            )}
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add Forecast</DialogTitle>

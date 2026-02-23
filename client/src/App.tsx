@@ -64,8 +64,16 @@ function Router() {
   );
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  executive: "Executive",
+  vat_lead: "VAT Lead",
+  operations: "Operations",
+  employee: "Employee",
+};
+
 function AuthenticatedApp() {
-  const { user, logoutMutation, isAdmin } = useAuth();
+  const { user, logoutMutation } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
@@ -83,7 +91,7 @@ function AuthenticatedApp() {
               {user && (
                 <span className="text-sm text-muted-foreground" data-testid="text-current-user">
                   {user.displayName || user.username}
-                  {isAdmin && " (Admin)"}
+                  {user.role && ` (${ROLE_LABELS[user.role] || user.role})`}
                 </span>
               )}
               <ThemeToggle />

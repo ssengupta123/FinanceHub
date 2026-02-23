@@ -107,6 +107,7 @@ function BulletText({ text }: { text: string | null | undefined }) {
 }
 
 function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpdate: (data: Partial<VatReport>) => void }) {
+  const { can } = useAuth();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     overallStatus: report.overallStatus || "",
@@ -140,7 +141,9 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
           <span className="font-semibold text-sm">Editing Status Overview</span>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setEditing(false)} data-testid="button-cancel-edit">Cancel</Button>
-            <Button size="sm" onClick={handleSave} className="bg-white text-teal-800 hover:bg-gray-100" data-testid="button-save-status"><Save className="h-4 w-4 mr-1" />Save</Button>
+            {can("vat_reports", "edit") && (
+              <Button size="sm" onClick={handleSave} className="bg-white text-teal-800 hover:bg-gray-100" data-testid="button-save-status"><Save className="h-4 w-4 mr-1" />Save</Button>
+            )}
           </div>
         </div>
         <div className="p-4 space-y-4 bg-white dark:bg-gray-950">
@@ -224,9 +227,11 @@ function VatReportStatusSection({ report, onUpdate }: { report: VatReport; onUpd
             {overallStatus || "NOT SET"}
           </span>
         </div>
-        <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-status">
-          <Edit2 className="h-3 w-3 mr-1" />Edit
-        </Button>
+        {can("vat_reports", "edit") && (
+          <Button size="sm" variant="ghost" className="text-white hover:bg-white/20 h-7 text-xs" onClick={() => setEditing(true)} data-testid="button-edit-status">
+            <Edit2 className="h-3 w-3 mr-1" />Edit
+          </Button>
+        )}
       </div>
 
       <div className="flex items-start bg-white dark:bg-gray-950">
@@ -499,7 +504,7 @@ function RiskEditDialog({ risk, isNew, employees, onSave, onCancel, isPending }:
 }
 
 function RisksTable({ reportId }: { reportId: number }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -601,12 +606,16 @@ function RisksTable({ reportId }: { reportId: number }) {
         <TableCell className="text-xs max-w-[200px]">{risk.comments || "—"}</TableCell>
         <TableCell>
           <div className="flex gap-1">
-            <Button size="sm" variant="ghost" onClick={() => startEdit(risk)} data-testid={`button-edit-risk-${risk.id}`}>
-              <Edit2 className="h-3 w-3" />
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(risk.id)} data-testid={`button-delete-risk-${risk.id}`}>
-              <Trash2 className="h-3 w-3 text-destructive" />
-            </Button>
+            {can("vat_reports", "edit") && (
+              <Button size="sm" variant="ghost" onClick={() => startEdit(risk)} data-testid={`button-edit-risk-${risk.id}`}>
+                <Edit2 className="h-3 w-3" />
+              </Button>
+            )}
+            {can("vat_reports", "delete") && (
+              <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(risk.id)} data-testid={`button-delete-risk-${risk.id}`}>
+                <Trash2 className="h-3 w-3 text-destructive" />
+              </Button>
+            )}
           </div>
         </TableCell>
       </TableRow>
@@ -656,7 +665,9 @@ function RisksTable({ reportId }: { reportId: number }) {
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Risks & Issues</CardTitle>
-          <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-risk"><Plus className="h-4 w-4 mr-1" />Add Risk/Issue</Button>
+          {can("vat_reports", "create") && (
+            <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-risk"><Plus className="h-4 w-4 mr-1" />Add Risk/Issue</Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -687,7 +698,7 @@ function RisksTable({ reportId }: { reportId: number }) {
 }
 
 function PlannerTasksTable({ reportId }: { reportId: number }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -770,10 +781,14 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Planner Status</CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => { setShowSync(!showSync); setSyncInsights(null); }} data-testid="button-sync-planner">
-              <Loader2 className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />Sync with Planner
-            </Button>
-            <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-planner-task"><Plus className="h-4 w-4 mr-1" />Add Task</Button>
+            {can("vat_reports", "edit") && (
+              <Button size="sm" variant="outline" onClick={() => { setShowSync(!showSync); setSyncInsights(null); }} data-testid="button-sync-planner">
+                <Loader2 className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />Sync with Planner
+              </Button>
+            )}
+            {can("vat_reports", "create") && (
+              <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-planner-task"><Plus className="h-4 w-4 mr-1" />Add Task</Button>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -895,12 +910,16 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
                       <TableCell><StatusDot status={task.labels} /></TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => { setEditingId(task.id); setEditForm({ ...task }); }} data-testid={`button-edit-task-${task.id}`}>
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(task.id)} data-testid={`button-delete-task-${task.id}`}>
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          </Button>
+                          {can("vat_reports", "edit") && (
+                            <Button size="sm" variant="ghost" onClick={() => { setEditingId(task.id); setEditForm({ ...task }); }} data-testid={`button-edit-task-${task.id}`}>
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {can("vat_reports", "delete") && (
+                            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(task.id)} data-testid={`button-delete-task-${task.id}`}>
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -983,7 +1002,7 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
 }
 
 function ActionItemsSection({ reportId }: { reportId: number }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -1048,7 +1067,9 @@ function ActionItemsSection({ reportId }: { reportId: number }) {
           <CardTitle className="text-lg flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-blue-500" />Action Items
           </CardTitle>
-          <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-action"><Plus className="h-4 w-4 mr-1" />Add Action</Button>
+          {can("vat_reports", "create") && (
+            <Button size="sm" onClick={() => setShowAdd(true)} data-testid="button-add-action"><Plus className="h-4 w-4 mr-1" />Add Action</Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1131,12 +1152,16 @@ function ActionItemsSection({ reportId }: { reportId: number }) {
                       <TableCell className="text-xs">{item.priority || "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditForm({ ...item }); }} data-testid={`button-edit-action-${item.id}`}>
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-action-${item.id}`}>
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          </Button>
+                          {can("vat_reports", "edit") && (
+                            <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditForm({ ...item }); }} data-testid={`button-edit-action-${item.id}`}>
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {can("vat_reports", "delete") && (
+                            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-action-${item.id}`}>
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1700,7 +1725,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
 }
 
 function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteReport }: { report: VatReport; allReportsForVat: VatReport[]; onSelectReport: (r: VatReport) => void; onDeleteReport?: () => void }) {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -1776,12 +1801,13 @@ function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteRepor
               <ChangeLogPanel reportId={report.id} />
             </SheetContent>
           </Sheet>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" variant="destructive" data-testid="button-delete-report">
-                <Trash2 className="h-4 w-4 mr-1" />Delete
-              </Button>
-            </AlertDialogTrigger>
+          {can("vat_reports", "delete") && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="destructive" data-testid="button-delete-report">
+                  <Trash2 className="h-4 w-4 mr-1" />Delete
+                </Button>
+              </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete this report?</AlertDialogTitle>
@@ -1797,7 +1823,8 @@ function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteRepor
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
-          </AlertDialog>
+            </AlertDialog>
+          )}
         </div>
       </div>
 
@@ -1845,7 +1872,7 @@ function findClosestReport(reports: VatReport[]): VatReport | undefined {
 }
 
 export default function VatReportsPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { toast } = useToast();
   const [activeVat, setActiveVat] = useState<string>("DAFF");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -1962,9 +1989,11 @@ export default function VatReportsPage() {
             }
           }
         }}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
-          </DialogTrigger>
+          {can("vat_reports", "create") && (
+            <DialogTrigger asChild>
+              <Button data-testid="button-new-report"><Plus className="h-4 w-4 mr-1" />New Report</Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Create New VAT Report</DialogTitle>
@@ -2128,9 +2157,11 @@ export default function VatReportsPage() {
                   <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Report for {vat}</h3>
                   <p className="text-sm text-muted-foreground mb-4">Create a new report to start tracking this VAT's status.</p>
-                  <Button onClick={() => { setActiveVat(vat); setShowCreateDialog(true); }} data-testid={`button-create-${vat}-report`}>
-                    <Plus className="h-4 w-4 mr-1" />Create {vat} Report
-                  </Button>
+                  {can("vat_reports", "create") && (
+                    <Button onClick={() => { setActiveVat(vat); setShowCreateDialog(true); }} data-testid={`button-create-${vat}-report`}>
+                      <Plus className="h-4 w-4 mr-1" />Create {vat} Report
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}

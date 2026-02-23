@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db, isMSSQL } from "./db";
@@ -31,7 +31,31 @@ import {
   insertVatChangeLogSchema,
   insertVatTargetSchema,
   VAT_NAMES,
+  APP_ROLES,
 } from "@shared/schema";
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!(req.session as any)?.userId) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  next();
+}
+
+function requirePermission(resource: string, action: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!(req.session as any)?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const role = (req.session as any).role || "employee";
+    if (role === "admin") return next();
+    const perms = await storage.getPermissionsByRole(role);
+    const allowed = perms.some(p => p.resource === resource && p.action === action && p.allowed);
+    if (!allowed) {
+      return res.status(403).json({ message: "You do not have permission to perform this action" });
+    }
+    next();
+  };
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -39,79 +63,79 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   // ─── Employees ───
-  app.get("/api/employees", async (_req, res) => {
+  app.get("/api/employees", requirePermission("resources", "view"), async (_req, res) => {
     const data = await storage.getEmployees();
     res.json(data);
   });
-  app.get("/api/employees/:id", async (req, res) => {
+  app.get("/api/employees/:id", requirePermission("resources", "view"), async (req, res) => {
     const data = await storage.getEmployee(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.post("/api/employees", async (req, res) => {
+  app.post("/api/employees", requirePermission("resources", "create"), async (req, res) => {
     const parsed = insertEmployeeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createEmployee(parsed.data);
     res.json(data);
   });
-  app.patch("/api/employees/:id", async (req, res) => {
+  app.patch("/api/employees/:id", requirePermission("resources", "edit"), async (req, res) => {
     const data = await storage.updateEmployee(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/employees/:id", async (req, res) => {
+  app.delete("/api/employees/:id", requirePermission("resources", "delete"), async (req, res) => {
     await storage.deleteEmployee(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Projects ───
-  app.get("/api/projects", async (_req, res) => {
+  app.get("/api/projects", requirePermission("projects", "view"), async (_req, res) => {
     const data = await storage.getProjects();
     res.json(data);
   });
-  app.get("/api/projects/:id", async (req, res) => {
+  app.get("/api/projects/:id", requirePermission("projects", "view"), async (req, res) => {
     const data = await storage.getProject(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.post("/api/projects", async (req, res) => {
+  app.post("/api/projects", requirePermission("projects", "create"), async (req, res) => {
     const parsed = insertProjectSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createProject(parsed.data);
     res.json(data);
   });
-  app.patch("/api/projects/:id", async (req, res) => {
+  app.patch("/api/projects/:id", requirePermission("projects", "edit"), async (req, res) => {
     const data = await storage.updateProject(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/projects/:id", async (req, res) => {
+  app.delete("/api/projects/:id", requirePermission("projects", "delete"), async (req, res) => {
     await storage.deleteProject(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Rate Cards ───
-  app.get("/api/rate-cards", async (_req, res) => {
+  app.get("/api/rate-cards", requirePermission("rate_cards", "view"), async (_req, res) => {
     const data = await storage.getRateCards();
     res.json(data);
   });
-  app.post("/api/rate-cards", async (req, res) => {
+  app.post("/api/rate-cards", requirePermission("rate_cards", "create"), async (req, res) => {
     const parsed = insertRateCardSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createRateCard(parsed.data);
     res.json(data);
   });
-  app.patch("/api/rate-cards/:id", async (req, res) => {
+  app.patch("/api/rate-cards/:id", requirePermission("rate_cards", "edit"), async (req, res) => {
     const data = await storage.updateRateCard(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/rate-cards/:id", async (req, res) => {
+  app.delete("/api/rate-cards/:id", requirePermission("rate_cards", "delete"), async (req, res) => {
     await storage.deleteRateCard(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.get("/api/rate-cards/derived", async (_req, res) => {
+  app.get("/api/rate-cards/derived", requirePermission("rate_cards", "view"), async (_req, res) => {
     try {
       const result = await db.raw(`
         SELECT
@@ -144,7 +168,7 @@ export async function registerRoutes(
   });
 
   // ─── Resource Plans ───
-  app.get("/api/resource-plans", async (req, res) => {
+  app.get("/api/resource-plans", requirePermission("resource_plans", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getResourcePlansByProject(Number(req.query.projectId));
       return res.json(data);
@@ -156,24 +180,24 @@ export async function registerRoutes(
     const data = await storage.getResourcePlans();
     res.json(data);
   });
-  app.post("/api/resource-plans", async (req, res) => {
+  app.post("/api/resource-plans", requirePermission("resource_plans", "create"), async (req, res) => {
     const parsed = insertResourcePlanSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createResourcePlan(parsed.data);
     res.json(data);
   });
-  app.patch("/api/resource-plans/:id", async (req, res) => {
+  app.patch("/api/resource-plans/:id", requirePermission("resource_plans", "edit"), async (req, res) => {
     const data = await storage.updateResourcePlan(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/resource-plans/:id", async (req, res) => {
+  app.delete("/api/resource-plans/:id", requirePermission("resource_plans", "delete"), async (req, res) => {
     await storage.deleteResourcePlan(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Timesheets ───
-  app.get("/api/timesheets", async (req, res) => {
+  app.get("/api/timesheets", requirePermission("timesheets", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getTimesheetsByProject(Number(req.query.projectId));
       return res.json(data);
@@ -185,24 +209,24 @@ export async function registerRoutes(
     const data = await storage.getTimesheets();
     res.json(data);
   });
-  app.post("/api/timesheets", async (req, res) => {
+  app.post("/api/timesheets", requirePermission("timesheets", "create"), async (req, res) => {
     const parsed = insertTimesheetSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createTimesheet(parsed.data);
     res.json(data);
   });
-  app.patch("/api/timesheets/:id", async (req, res) => {
+  app.patch("/api/timesheets/:id", requirePermission("timesheets", "edit"), async (req, res) => {
     const data = await storage.updateTimesheet(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/timesheets/:id", async (req, res) => {
+  app.delete("/api/timesheets/:id", requirePermission("timesheets", "delete"), async (req, res) => {
     await storage.deleteTimesheet(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Costs ───
-  app.get("/api/costs", async (req, res) => {
+  app.get("/api/costs", requirePermission("costs", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getCostsByProject(Number(req.query.projectId));
       return res.json(data);
@@ -210,18 +234,18 @@ export async function registerRoutes(
     const data = await storage.getCosts();
     res.json(data);
   });
-  app.post("/api/costs", async (req, res) => {
+  app.post("/api/costs", requirePermission("costs", "create"), async (req, res) => {
     const parsed = insertCostSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createCost(parsed.data);
     res.json(data);
   });
-  app.delete("/api/costs/:id", async (req, res) => {
+  app.delete("/api/costs/:id", requirePermission("costs", "delete"), async (req, res) => {
     await storage.deleteCost(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.get("/api/costs/summary", async (req, res) => {
+  app.get("/api/costs/summary", requirePermission("costs", "view"), async (req, res) => {
     try {
       const monthExpr = isMSSQL
         ? `FORMAT(timesheets.week_ending, 'yyyy-MM')`
@@ -243,7 +267,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/resource-allocations", async (req, res) => {
+  app.get("/api/resource-allocations", requirePermission("utilization", "view"), async (req, res) => {
     try {
       const monthExpr = isMSSQL
         ? `FORMAT(timesheets.week_ending, 'yyyy-MM')`
@@ -272,7 +296,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/utilization/weekly", async (req, res) => {
+  app.get("/api/utilization/weekly", requirePermission("utilization", "view"), async (req, res) => {
     try {
       const nameExpr = isMSSQL
         ? `COALESCE(employees.first_name + ' ' + employees.last_name, 'Unknown')`
@@ -300,7 +324,7 @@ export async function registerRoutes(
   });
 
   // ─── KPIs ───
-  app.get("/api/kpis", async (req, res) => {
+  app.get("/api/kpis", requirePermission("dashboard", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getKpisByProject(Number(req.query.projectId));
       return res.json(data);
@@ -308,7 +332,7 @@ export async function registerRoutes(
     const data = await storage.getKpis();
     res.json(data);
   });
-  app.post("/api/kpis", async (req, res) => {
+  app.post("/api/kpis", requirePermission("dashboard", "create"), async (req, res) => {
     const parsed = insertKpiSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createKpi(parsed.data);
@@ -316,7 +340,7 @@ export async function registerRoutes(
   });
 
   // ─── Forecasts ───
-  app.get("/api/forecasts", async (req, res) => {
+  app.get("/api/forecasts", requirePermission("forecasts", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getForecastsByProject(Number(req.query.projectId));
       return res.json(data);
@@ -324,7 +348,7 @@ export async function registerRoutes(
     const data = await storage.getForecasts();
     res.json(data);
   });
-  app.post("/api/forecasts", async (req, res) => {
+  app.post("/api/forecasts", requirePermission("forecasts", "create"), async (req, res) => {
     const parsed = insertForecastSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createForecast(parsed.data);
@@ -332,7 +356,7 @@ export async function registerRoutes(
   });
 
   // ─── Milestones ───
-  app.get("/api/milestones", async (req, res) => {
+  app.get("/api/milestones", requirePermission("milestones", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getMilestonesByProject(Number(req.query.projectId));
       return res.json(data);
@@ -340,26 +364,23 @@ export async function registerRoutes(
     const data = await storage.getMilestones();
     res.json(data);
   });
-  app.post("/api/milestones", async (req, res) => {
+  app.post("/api/milestones", requirePermission("milestones", "create"), async (req, res) => {
     const parsed = insertMilestoneSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createMilestone(parsed.data);
     res.json(data);
   });
-  app.patch("/api/milestones/:id", async (req, res) => {
+  app.patch("/api/milestones/:id", requirePermission("milestones", "edit"), async (req, res) => {
     const data = await storage.updateMilestone(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/milestones/:id", async (req, res) => {
+  app.delete("/api/milestones/:id", requirePermission("milestones", "delete"), async (req, res) => {
     await storage.deleteMilestone(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.post("/api/milestones/seed", async (req, res) => {
-    if (!(req.session as any)?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
+  app.post("/api/milestones/seed", requirePermission("milestones", "create"), async (req, res) => {
     const existing = await storage.getMilestones();
     if (existing.length > 0) {
       return res.json({ message: "Milestones already exist", count: existing.length });
@@ -517,7 +538,7 @@ export async function registerRoutes(
   });
 
   // ─── Data Sources ───
-  app.get("/api/data-sources", async (_req, res) => {
+  app.get("/api/data-sources", requirePermission("data_sources", "view"), async (_req, res) => {
     let data = await storage.getDataSources();
     if (data.length === 0) {
       const defaultSources = [
@@ -575,25 +596,19 @@ export async function registerRoutes(
     }
     res.json(data);
   });
-  app.post("/api/data-sources", async (req, res) => {
+  app.post("/api/data-sources", requirePermission("data_sources", "create"), async (req, res) => {
     const parsed = insertDataSourceSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createDataSource(parsed.data);
     res.json(data);
   });
-  app.patch("/api/data-sources/:id", async (req, res) => {
-    if (!(req.session as any)?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
+  app.patch("/api/data-sources/:id", requirePermission("data_sources", "edit"), async (req, res) => {
     const data = await storage.updateDataSource(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
 
-  app.post("/api/data-sources/:id/sync", async (req, res) => {
-    if (!(req.session as any)?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
+  app.post("/api/data-sources/:id/sync", requirePermission("data_sources", "sync"), async (req, res) => {
     const id = Number(req.params.id);
     const ds = await storage.getDataSource(id);
     if (!ds) return res.status(404).json({ message: "Data source not found" });
@@ -633,10 +648,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/data-sources/seed", async (req, res) => {
-    if (!(req.session as any)?.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
+  app.post("/api/data-sources/seed", requirePermission("data_sources", "create"), async (req, res) => {
     const existing = await storage.getDataSources();
     if (existing.length > 0) {
       return res.json({ message: "Data sources already exist", count: existing.length });
@@ -698,32 +710,32 @@ export async function registerRoutes(
   });
 
   // ─── Onboarding Steps ───
-  app.get("/api/employees/:id/onboarding", async (req, res) => {
+  app.get("/api/employees/:id/onboarding", requirePermission("resources", "view"), async (req, res) => {
     const data = await storage.getOnboardingStepsByEmployee(Number(req.params.id));
     res.json(data);
   });
-  app.post("/api/employees/:id/onboarding", async (req, res) => {
+  app.post("/api/employees/:id/onboarding", requirePermission("resources", "create"), async (req, res) => {
     const parsed = insertOnboardingStepSchema.safeParse({ ...req.body, employeeId: Number(req.params.id) });
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createOnboardingStep(parsed.data);
     res.json(data);
   });
-  app.patch("/api/onboarding-steps/:id", async (req, res) => {
+  app.patch("/api/onboarding-steps/:id", requirePermission("resources", "edit"), async (req, res) => {
     const data = await storage.updateOnboardingStep(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
 
   // ─── Dashboard Aggregates ───
-  app.get("/api/dashboard/summary", async (_req, res) => {
+  app.get("/api/dashboard/summary", requirePermission("dashboard", "view"), async (_req, res) => {
     const data = await storage.getDashboardSummary();
     res.json(data);
   });
-  app.get("/api/dashboard/finance", async (_req, res) => {
+  app.get("/api/dashboard/finance", requirePermission("finance", "view"), async (_req, res) => {
     const data = await storage.getFinanceDashboard();
     res.json(data);
   });
-  app.get("/api/dashboard/utilization", async (req, res) => {
+  app.get("/api/dashboard/utilization", requirePermission("utilization", "view"), async (req, res) => {
     const fy = req.query.fy as string | undefined;
     if (fy) {
       const parts = fy.split("-");
@@ -758,14 +770,14 @@ export async function registerRoutes(
     const data = await storage.getUtilizationSummary();
     res.json(data);
   });
-  app.get("/api/projects/:id/summary", async (req, res) => {
+  app.get("/api/projects/:id/summary", requirePermission("projects", "view"), async (req, res) => {
     const data = await storage.getProjectSummary(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
 
   // ─── Project Monthly ───
-  app.get("/api/project-monthly", async (req, res) => {
+  app.get("/api/project-monthly", requirePermission("projects", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getProjectMonthlyByProject(Number(req.query.projectId));
       return res.json(data);
@@ -773,7 +785,7 @@ export async function registerRoutes(
     const data = await storage.getProjectMonthly();
     res.json(data);
   });
-  app.post("/api/project-monthly", async (req, res) => {
+  app.post("/api/project-monthly", requirePermission("projects", "create"), async (req, res) => {
     const parsed = insertProjectMonthlySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createProjectMonthly(parsed.data);
@@ -781,7 +793,7 @@ export async function registerRoutes(
   });
 
   // ─── Pipeline Opportunities ───
-  app.get("/api/pipeline-opportunities", async (req, res) => {
+  app.get("/api/pipeline-opportunities", requirePermission("pipeline", "view"), async (req, res) => {
     if (req.query.classification) {
       const data = await storage.getPipelineByClassification(String(req.query.classification));
       return res.json(data);
@@ -793,52 +805,52 @@ export async function registerRoutes(
     const data = await storage.getPipelineOpportunities();
     res.json(data);
   });
-  app.post("/api/pipeline-opportunities", async (req, res) => {
+  app.post("/api/pipeline-opportunities", requirePermission("pipeline", "create"), async (req, res) => {
     const parsed = insertPipelineOpportunitySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createPipelineOpportunity(parsed.data);
     res.json(data);
   });
-  app.delete("/api/pipeline-opportunities/:id", async (req, res) => {
+  app.delete("/api/pipeline-opportunities/:id", requirePermission("pipeline", "delete"), async (req, res) => {
     await storage.deletePipelineOpportunity(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Scenarios ───
-  app.get("/api/scenarios", async (_req, res) => {
+  app.get("/api/scenarios", requirePermission("scenarios", "view"), async (_req, res) => {
     const data = await storage.getScenarios();
     res.json(data);
   });
-  app.get("/api/scenarios/:id", async (req, res) => {
+  app.get("/api/scenarios/:id", requirePermission("scenarios", "view"), async (req, res) => {
     const data = await storage.getScenarioWithAdjustments(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.post("/api/scenarios", async (req, res) => {
+  app.post("/api/scenarios", requirePermission("scenarios", "create"), async (req, res) => {
     const parsed = insertScenarioSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createScenario(parsed.data);
     res.json(data);
   });
-  app.delete("/api/scenarios/:id", async (req, res) => {
+  app.delete("/api/scenarios/:id", requirePermission("scenarios", "delete"), async (req, res) => {
     await storage.deleteScenario(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Scenario Adjustments ───
-  app.post("/api/scenarios/:id/adjustments", async (req, res) => {
+  app.post("/api/scenarios/:id/adjustments", requirePermission("scenarios", "create"), async (req, res) => {
     const parsed = insertScenarioAdjustmentSchema.safeParse({ ...req.body, scenarioId: Number(req.params.id) });
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createScenarioAdjustment(parsed.data);
     res.json(data);
   });
-  app.delete("/api/scenario-adjustments/:id", async (req, res) => {
+  app.delete("/api/scenario-adjustments/:id", requirePermission("scenarios", "delete"), async (req, res) => {
     await storage.deleteScenarioAdjustment(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Reference Data (Admin) ───
-  app.get("/api/reference-data", async (req, res) => {
+  app.get("/api/reference-data", requireAuth, async (req, res) => {
     if (req.query.category) {
       const data = await storage.getReferenceDataByCategory(String(req.query.category));
       return res.json(data);
@@ -846,23 +858,23 @@ export async function registerRoutes(
     const data = await storage.getReferenceData();
     res.json(data);
   });
-  app.post("/api/reference-data", async (req, res) => {
+  app.post("/api/reference-data", requirePermission("admin", "manage"), async (req, res) => {
     const parsed = insertReferenceDataSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createReferenceData(parsed.data);
     res.json(data);
   });
-  app.patch("/api/reference-data/:id", async (req, res) => {
+  app.patch("/api/reference-data/:id", requirePermission("admin", "manage"), async (req, res) => {
     const data = await storage.updateReferenceData(Number(req.params.id), req.body);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.delete("/api/reference-data/:id", async (req, res) => {
+  app.delete("/api/reference-data/:id", requirePermission("admin", "manage"), async (req, res) => {
     await storage.deleteReferenceData(Number(req.params.id));
     res.json({ success: true });
   });
 
-  app.get("/api/financial-targets/:fy", async (req, res) => {
+  app.get("/api/financial-targets/:fy", requireAuth, async (req, res) => {
     const fy = req.params.fy;
     const allTargets = await storage.getReferenceDataByCategory("financial_target");
     const fyTargets = allTargets.filter(t => t.fyYear === fy && t.active !== false);
@@ -953,6 +965,61 @@ export async function registerRoutes(
       }
       res.json({ success: true });
     });
+  });
+
+  // ─── Permissions ───
+  app.get("/api/permissions", requireAuth, async (req, res) => {
+    const role = (req.session as any).role || "employee";
+    if (role === "admin") {
+      const { RESOURCE_ACTIONS } = await import("@shared/schema");
+      const perms: Record<string, string[]> = {};
+      for (const [resource, actions] of Object.entries(RESOURCE_ACTIONS)) {
+        perms[resource] = actions;
+      }
+      return res.json({ role, permissions: perms });
+    }
+    const rows = await storage.getPermissionsByRole(role);
+    const perms: Record<string, string[]> = {};
+    for (const r of rows) {
+      if (r.allowed) {
+        if (!perms[r.resource]) perms[r.resource] = [];
+        perms[r.resource].push(r.action);
+      }
+    }
+    res.json({ role, permissions: perms });
+  });
+
+  app.get("/api/role-permissions", requireAuth, async (req, res) => {
+    const role = (req.session as any).role || "employee";
+    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+    const all = await storage.getAllPermissions();
+    res.json(all);
+  });
+
+  app.put("/api/role-permissions", requireAuth, async (req, res) => {
+    const role = (req.session as any).role || "employee";
+    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+    const { permissions } = req.body;
+    if (!Array.isArray(permissions)) return res.status(400).json({ message: "permissions array required" });
+    await storage.bulkUpdatePermissions(permissions);
+    res.json({ success: true });
+  });
+
+  app.get("/api/users", requireAuth, async (req, res) => {
+    const role = (req.session as any).role || "employee";
+    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+    const users = await storage.getAllUsers();
+    res.json(users);
+  });
+
+  app.patch("/api/users/:id/role", requireAuth, async (req, res) => {
+    const role = (req.session as any).role || "employee";
+    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+    const { role: newRole } = req.body;
+    if (!APP_ROLES.includes(newRole)) return res.status(400).json({ message: "Invalid role" });
+    const updated = await storage.updateUserRole(Number(req.params.id), newRole);
+    if (!updated) return res.status(404).json({ message: "User not found" });
+    res.json({ success: true, role: newRole });
   });
 
   // ─── Azure AD SSO ───
@@ -1053,14 +1120,8 @@ export async function registerRoutes(
   });
 
   // ─── Delete All Data ───
-  app.delete("/api/data/all", async (req, res) => {
+  app.delete("/api/data/all", requirePermission("admin", "manage"), async (req, res) => {
     try {
-      if (!req.session?.userId) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-      if (req.session.role !== "admin") {
-        return res.status(403).json({ message: "Admin access required" });
-      }
 
       const deletionOrder = [
         "messages",
@@ -1104,7 +1165,7 @@ export async function registerRoutes(
   // ─── Excel Upload (KPI Raw Data File) ───
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-  app.post("/api/upload/preview", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/preview", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
       const wb = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -1122,7 +1183,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/upload/import", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/import", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
       const selectedSheets: string[] = JSON.parse(req.body.sheets || "[]");
@@ -1192,7 +1253,7 @@ export async function registerRoutes(
     console.log("OpenAI not configured - AI insights will be unavailable");
   }
 
-  app.post("/api/ai/insights", async (req, res) => {
+  app.post("/api/ai/insights", requirePermission("ai_insights", "view"), async (req, res) => {
     try {
       const { type } = req.body;
       if (!openai) {
@@ -1517,7 +1578,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   // ─── VAT PPTX Upload ───
   const { parsePptxFile } = await import("./pptx-parser");
 
-  app.post("/api/upload/vat-pptx/debug", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/vat-pptx/debug", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
       const { debugPptxSlides } = await import("./pptx-parser");
@@ -1528,7 +1589,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     }
   });
 
-  app.post("/api/upload/vat-pptx/preview", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/vat-pptx/preview", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
       const result = parsePptxFile(req.file.buffer);
@@ -1558,7 +1619,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     }
   });
 
-  app.post("/api/upload/vat-pptx/import", upload.single("file"), async (req, res) => {
+  app.post("/api/upload/vat-pptx/import", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
@@ -1674,30 +1735,30 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   });
 
   // ─── VAT Reports ───
-  app.get("/api/vat-reports", async (_req, res) => {
+  app.get("/api/vat-reports", requirePermission("vat_reports", "view"), async (_req, res) => {
     const data = await storage.getVatReports();
     res.json(data);
   });
-  app.get("/api/vat-reports/latest", async (_req, res) => {
+  app.get("/api/vat-reports/latest", requirePermission("vat_reports", "view"), async (_req, res) => {
     const data = await storage.getLatestVatReports();
     res.json(data);
   });
-  app.get("/api/vat-reports/vat/:vatName", async (req, res) => {
+  app.get("/api/vat-reports/vat/:vatName", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatReportsByVat(req.params.vatName);
     res.json(data);
   });
-  app.get("/api/vat-reports/:id", async (req, res) => {
+  app.get("/api/vat-reports/:id", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatReport(Number(req.params.id));
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
-  app.post("/api/vat-reports", async (req, res) => {
+  app.post("/api/vat-reports", requirePermission("vat_reports", "create"), async (req, res) => {
     const parsed = insertVatReportSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createVatReport(parsed.data);
     res.json(data);
   });
-  app.patch("/api/vat-reports/:id", async (req, res) => {
+  app.patch("/api/vat-reports/:id", requirePermission("vat_reports", "edit"), async (req, res) => {
     const id = Number(req.params.id);
     const existing = await storage.getVatReport(id);
     if (!existing) return res.status(404).json({ message: "Not found" });
@@ -1724,12 +1785,12 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     }
     res.json(updated);
   });
-  app.delete("/api/vat-reports", async (req, res) => {
+  app.delete("/api/vat-reports", requirePermission("vat_reports", "delete"), async (req, res) => {
     const deleted = await storage.deleteAllVatReports();
     res.json({ success: true, deleted });
   });
 
-  app.delete("/api/vat-reports/:id", async (req, res) => {
+  app.delete("/api/vat-reports/:id", requirePermission("vat_reports", "delete"), async (req, res) => {
     const id = Number(req.params.id);
     const existing = await storage.getVatReport(id);
     if (!existing) return res.status(404).json({ message: "Not found" });
@@ -1748,11 +1809,11 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   });
 
   // ─── VAT Risks ───
-  app.get("/api/vat-reports/:reportId/risks", async (req, res) => {
+  app.get("/api/vat-reports/:reportId/risks", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatRisks(Number(req.params.reportId));
     res.json(data);
   });
-  app.post("/api/vat-reports/:reportId/risks", async (req, res) => {
+  app.post("/api/vat-reports/:reportId/risks", requirePermission("vat_reports", "create"), async (req, res) => {
     const parsed = insertVatRiskSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createVatRisk(parsed.data);
@@ -1766,7 +1827,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(data);
   });
-  app.patch("/api/vat-risks/:id", async (req, res) => {
+  app.patch("/api/vat-risks/:id", requirePermission("vat_reports", "edit"), async (req, res) => {
     const changedBy = req.body._changedBy || null;
     delete req.body._changedBy;
     const updated = await storage.updateVatRisk(Number(req.params.id), req.body);
@@ -1781,17 +1842,17 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(updated);
   });
-  app.delete("/api/vat-risks/:id", async (req, res) => {
+  app.delete("/api/vat-risks/:id", requirePermission("vat_reports", "delete"), async (req, res) => {
     await storage.deleteVatRisk(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── VAT Action Items ───
-  app.get("/api/vat-reports/:reportId/actions", async (req, res) => {
+  app.get("/api/vat-reports/:reportId/actions", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatActionItems(Number(req.params.reportId));
     res.json(data);
   });
-  app.post("/api/vat-reports/:reportId/actions", async (req, res) => {
+  app.post("/api/vat-reports/:reportId/actions", requirePermission("vat_reports", "create"), async (req, res) => {
     const parsed = insertVatActionItemSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createVatActionItem(parsed.data);
@@ -1805,7 +1866,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(data);
   });
-  app.patch("/api/vat-actions/:id", async (req, res) => {
+  app.patch("/api/vat-actions/:id", requirePermission("vat_reports", "edit"), async (req, res) => {
     const changedBy = req.body._changedBy || null;
     delete req.body._changedBy;
     const updated = await storage.updateVatActionItem(Number(req.params.id), req.body);
@@ -1820,17 +1881,17 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(updated);
   });
-  app.delete("/api/vat-actions/:id", async (req, res) => {
+  app.delete("/api/vat-actions/:id", requirePermission("vat_reports", "delete"), async (req, res) => {
     await storage.deleteVatActionItem(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── VAT Planner Tasks ───
-  app.get("/api/vat-reports/:reportId/planner", async (req, res) => {
+  app.get("/api/vat-reports/:reportId/planner", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatPlannerTasks(Number(req.params.reportId));
     res.json(data);
   });
-  app.post("/api/vat-reports/:reportId/planner", async (req, res) => {
+  app.post("/api/vat-reports/:reportId/planner", requirePermission("vat_reports", "create"), async (req, res) => {
     const parsed = insertVatPlannerTaskSchema.safeParse({ ...req.body, vatReportId: Number(req.params.reportId) });
     if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
     const data = await storage.createVatPlannerTask(parsed.data);
@@ -1844,7 +1905,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(data);
   });
-  app.patch("/api/vat-planner/:id", async (req, res) => {
+  app.patch("/api/vat-planner/:id", requirePermission("vat_reports", "edit"), async (req, res) => {
     const changedBy = req.body._changedBy || null;
     delete req.body._changedBy;
     const updated = await storage.updateVatPlannerTask(Number(req.params.id), req.body);
@@ -1859,17 +1920,14 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     });
     res.json(updated);
   });
-  app.delete("/api/vat-planner/:id", async (req, res) => {
+  app.delete("/api/vat-planner/:id", requirePermission("vat_reports", "delete"), async (req, res) => {
     await storage.deleteVatPlannerTask(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── Microsoft Planner Sync ───
-  app.post("/api/vat-reports/:reportId/planner/sync", async (req, res) => {
+  app.post("/api/vat-reports/:reportId/planner/sync", requirePermission("vat_reports", "edit"), async (req, res) => {
     try {
-      if (!req.session?.userId) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
       const reportId = Number(req.params.reportId);
       const { planId } = req.body;
       if (!planId || typeof planId !== "string") {
@@ -2013,13 +2071,13 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   });
 
   // ─── VAT Change Logs ───
-  app.get("/api/vat-reports/:reportId/changelog", async (req, res) => {
+  app.get("/api/vat-reports/:reportId/changelog", requirePermission("vat_reports", "view"), async (req, res) => {
     const data = await storage.getVatChangeLogs(Number(req.params.reportId));
     res.json(data);
   });
 
   // ─── VAT Full Report (report + risks + actions + planner) ───
-  app.get("/api/vat-reports/:id/full", async (req, res) => {
+  app.get("/api/vat-reports/:id/full", requirePermission("vat_reports", "view"), async (req, res) => {
     const id = Number(req.params.id);
     const report = await storage.getVatReport(id);
     if (!report) return res.status(404).json({ message: "Not found" });
@@ -2033,7 +2091,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
   });
 
   // ─── VAT AI Chat Assistant ───
-  app.post("/api/vat-reports/ai-chat", async (req, res) => {
+  app.post("/api/vat-reports/ai-chat", requirePermission("ai_insights", "view"), async (req, res) => {
     try {
       const { vatName, messages: chatMessages, reportId } = req.body;
       if (!vatName || typeof vatName !== "string") return res.status(400).json({ message: "vatName is required" });
@@ -2121,7 +2179,7 @@ Your role:
   });
 
   // ─── VAT AI Structured Suggestions (per-field) ───
-  app.post("/api/vat-reports/ai-suggest-fields", async (req, res) => {
+  app.post("/api/vat-reports/ai-suggest-fields", requirePermission("ai_insights", "view"), async (req, res) => {
     try {
       const { vatName, reportId, userRisks, userActionNotes } = req.body;
       if (!vatName || typeof vatName !== "string") return res.status(400).json({ message: "vatName is required" });
@@ -2235,21 +2293,21 @@ Return this exact JSON structure:
   });
 
   // ─── VAT Targets ───
-  app.get("/api/vat-targets", async (req, res) => {
+  app.get("/api/vat-targets", requireAuth, async (req, res) => {
     const fyYear = (req.query.fy as string) || "";
     if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
     const data = await storage.getVatTargetsByFy(fyYear);
     res.json(data);
   });
 
-  app.get("/api/vat-targets/:vatName", async (req, res) => {
+  app.get("/api/vat-targets/:vatName", requireAuth, async (req, res) => {
     const fyYear = (req.query.fy as string) || "";
     if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
     const data = await storage.getVatTargets(req.params.vatName, fyYear);
     res.json(data);
   });
 
-  app.post("/api/vat-targets", async (req, res) => {
+  app.post("/api/vat-targets", requirePermission("admin", "manage"), async (req, res) => {
     try {
       const parsed = insertVatTargetSchema.parse(req.body);
       const result = await storage.upsertVatTarget(parsed);
@@ -2259,13 +2317,13 @@ Return this exact JSON structure:
     }
   });
 
-  app.delete("/api/vat-targets/:id", async (req, res) => {
+  app.delete("/api/vat-targets/:id", requirePermission("admin", "manage"), async (req, res) => {
     await storage.deleteVatTarget(Number(req.params.id));
     res.json({ success: true });
   });
 
   // ─── VAT Overview ───
-  app.get("/api/vat-overview", async (req, res) => {
+  app.get("/api/vat-overview", requirePermission("vat_overview", "view"), async (req, res) => {
     try {
       const fyYear = (req.query.fy as string) || "";
       if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
@@ -2278,7 +2336,7 @@ Return this exact JSON structure:
   });
 
   // ─── VAT List (from reference data) ───
-  app.get("/api/vats", async (_req, res) => {
+  app.get("/api/vats", requireAuth, async (_req, res) => {
     const refVats = await db("reference_data")
       .where({ category: "vat_category", active: true })
       .orderBy("display_order", "asc");
