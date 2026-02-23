@@ -106,7 +106,7 @@ export default function UploadPage() {
     try {
       const formData = new FormData();
       formData.append("file", f);
-      const res = await fetch("/api/upload/preview", { method: "POST", body: formData });
+      const res = await fetch("/api/upload/preview", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Preview failed");
@@ -134,7 +134,7 @@ export default function UploadPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("sheets", JSON.stringify(Array.from(selectedSheets)));
-      const res = await fetch("/api/upload/import", { method: "POST", body: formData });
+      const res = await fetch("/api/upload/import", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Import failed");
@@ -559,7 +559,7 @@ function VatPptxUpload() {
     try {
       const formData = new FormData();
       formData.append("file", f);
-      const res = await fetch("/api/upload/vat-pptx/preview", { method: "POST", body: formData });
+      const res = await fetch("/api/upload/vat-pptx/preview", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Preview failed");
@@ -587,7 +587,7 @@ function VatPptxUpload() {
       formData.append("file", pptxFile);
       formData.append("selectedVats", JSON.stringify(Array.from(selectedVats)));
       if (reportDate) formData.append("reportDate", reportDate);
-      const res = await fetch("/api/upload/vat-pptx/import", { method: "POST", body: formData });
+      const res = await fetch("/api/upload/vat-pptx/import", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || "Import failed");
