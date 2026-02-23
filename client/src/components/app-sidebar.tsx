@@ -19,6 +19,7 @@ import {
   Sparkles,
   Shield,
   FileText,
+  Handshake,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,6 +42,7 @@ const navGroups = [
       { title: "Dashboard", icon: LayoutDashboard, path: "/" },
       { title: "Finance", icon: TrendingUp, path: "/finance" },
       { title: "Utilisation", icon: BarChart3, path: "/utilization" },
+      { title: "Partner View", icon: Handshake, path: "/partner-view" },
     ],
   },
   {

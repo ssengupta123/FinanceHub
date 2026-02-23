@@ -604,14 +604,23 @@ export async function runIncrementalMigrations() {
     console.log("Created vat_targets table");
   }
 
+  const vatNameNormalization: Record<string, string> = {
+    "VICGov": "VIC Gov",
+    "Growth": "GROWTH",
+  };
+  for (const [oldName, newName] of Object.entries(vatNameNormalization)) {
+    await db("reference_data").where({ category: "vat_category", key: oldName }).update({ key: newName, value: newName });
+    await db("vat_targets").where({ vat_name: oldName }).update({ vat_name: newName });
+  }
+
   const existingVatCats = await db("reference_data").where({ category: "vat_category" }).first();
   if (!existingVatCats) {
     const vatList = [
       { key: "DAFF", value: "DAFF", display_order: 1 },
       { key: "SAU", value: "SAU", display_order: 2 },
-      { key: "VICGov", value: "VIC Gov", display_order: 3 },
+      { key: "VIC Gov", value: "VIC Gov", display_order: 3 },
       { key: "DISR", value: "DISR", display_order: 4 },
-      { key: "Growth", value: "Growth", display_order: 5 },
+      { key: "GROWTH", value: "GROWTH", display_order: 5 },
       { key: "P&P", value: "P&P", display_order: 6 },
       { key: "Emerging", value: "Emerging", display_order: 7 },
     ];
@@ -631,11 +640,11 @@ export async function runIncrementalMigrations() {
   if (!existingTargets) {
     const fy = "25-26";
     const targets = [
-      { vat: "DAFF", gm_ok: "1800000", gm_good: "2250000", gm_great: "2700000", gm_amazing: "3150000", rev_ok: "5142857", rev_good: "6428571", rev_great: "7714286", rev_amazing: "7875000", gmp_ok: "0.35", gmp_good: "0.35", gmp_great: "0.35", gmp_amazing: "0.40" },
-      { vat: "SAU", gm_ok: "900000", gm_good: "1350000", gm_great: "1800000", gm_amazing: "2250000", rev_ok: "6206897", rev_good: "9000000", rev_great: "12000000", rev_amazing: "11250000", gmp_ok: "0.145", gmp_good: "0.15", gmp_great: "0.15", gmp_amazing: "0.20" },
-      { vat: "VICGov", gm_ok: "1800000", gm_good: "2250000", gm_great: "2700000", gm_amazing: "3150000", rev_ok: "6000000", rev_good: "6818182", rev_great: "8181818", rev_amazing: "9000000", gmp_ok: "0.30", gmp_good: "0.33", gmp_great: "0.33", gmp_amazing: "0.35" },
+      { vat: "DAFF", gm_ok: "1800000", gm_good: "2250000", gm_great: "2700000", gm_amazing: "3150000", rev_ok: "5142857.14", rev_good: "6428571.43", rev_great: "7714285.71", rev_amazing: "7875000", gmp_ok: "0.35", gmp_good: "0.35", gmp_great: "0.35", gmp_amazing: "0.40" },
+      { vat: "SAU", gm_ok: "900000", gm_good: "1350000", gm_great: "1800000", gm_amazing: "2250000", rev_ok: "6206896.55", rev_good: "9000000", rev_great: "12000000", rev_amazing: "11250000", gmp_ok: "0.145", gmp_good: "0.15", gmp_great: "0.15", gmp_amazing: "0.20" },
+      { vat: "VIC Gov", gm_ok: "1800000", gm_good: "2250000", gm_great: "2700000", gm_amazing: "3150000", rev_ok: "6000000", rev_good: "6818181.82", rev_great: "8181818.18", rev_amazing: "9000000", gmp_ok: "0.30", gmp_good: "0.33", gmp_great: "0.33", gmp_amazing: "0.35" },
       { vat: "DISR", gm_ok: "690000", gm_good: "1200000", gm_great: "1500000", gm_amazing: "2100000", rev_ok: "2300000", rev_good: "4000000", rev_great: "5000000", rev_amazing: "6000000", gmp_ok: "0.30", gmp_good: "0.30", gmp_great: "0.30", gmp_amazing: "0.35" },
-      { vat: "Growth", gm_ok: "1350000", gm_good: "2200000", gm_great: "3300000", gm_amazing: "4400000", rev_ok: "3648649", rev_good: "5500000", rev_great: "7333333", rev_amazing: "8800000", gmp_ok: "0.37", gmp_good: "0.40", gmp_great: "0.45", gmp_amazing: "0.50" },
+      { vat: "GROWTH", gm_ok: "1350000", gm_good: "2200000", gm_great: "3300000", gm_amazing: "4400000", rev_ok: "3648648.65", rev_good: "5500000", rev_great: "7333333.33", rev_amazing: "8800000", gmp_ok: "0.37", gmp_good: "0.40", gmp_great: "0.45", gmp_amazing: "0.50" },
       { vat: "Emerging", gm_ok: "540000", gm_good: "880000", gm_great: "1100000", gm_amazing: "1375000", rev_ok: "1350000", rev_good: "2200000", rev_great: "2750000", rev_amazing: "3437500", gmp_ok: "0.40", gmp_good: "0.40", gmp_great: "0.40", gmp_amazing: "0.40" },
       { vat: "P&P", gm_ok: "0", gm_good: "0", gm_great: "0", gm_amazing: "0", rev_ok: "0", rev_good: "0", rev_great: "0", rev_amazing: "0", gmp_ok: "0", gmp_good: "0", gmp_great: "0", gmp_amazing: "0" },
     ];

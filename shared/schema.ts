@@ -334,7 +334,7 @@ export const insertResourceCostSchema = z.object({
 export type InsertResourceCost = z.infer<typeof insertResourceCostSchema>;
 export type ResourceCost = InsertResourceCost & { id: number };
 
-export const VAT_NAMES = ["DAFF", "SAU", "VICGov", "DISR", "Growth", "P&P", "Emerging"] as const;
+export const VAT_NAMES = ["DAFF", "SAU", "VIC Gov", "DISR", "GROWTH", "P&P", "Emerging"] as const;
 
 export const insertVatTargetSchema = z.object({
   vatName: z.string(),
