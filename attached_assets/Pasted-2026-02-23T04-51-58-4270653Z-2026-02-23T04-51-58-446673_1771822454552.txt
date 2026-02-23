@@ -1,0 +1,74 @@
+2026-02-23T04:51:58.4270653Z    _____
+2026-02-23T04:51:58.4466731Z   /  _  \ __________ _________   ____
+2026-02-23T04:51:58.4467228Z  /  /_\  \\___   /  |  \_  __ \_/ __ \
+2026-02-23T04:51:58.4467256Z /    |    \/    /|  |  /|  | \/\  ___/
+2026-02-23T04:51:58.4467287Z \____|__  /_____ \____/ |__|    \___  >
+2026-02-23T04:51:58.4467342Z         \/      \/                  \/
+2026-02-23T04:51:58.4467383Z A P P   S E R V I C E   O N   L I N U X
+2026-02-23T04:51:58.4467405Z
+2026-02-23T04:51:58.4467433Z Documentation    : http://aka.ms/webapp-linux
+2026-02-23T04:51:58.4467457Z NodeJS quickstart: https://aka.ms/node-qs
+2026-02-23T04:51:58.4467485Z NodeJS Version   : v22.22.0
+2026-02-23T04:51:58.446751Z Instance Name    : lw0sdlwk0002PZ
+2026-02-23T04:51:58.4467565Z Instance Id      : bd6ee3484980e52aab303ea90211a83a8660028ea183568991e55b02c3b4b7cd
+2026-02-23T04:51:58.4467759Z
+2026-02-23T04:51:58.4467784Z Note: Any data outside '/home' is not persisted
+2026-02-23T04:52:04.4291764Z Starting OpenBSD Secure Shell server: sshd.
+2026-02-23T04:52:04.4597315Z WEBSITES_INCLUDE_CLOUD_CERTS is not set to true.
+2026-02-23T04:52:04.597935Z Updating certificates in /etc/ssl/certs...
+2026-02-23T04:52:38.3973297Z rehash: warning: skipping duplicate certificate in azl_SSL.com_TLS_ECC_Root_CA_2022.pem
+2026-02-23T04:52:38.3973733Z rehash: warning: skipping duplicate certificate in azl_SSL.com_TLS_RSA_Root_CA_2022.pem
+2026-02-23T04:52:39.5464045Z rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+2026-02-23T04:52:39.6688905Z 4 added, 0 removed; done.
+2026-02-23T04:52:39.6870249Z Running hooks in /etc/ca-certificates/update.d...
+2026-02-23T04:52:39.8655478Z done.
+2026-02-23T04:52:39.9259881Z CA certificates copied and updated successfully.
+2026-02-23T04:52:40.8220713Z Starting periodic command scheduler: cron.
+2026-02-23T04:52:41.5494251Z Found build manifest file at '/home/site/wwwroot/oryx-manifest.toml'. Deserializing it...
+2026-02-23T04:52:41.5596091Z Could not find operation ID in manifest. Generating an operation id...
+2026-02-23T04:52:41.5762884Z Build Operation ID: ca0a2b35-3d86-4c5b-9f33-68a69b963574
+2026-02-23T04:52:42.2068779Z Environment Variables for Application Insight's IPA Codeless Configuration exists..
+2026-02-23T04:52:42.2266Z Writing output script to '/opt/startup/startup.sh'
+2026-02-23T04:52:42.2778988Z Running #!/bin/sh
+2026-02-23T04:52:42.2779706Z
+2026-02-23T04:52:42.2779749Z # Enter the source directory to make sure the script runs where the user expects
+2026-02-23T04:52:42.2779787Z cd "/home/site/wwwroot"
+2026-02-23T04:52:42.2779811Z
+2026-02-23T04:52:42.2779835Z export NODE_PATH=/usr/local/lib/node_modules:$NODE_PATH
+2026-02-23T04:52:42.277986Z if [ -z "$PORT" ]; then
+2026-02-23T04:52:42.2779884Z 		export PORT=8080
+2026-02-23T04:52:42.2779932Z fi
+2026-02-23T04:52:42.2779955Z
+2026-02-23T04:52:42.2779979Z echo Found tar.gz based node_modules.
+2026-02-23T04:52:42.2780007Z extractionCommand="tar -xzf node_modules.tar.gz -C /node_modules"
+2026-02-23T04:52:42.2780034Z echo "Removing existing modules directory from root..."
+2026-02-23T04:52:42.2780058Z rm -fr /node_modules
+2026-02-23T04:52:42.278008Z mkdir -p /node_modules
+2026-02-23T04:52:42.2780125Z echo Extracting modules...
+2026-02-23T04:52:42.2780148Z $extractionCommand
+2026-02-23T04:52:42.2780198Z export NODE_PATH="/node_modules":$NODE_PATH
+2026-02-23T04:52:42.2780223Z export PATH=/node_modules/.bin:$PATH
+2026-02-23T04:52:42.2780246Z if [ -d node_modules ]; then
+2026-02-23T04:52:42.2780271Z     mv -f node_modules _del_node_modules || true
+2026-02-23T04:52:42.2780294Z fi
+2026-02-23T04:52:42.2780335Z
+2026-02-23T04:52:42.2780359Z if [ -d /node_modules ]; then
+2026-02-23T04:52:42.2780382Z     ln -sfn /node_modules ./node_modules
+2026-02-23T04:52:42.2780405Z fi
+2026-02-23T04:52:42.2780426Z
+2026-02-23T04:52:42.2780448Z echo "Done."
+2026-02-23T04:52:42.2989234Z PATH="$PATH:/home/site/wwwroot" node dist/index.cjs
+2026-02-23T04:52:42.2989536Z Found tar.gz based node_modules.
+2026-02-23T04:52:42.2989571Z Removing existing modules directory from root...
+2026-02-23T04:52:42.3574738Z Extracting modules...
+2026-02-23T04:53:24.4748063Z Done.
+2026-02-23T04:53:30.4965304Z Created vat_reports table
+2026-02-23T04:53:30.5358672Z Added category status columns to vat_reports
+2026-02-23T04:53:30.5549645Z Created vat_risks table
+2026-02-23T04:53:30.571013Z Created vat_action_items table
+2026-02-23T04:53:30.5953306Z Created vat_planner_tasks table
+2026-02-23T04:53:30.6196682Z Incremental migration error: TypeError: Cannot read properties of undefined (reading 'length')
+2026-02-23T04:53:30.6197389Z     at mAe (/home/site/wwwroot/dist/index.cjs:237:42056)
+2026-02-23T04:53:30.6197439Z     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-02-23T04:53:30.6197466Z     at async /home/site/wwwroot/dist/index.cjs:659:20095
+2026-02-23T04:53:30.9236726Z 4:53:30 AM [express] serving on port 8080

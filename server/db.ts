@@ -545,8 +545,8 @@ export async function runIncrementalMigrations() {
   }
 
   // Incremental migration: add external_id column for Planner sync
-  const plannerCols = await db.raw(`SELECT column_name FROM information_schema.columns WHERE table_name = 'vat_planner_tasks' AND column_name = 'external_id'`);
-  if (plannerCols.rows.length === 0) {
+  const hasExternalId = await db.schema.hasColumn("vat_planner_tasks", "external_id");
+  if (!hasExternalId) {
     await db.schema.alterTable("vat_planner_tasks", (t) => {
       t.text("external_id").nullable();
     });
@@ -573,7 +573,8 @@ export async function runIncrementalMigrations() {
         SELECT is_nullable FROM information_schema.columns
         WHERE table_name = 'vat_change_logs' AND column_name = 'vat_report_id'
       `);
-      const isNullable = hasNotNull.rows?.[0]?.is_nullable;
+      const resultRows = hasNotNull.rows || hasNotNull;
+      const isNullable = resultRows?.[0]?.is_nullable;
       if (isNullable === 'NO') {
         await db.raw(`ALTER TABLE vat_change_logs DROP CONSTRAINT IF EXISTS vat_change_logs_vat_report_id_foreign`);
         await db.raw(`ALTER TABLE vat_change_logs ALTER COLUMN vat_report_id DROP NOT NULL`);
