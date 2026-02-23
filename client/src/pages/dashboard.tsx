@@ -225,7 +225,7 @@ export default function Dashboard() {
         cumTarget,
       };
     });
-  }, [fyProjectMonthly, elapsedMonths]);
+  }, [fyProjectMonthly, elapsedMonths, REVENUE_TARGET]);
 
   const marginBarData = fyProjects
     .filter(p => p.status === "active")
