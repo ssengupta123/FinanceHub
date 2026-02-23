@@ -657,6 +657,14 @@ export async function runIncrementalMigrations() {
     console.log("Seeded initial VAT targets for FY 25-26");
   }
 
+  const hasEmployeeUserId = await db.schema.hasColumn("employees", "user_id");
+  if (!hasEmployeeUserId) {
+    await db.schema.alterTable("employees", (t) => {
+      t.integer("user_id").nullable().references("id").inTable("users").onDelete("SET NULL");
+    });
+    console.log("Added user_id column to employees table");
+  }
+
   const hasRolePermissions = await db.schema.hasTable("role_permissions");
   if (!hasRolePermissions) {
     await db.schema.createTable("role_permissions", (t) => {

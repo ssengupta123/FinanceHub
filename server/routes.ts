@@ -87,6 +87,26 @@ export async function registerRoutes(
     await storage.deleteEmployee(Number(req.params.id));
     res.json({ success: true });
   });
+  app.patch("/api/employees/:id/link-user", requirePermission("resources", "edit"), async (req, res) => {
+    const employeeId = Number(req.params.id);
+    const { userId } = req.body;
+    if (userId !== null && userId !== undefined) {
+      if (typeof userId !== "number" || isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      const userExists = await db("users").where("id", userId).first();
+      if (!userExists) {
+        return res.status(400).json({ message: "User not found" });
+      }
+      const existingLink = await db("employees").where("user_id", userId).whereNot("id", employeeId).first();
+      if (existingLink) {
+        return res.status(400).json({ message: "This user is already linked to another employee" });
+      }
+    }
+    const data = await storage.updateEmployee(employeeId, { userId: userId ?? null });
+    if (!data) return res.status(404).json({ message: "Employee not found" });
+    res.json(data);
+  });
 
   // ─── Projects ───
   app.get("/api/projects", requirePermission("projects", "view"), async (_req, res) => {
@@ -1005,9 +1025,7 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  app.get("/api/users", requireAuth, async (req, res) => {
-    const role = (req.session as any).role || "employee";
-    if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
+  app.get("/api/users", requirePermission("resources", "edit"), async (req, res) => {
     const users = await storage.getAllUsers();
     res.json(users);
   });

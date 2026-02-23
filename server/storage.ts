@@ -376,11 +376,26 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getEmployees(): Promise<Employee[]> {
-    return rowsToModels<Employee>(await db("employees").select("*"));
+    const rows = await db("employees")
+      .leftJoin("users", "employees.user_id", "users.id")
+      .select("employees.*", "users.role as linked_user_role", "users.username as linked_user_name");
+    return rows.map((row: any) => {
+      const emp = rowToModel<Employee>(row);
+      emp.linkedUserRole = row.linked_user_role || null;
+      emp.linkedUserName = row.linked_user_name || null;
+      return emp;
+    });
   }
   async getEmployee(id: number): Promise<Employee | undefined> {
-    const row = await db("employees").where("id", id).first();
-    return row ? rowToModel<Employee>(row) : undefined;
+    const row = await db("employees")
+      .leftJoin("users", "employees.user_id", "users.id")
+      .select("employees.*", "users.role as linked_user_role", "users.username as linked_user_name")
+      .where("employees.id", id).first();
+    if (!row) return undefined;
+    const emp = rowToModel<Employee>(row);
+    emp.linkedUserRole = row.linked_user_role || null;
+    emp.linkedUserName = row.linked_user_name || null;
+    return emp;
   }
   async getEmployeesByStatus(status: string): Promise<Employee[]> {
     return rowsToModels<Employee>(await db("employees").where("status", status));

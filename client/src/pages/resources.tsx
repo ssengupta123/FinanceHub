@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Employee, Timesheet } from "@shared/schema";
+import { APP_ROLES } from "@shared/schema";
 import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +51,12 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Trash2, Users, UserCheck, UserMinus, DollarSign, Search, Settings2 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Plus, Trash2, Users, UserCheck, UserMinus, DollarSign, Search, Settings2, Link2, Unlink } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 function statusVariant(status: string): "default" | "secondary" | "outline" {
@@ -76,12 +82,13 @@ function formatDate(value: string | null | undefined): string {
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-type ColumnKey = "jid" | "name" | "role" | "costBand" | "staffType" | "team" | "baseCost" | "grossCost" | "payrollTax" | "scheduleStart" | "scheduleEnd" | "location" | "status";
+type ColumnKey = "jid" | "name" | "role" | "appRole" | "costBand" | "staffType" | "team" | "baseCost" | "grossCost" | "payrollTax" | "scheduleStart" | "scheduleEnd" | "location" | "status";
 
 const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: "jid", label: "JID" },
   { key: "name", label: "Name" },
   { key: "role", label: "Role" },
+  { key: "appRole", label: "App Role" },
   { key: "costBand", label: "Cost Band" },
   { key: "staffType", label: "Staff Type" },
   { key: "team", label: "Team" },
@@ -163,8 +170,30 @@ export default function Resources() {
 
   const isCol = (key: ColumnKey) => visibleColumns.has(key);
 
+  const [linkPopoverId, setLinkPopoverId] = useState<number | null>(null);
+
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: allUsers } = useQuery<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>>({ queryKey: ["/api/users"] });
+
+  const linkedUserIds = useMemo(() => {
+    if (!employees) return new Set<number>();
+    return new Set(employees.filter(e => e.userId).map(e => e.userId as number));
+  }, [employees]);
+
+  const linkUserMutation = useMutation({
+    mutationFn: async ({ employeeId, userId }: { employeeId: number; userId: number | null }) => {
+      await apiRequest("PATCH", `/api/employees/${employeeId}/link-user`, { userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      setLinkPopoverId(null);
+      toast({ title: "User linked", description: "Employee user account has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const availableFYs = useMemo(() => {
     if (!timesheets) return [getCurrentFy()];
@@ -522,6 +551,7 @@ export default function Resources() {
                     {isCol("jid") && <TableHead>JID</TableHead>}
                     {isCol("name") && <TableHead>Name</TableHead>}
                     {isCol("role") && <TableHead>Role</TableHead>}
+                    {isCol("appRole") && <TableHead>App Role</TableHead>}
                     {isCol("costBand") && <TableHead>Cost Band</TableHead>}
                     {isCol("staffType") && <TableHead>Staff Type</TableHead>}
                     {isCol("team") && <TableHead>Team</TableHead>}
@@ -541,6 +571,76 @@ export default function Resources() {
                       {isCol("jid") && <TableCell className="font-medium" data-testid={`text-employee-jid-${emp.id}`}>{emp.jid || "--"}</TableCell>}
                       {isCol("name") && <TableCell data-testid={`text-employee-name-${emp.id}`} className="whitespace-nowrap">{emp.firstName} {emp.lastName}</TableCell>}
                       {isCol("role") && <TableCell data-testid={`text-employee-role-${emp.id}`}>{emp.role || "--"}</TableCell>}
+                      {isCol("appRole") && <TableCell data-testid={`text-employee-approle-${emp.id}`}>
+                        {emp.linkedUserRole ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="capitalize" data-testid={`badge-approle-${emp.id}`}>{emp.linkedUserRole}</Badge>
+                            {can("resources", "edit") && (
+                              <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => setLinkPopoverId(open ? emp.id : null)}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="ghost" size="sm" data-testid={`button-edit-link-${emp.id}`}>
+                                    <Link2 className="h-3 w-3" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-64 p-3" align="start">
+                                  <div className="space-y-2">
+                                    <p className="text-sm font-medium">Linked: {emp.linkedUserName}</p>
+                                    <Select
+                                      value={String(emp.userId || "")}
+                                      onValueChange={(v) => {
+                                        linkUserMutation.mutate({ employeeId: emp.id, userId: v ? Number(v) : null });
+                                      }}
+                                    >
+                                      <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
+                                        <SelectValue placeholder="Select user" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allUsers?.filter(u => u.id === emp.userId || !linkedUserIds.has(u.id)).map(u => (
+                                          <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({u.role})</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Button variant="destructive" size="sm" className="w-full" onClick={() => linkUserMutation.mutate({ employeeId: emp.id, userId: null })} data-testid={`button-unlink-${emp.id}`}>
+                                      <Unlink className="h-3 w-3 mr-1" /> Unlink
+                                    </Button>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        ) : (
+                          can("resources", "edit") ? (
+                            <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => setLinkPopoverId(open ? emp.id : null)}>
+                              <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid={`button-link-user-${emp.id}`}>
+                                  <Link2 className="h-3 w-3 mr-1" /> Link User
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-3" align="start">
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">Link User Account</p>
+                                  <Select
+                                    onValueChange={(v) => {
+                                      linkUserMutation.mutate({ employeeId: emp.id, userId: Number(v) });
+                                    }}
+                                  >
+                                    <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
+                                      <SelectValue placeholder="Select user" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {allUsers?.filter(u => !linkedUserIds.has(u.id)).map(u => (
+                                        <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({u.role})</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          ) : (
+                            <span className="text-muted-foreground">--</span>
+                          )
+                        )}
+                      </TableCell>}
                       {isCol("costBand") && <TableCell data-testid={`text-employee-costband-${emp.id}`}>{emp.costBandLevel || "--"}</TableCell>}
                       {isCol("staffType") && <TableCell data-testid={`text-employee-stafftype-${emp.id}`}>{emp.staffType || "--"}</TableCell>}
                       {isCol("team") && <TableCell data-testid={`text-employee-team-${emp.id}`}>{emp.team || "--"}</TableCell>}

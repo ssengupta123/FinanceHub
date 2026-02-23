@@ -26,9 +26,10 @@ export const insertEmployeeSchema = z.object({
   team: z.string().nullable().optional(),
   jid: z.string().nullable().optional(),
   onboardingStatus: z.string().nullable().optional(),
+  userId: z.number().nullable().optional(),
 });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
-export type Employee = InsertEmployee & { id: number };
+export type Employee = InsertEmployee & { id: number; linkedUserRole?: string | null; linkedUserName?: string | null };
 
 export const insertProjectSchema = z.object({
   projectCode: z.string(),
