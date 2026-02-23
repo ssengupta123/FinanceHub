@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ import {
 import type {
   VatReport, VatRisk, VatActionItem, VatPlannerTask, VatChangeLog,
 } from "@shared/schema";
-import { VAT_NAMES } from "@shared/schema";
+import { VAT_NAMES as FALLBACK_VAT_NAMES } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyFromDate, getFyOptions } from "@/lib/fy-utils";
 
@@ -1862,6 +1862,14 @@ export default function VatReportsPage() {
   const { data: reports = [], isLoading } = useQuery<VatReport[]>({
     queryKey: ["/api/vat-reports"],
   });
+
+  const { data: dynamicVats } = useQuery<{ name: string; displayName: string; order: number }[]>({
+    queryKey: ["/api/vats"],
+  });
+  const VAT_NAMES = useMemo(() => {
+    if (dynamicVats && dynamicVats.length > 0) return dynamicVats.map(v => v.name);
+    return [...FALLBACK_VAT_NAMES];
+  }, [dynamicVats]);
 
   const availableFYs = getFyOptions(
     reports.map(r => getFyFromDate(r.reportDate)).filter((fy): fy is string => fy !== null)

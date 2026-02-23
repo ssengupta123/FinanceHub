@@ -968,13 +968,19 @@ export class DatabaseStorage implements IStorage {
     }
 
     const targetModels = rowsToModels<VatTarget>(targets);
+    const refVats = await db("reference_data").where({ category: "vat_category", active: true }).orderBy("display_order", "asc");
+    const vatNames: string[] = [];
     const vatNameSet = new Set<string>();
-    for (const t of targetModels) vatNameSet.add(t.vatName);
-    const vatNames = Array.from(vatNameSet);
-    if (vatNames.length === 0) {
-      const refVats = await db("reference_data").where({ category: "vat_category", active: true });
-      for (const rv of refVats) {
-        if (!vatNames.includes(rv.key)) vatNames.push(rv.key);
+    for (const rv of refVats) {
+      if (!vatNameSet.has(rv.key)) {
+        vatNames.push(rv.key);
+        vatNameSet.add(rv.key);
+      }
+    }
+    for (const t of targetModels) {
+      if (!vatNameSet.has(t.vatName)) {
+        vatNames.push(t.vatName);
+        vatNameSet.add(t.vatName);
       }
     }
 

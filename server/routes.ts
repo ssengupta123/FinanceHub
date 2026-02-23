@@ -1571,7 +1571,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         return res.status(400).json({ message: "No VAT reports found in the PPTX file. Make sure it follows the VAT SC Report template." });
       }
 
-      const validVatNames = new Set(VAT_NAMES);
+      const refVats = await db("reference_data").where({ category: "vat_category", active: true });
+      const validVatNames = new Set(refVats.length > 0 ? refVats.map((r: any) => r.key) : [...VAT_NAMES]);
       const toImport = (selectedVats.length > 0
         ? reports.filter(r => selectedVats.includes(r.vatName))
         : reports
