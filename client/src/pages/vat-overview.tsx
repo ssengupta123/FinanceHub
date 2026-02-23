@@ -59,22 +59,22 @@ export default function VatOverview() {
   const [selectedFy, setSelectedFy] = useState(getCurrentFy());
   const [selectedMetric, setSelectedMetric] = useState<"gm_contribution" | "revenue" | "gm_percent">("gm_contribution");
 
+  const fyOptions = getFyOptions([selectedFy]);
+  const elapsedMonths = getElapsedFyMonths(selectedFy);
+  const currentQuarterIndex = Math.min(Math.floor((elapsedMonths - 1) / 3), 3);
+
   const { data: vats } = useQuery<{ name: string; displayName: string; order: number }[]>({
     queryKey: ["/api/vats"],
   });
 
   const { data: overviewData, isLoading } = useQuery<VatOverviewData[]>({
-    queryKey: ["/api/vat-overview", selectedFy],
+    queryKey: ["/api/vat-overview", selectedFy, elapsedMonths],
     queryFn: async () => {
-      const res = await fetch(`/api/vat-overview?fy=${selectedFy}`);
+      const res = await fetch(`/api/vat-overview?fy=${selectedFy}&elapsedMonths=${elapsedMonths}`);
       if (!res.ok) throw new Error("Failed to fetch overview");
       return res.json();
     },
   });
-
-  const fyOptions = getFyOptions([selectedFy]);
-  const elapsedMonths = getElapsedFyMonths(selectedFy);
-  const currentQuarterIndex = Math.min(Math.floor((elapsedMonths - 1) / 3), 3);
 
   const metricLabels: Record<string, string> = {
     gm_contribution: "GM Contribution",
@@ -132,10 +132,10 @@ export default function VatOverview() {
   };
 
   const getTotalYtd = (vatData: VatOverviewData) => {
-    const cum = getCumulativeActuals(vatData);
-    const last = cum[cum.length - 1];
-    if (!last) return { revenue: 0, gmContribution: 0, gmPercent: 0 };
-    return last;
+    const totalRev = vatData.actuals.reduce((s, a) => s + a.revenue, 0);
+    const totalGm = vatData.actuals.reduce((s, a) => s + a.gmContribution, 0);
+    const gmPercent = totalRev > 0 ? totalGm / totalRev : 0;
+    return { revenue: totalRev, gmContribution: totalGm, gmPercent };
   };
 
   const renderVatCard = (vatData: VatOverviewData) => {

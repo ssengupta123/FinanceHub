@@ -2268,7 +2268,8 @@ Return this exact JSON structure:
     try {
       const fyYear = (req.query.fy as string) || "";
       if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
-      const data = await storage.getVatOverviewData(fyYear);
+      const elapsedMonths = req.query.elapsedMonths ? Number(req.query.elapsedMonths) : undefined;
+      const data = await storage.getVatOverviewData(fyYear, elapsedMonths);
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to load overview" });

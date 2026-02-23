@@ -341,7 +341,7 @@ export interface IStorage {
   upsertVatTarget(data: InsertVatTarget): Promise<VatTarget>;
   deleteVatTarget(id: number): Promise<void>;
 
-  getVatOverviewData(fyYear: string): Promise<{
+  getVatOverviewData(fyYear: string, elapsedMonths?: number): Promise<{
     vatName: string;
     targets: VatTarget[];
     actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
@@ -944,7 +944,7 @@ export class DatabaseStorage implements IStorage {
     await db("vat_targets").where("id", id).del();
   }
 
-  async getVatOverviewData(fyYear: string): Promise<{
+  async getVatOverviewData(fyYear: string, elapsedMonths?: number): Promise<{
     vatName: string;
     targets: VatTarget[];
     actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
@@ -956,6 +956,8 @@ export class DatabaseStorage implements IStorage {
       Q3: [7, 8, 9],
       Q4: [10, 11, 12],
     };
+
+    const maxMonth = elapsedMonths || 12;
 
     const allProjects = await db("projects").select("id", "vat");
     const projectsByVat: Record<string, number[]> = {};
@@ -989,7 +991,8 @@ export class DatabaseStorage implements IStorage {
       const actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[] = [];
 
       for (const [qName, months] of Object.entries(quarterFyMonths)) {
-        if (projectIds.length === 0) {
+        const eligibleMonths = months.filter(m => m <= maxMonth);
+        if (projectIds.length === 0 || eligibleMonths.length === 0) {
           actuals.push({ quarter: qName, revenue: 0, gmContribution: 0, gmPercent: 0 });
           continue;
         }
@@ -997,7 +1000,7 @@ export class DatabaseStorage implements IStorage {
           .join("projects", "project_monthly.project_id", "projects.id")
           .where("projects.vat", vatName)
           .where("project_monthly.fy_year", fyYear)
-          .whereIn("project_monthly.month", months)
+          .whereIn("project_monthly.month", eligibleMonths)
           .select(
             db.raw("COALESCE(SUM(CAST(project_monthly.revenue AS DECIMAL(14,2))), 0) as total_revenue"),
             db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
