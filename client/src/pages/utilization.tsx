@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, Target, Users, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
@@ -50,6 +51,7 @@ const STANDARD_WEEKLY_HOURS = 40;
 
 export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+  const [selectedTeam, setSelectedTeam] = useState("all");
   const [expandedOverutil, setExpandedOverutil] = useState<Set<number>>(new Set());
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
@@ -69,7 +71,7 @@ export default function UtilizationDashboard() {
     return getFyOptions(fys);
   }, [timesheets]);
 
-  const permanentEmployees = useMemo(
+  const allPermanentEmployees = useMemo(
     () => (employees || []).filter(e => {
       if ((e as any).staffType !== "Permanent") return false;
       if (e.status === "inactive") return false;
@@ -78,6 +80,16 @@ export default function UtilizationDashboard() {
       return true;
     }),
     [employees]
+  );
+
+  const availableTeams = useMemo(() => {
+    const teams = new Set(allPermanentEmployees.map(e => (e as any).team).filter(Boolean));
+    return Array.from(teams).sort() as string[];
+  }, [allPermanentEmployees]);
+
+  const permanentEmployees = useMemo(
+    () => selectedTeam === "all" ? allPermanentEmployees : allPermanentEmployees.filter(e => (e as any).team === selectedTeam),
+    [allPermanentEmployees, selectedTeam]
   );
 
   const permanentIds = useMemo(() => new Set(permanentEmployees.map(e => e.id)), [permanentEmployees]);
@@ -377,7 +389,20 @@ export default function UtilizationDashboard() {
             </span>
           </div>
         </div>
-        <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+        <div className="flex items-center gap-2">
+          <Select value={selectedTeam} onValueChange={setSelectedTeam}>
+            <SelectTrigger className="w-[130px]" data-testid="select-team-filter">
+              <SelectValue placeholder="All Teams" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Teams</SelectItem>
+              {availableTeams.map(t => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
