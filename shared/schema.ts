@@ -449,6 +449,32 @@ export const insertMessageSchema = z.object({
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = { id: number; conversationId: number; role: string; content: string; createdAt: Date };
 
+export const FEATURE_REQUEST_CATEGORIES = ["Bug Fix", "New Feature", "Data Correction", "UI Improvement"] as const;
+export const FEATURE_REQUEST_PRIORITIES = ["Low", "Medium", "High", "Critical"] as const;
+export const FEATURE_REQUEST_AREAS = ["Dashboard", "Finance", "Utilisation", "Resources", "Projects", "Pipeline", "Upload", "VAT Reports", "VAT Overview", "Administration", "Other"] as const;
+export const FEATURE_REQUEST_STATUSES = ["submitted", "under_review", "in_progress", "deployed"] as const;
+
+export const insertFeatureRequestSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  category: z.enum(FEATURE_REQUEST_CATEGORIES),
+  priority: z.enum(FEATURE_REQUEST_PRIORITIES),
+  area: z.enum(FEATURE_REQUEST_AREAS),
+  status: z.enum(FEATURE_REQUEST_STATUSES).optional().default("submitted"),
+  submittedBy: z.number(),
+  reviewedBy: z.number().nullable().optional(),
+  githubBranch: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+export type InsertFeatureRequest = z.infer<typeof insertFeatureRequestSchema>;
+export type FeatureRequest = InsertFeatureRequest & {
+  id: number;
+  submittedAt: Date;
+  updatedAt: Date;
+  submittedByName?: string;
+  reviewedByName?: string;
+};
+
 export const APP_ROLES = ["admin", "executive", "vat_lead", "operations", "employee"] as const;
 export type AppRole = (typeof APP_ROLES)[number];
 
@@ -456,7 +482,7 @@ export const RESOURCES = [
   "dashboard", "finance", "utilization", "partner_view", "vat_overview", "ai_insights",
   "projects", "resources", "rate_cards", "resource_plans", "timesheets", "costs",
   "milestones", "pipeline", "scenarios", "forecasts", "vat_reports",
-  "data_sources", "upload", "admin",
+  "data_sources", "upload", "admin", "feature_requests",
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -484,6 +510,7 @@ export const RESOURCE_ACTIONS: Record<string, string[]> = {
   data_sources: ["view", "create", "edit", "sync"],
   upload: ["view", "upload"],
   admin: ["view", "manage"],
+  feature_requests: ["view", "create", "edit"],
 };
 
 export const insertRolePermissionSchema = z.object({
@@ -504,6 +531,7 @@ export const DEFAULT_PERMISSIONS: Record<string, Record<string, string[]>> = {
     milestones: ["view"], pipeline: ["view"], scenarios: ["view", "create", "delete"],
     forecasts: ["view"], vat_reports: ["view"],
     data_sources: ["view"], upload: ["view"], admin: ["view"],
+    feature_requests: ["view", "create", "edit"],
   },
   vat_lead: {
     dashboard: ["view"], finance: ["view"], utilization: ["view"],
@@ -515,6 +543,7 @@ export const DEFAULT_PERMISSIONS: Record<string, Record<string, string[]>> = {
     scenarios: ["view", "create", "delete"], forecasts: ["view", "create"],
     vat_reports: ["view", "create", "edit", "delete"],
     data_sources: ["view"], upload: ["view"],
+    feature_requests: ["view", "create"],
   },
   operations: {
     dashboard: ["view"], finance: ["view"], utilization: ["view"],
@@ -531,10 +560,12 @@ export const DEFAULT_PERMISSIONS: Record<string, Record<string, string[]>> = {
     forecasts: ["view", "create"],
     vat_reports: ["view"], data_sources: ["view", "create", "edit", "sync"],
     upload: ["view", "upload"],
+    feature_requests: ["view", "create"],
   },
   employee: {
     dashboard: ["view"], finance: ["view"], utilization: ["view"],
     projects: ["view"], resources: ["view"], timesheets: ["view"],
     milestones: ["view"], vat_overview: ["view"],
+    feature_requests: ["view", "create"],
   },
 };

@@ -30,6 +30,7 @@ import {
   insertVatPlannerTaskSchema,
   insertVatChangeLogSchema,
   insertVatTargetSchema,
+  insertFeatureRequestSchema,
   VAT_NAMES,
   APP_ROLES,
 } from "@shared/schema";
@@ -2433,6 +2434,95 @@ Return this exact JSON structure:
       res.json(refVats.map((r: any) => ({ name: r.key, displayName: r.value, order: r.display_order })));
     } else {
       res.json(VAT_NAMES.map((name, i) => ({ name, displayName: name, order: i + 1 })));
+    }
+  });
+
+  // ─── Feature Requests ───
+  app.get("/api/feature-requests", requirePermission("feature_requests", "view"), async (_req, res) => {
+    try {
+      const requests = await storage.getFeatureRequests();
+      res.json(requests);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load feature requests" });
+    }
+  });
+
+  app.post("/api/feature-requests", requirePermission("feature_requests", "create"), async (req, res) => {
+    try {
+      const userId = (req.session as any).userId;
+      const data = insertFeatureRequestSchema.parse({ ...req.body, submittedBy: userId });
+      const result = await storage.createFeatureRequest(data);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to create feature request" });
+    }
+  });
+
+  app.patch("/api/feature-requests/:id", requirePermission("feature_requests", "edit"), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const userId = (req.session as any).userId;
+      const { status, notes, githubBranch } = req.body;
+      const updateData: any = {};
+      if (status) updateData.status = status;
+      if (notes !== undefined) updateData.notes = notes;
+      if (githubBranch !== undefined) updateData.githubBranch = githubBranch;
+      if (status === "under_review" || status === "in_progress") {
+        updateData.reviewedBy = userId;
+      }
+      const result = await storage.updateFeatureRequest(id, updateData);
+      if (!result) return res.status(404).json({ message: "Feature request not found" });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to update feature request" });
+    }
+  });
+
+  app.post("/api/feature-requests/:id/create-branch", requirePermission("feature_requests", "edit"), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const fr = await storage.getFeatureRequest(id);
+      if (!fr) return res.status(404).json({ message: "Feature request not found" });
+
+      const branchName = `feature/fr-${id}-${fr.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+
+      const pat = process.env.GITHUB_PAT;
+      if (!pat) return res.status(500).json({ message: "GitHub PAT not configured" });
+
+      const owner = "ssengupta123";
+      const repo = "FinanceHub";
+      const headers = {
+        "Authorization": `token ${pat}`,
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+      };
+
+      const mainRef = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/main`, { headers });
+      if (!mainRef.ok) return res.status(500).json({ message: "Failed to get main branch ref" });
+      const mainData: any = await mainRef.json();
+      const sha = mainData.object.sha;
+
+      const createRef = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha }),
+      });
+
+      if (!createRef.ok) {
+        const errData: any = await createRef.json();
+        if (errData.message?.includes("Reference already exists")) {
+          await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+          const updated = await storage.getFeatureRequest(id);
+          return res.json({ ...updated, message: "Branch already exists, linked to this request" });
+        }
+        return res.status(500).json({ message: `Failed to create branch: ${errData.message}` });
+      }
+
+      await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+      const updated = await storage.getFeatureRequest(id);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create GitHub branch" });
     }
   });
 
