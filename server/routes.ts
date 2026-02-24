@@ -2086,6 +2086,22 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       const graphData = await graphRes.json() as { value: any[] };
       const plannerTasks = graphData.value || [];
 
+      const bucketNameCache = new Map<string, string>();
+      try {
+        const bucketsRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/buckets`, {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        if (bucketsRes.ok) {
+          const bucketsData = await bucketsRes.json() as { value: { id: string; name: string }[] };
+          for (const b of bucketsData.value || []) {
+            bucketNameCache.set(b.id, b.name);
+          }
+          console.log(`[Planner Sync] Resolved ${bucketNameCache.size} bucket names`);
+        }
+      } catch (bucketErr: any) {
+        console.warn("[Planner Sync] Could not fetch bucket names:", bucketErr.message);
+      }
+
       const existingTasks = await storage.getVatPlannerTasks(reportId);
       const existingByExtId = new Map<string, any>();
       const existingWithoutExtId: any[] = [];
@@ -2173,7 +2189,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       for (const pt of plannerTasks) {
         const extId = pt.id;
         const taskName = pt.title || "Untitled";
-        const bucketName = pt.bucketId || "";
+        const bucketName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "") || "";
         const percentComplete = pt.percentComplete || 0;
         const progress = percentComplete === 100 ? "Completed" : percentComplete > 0 ? "In progress" : "Not started";
         const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
@@ -2210,8 +2226,10 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             const completedDate = pt.completedDateTime ? pt.completedDateTime.split("T")[0] : new Date().toISOString().split("T")[0];
             newlyCompletedTasks.push({ title: taskName, completedBy: completedByName, completedDate });
           }
-          if (changes.length > 0 || !existing.externalId) {
-            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, externalId: extId });
+          const needsBucketUpdate = existing.bucketName !== bucketName && bucketName;
+          const needsAssigneeUpdate = existing.assignedTo !== assignedTo && assignedTo;
+          if (changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate) {
+            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, bucketName, externalId: extId });
             if (changes.length > 0) {
               updatedCount++;
               updatedTasks.push({ title: taskName, changes });
@@ -2275,30 +2293,54 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       let aiSummary = "";
       if (openai && (newCount > 0 || updatedCount > 0 || newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0)) {
         try {
+          const bucketGroups: Record<string, string[]> = {};
+          for (const pt of plannerTasks) {
+            const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
+            if (!bucketGroups[bName]) bucketGroups[bName] = [];
+            const pct = pt.percentComplete || 0;
+            const status = pct === 100 ? "Completed" : pct > 0 ? "In Progress" : "Not Started";
+            const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
+            bucketGroups[bName].push(`${pt.title} [${status}]${assignees ? ` (${assignees})` : ""}`);
+          }
+
           const syncDataForAI = {
-            newTasksCreated: newTasks,
-            updatedTasks,
-            newlyCompletedThisSync: newlyCompletedTasks,
-            removedTasks,
-            completedTasksLast4Weeks: recentCompletedInLast4Weeks,
             totalTasksInPlan: synced,
+            bucketOverview: bucketGroups,
+            newTasksCreated: newTasks,
+            updatedTaskCount: updatedCount,
+            updatedTaskSamples: updatedTasks.slice(0, 10),
+            newlyCompletedThisSync: newlyCompletedTasks,
+            completedTasksLast4Weeks: recentCompletedInLast4Weeks,
+            removedTasks,
           };
           const aiRes = await openai.chat.completions.create({
             model: "gpt-4o-mini",
-            max_tokens: 600,
+            max_tokens: 800,
             messages: [
               {
                 role: "system",
-                content: `You are a concise project status summariser. Summarise planner task sync results in a clear, structured format using short bullet points. Use plain English. Structure your response as:
-- **New Tasks Created** (if any): tasks newly imported from Planner this sync — count and list each with title
-- **Updated Tasks** (if any): tasks whose fields changed during this sync — count and list what changed for each
-- **Completed Tasks (Last 4 Weeks)** (if any): ALL tasks in the plan completed within the last 4 weeks — count and list each with who completed it and when
-- **Removed Tasks** (if any): tasks no longer present in Planner — count and list
-Keep it brief and factual. If a section has no items, skip it entirely.`
+                content: `You are a senior executive advisor writing a concise executive update on VAT team activity based on Microsoft Planner task data. Your audience is leadership who need strategic insight, not a raw changelog.
+
+Write a brief executive summary (3-5 short paragraphs) covering:
+
+1. **Overall Status**: How many total tasks, how many are completed vs in-progress vs not started. Give a high-level health assessment.
+2. **Key Achievements**: What meaningful work was completed recently? Group by theme/category rather than listing every task. Mention who delivered results where known.
+3. **Active Focus Areas**: What are the main workstreams currently in progress? Highlight any urgent items or approaching deadlines.
+4. **New Initiatives**: Any newly created tasks that signal new strategic direction or priorities.
+5. **Risks & Attention Items**: Tasks removed, overdue items, or areas with no progress that need attention.
+
+Rules:
+- Write in professional business English suitable for a leadership audience
+- Be concise — no more than 200 words total
+- Group related items together rather than listing individual tasks
+- Focus on business impact and strategic themes, not individual field changes like "due date changed"
+- Skip any section that has nothing meaningful to report
+- Do NOT use markdown headers or bullet point formatting — write in flowing paragraphs
+- Reference people by name where relevant`
               },
               {
                 role: "user",
-                content: `Summarise these Planner sync results:\n${JSON.stringify(syncDataForAI, null, 2)}`
+                content: `Generate an executive update based on this Planner sync data:\n${JSON.stringify(syncDataForAI, null, 2)}`
               }
             ],
           });
