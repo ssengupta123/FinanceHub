@@ -46,7 +46,7 @@ function getISOWeekKey(dateStr: string | Date): string {
   return `${year}-W${String(weekNum).padStart(2, "0")}`;
 }
 
-const STANDARD_WEEKLY_HOURS = 38;
+const STANDARD_WEEKLY_HOURS = 40;
 
 export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
