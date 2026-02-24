@@ -159,28 +159,44 @@ async function main() {
 
     const blobs: { path: string; sha: string; mode: string; type: string }[] = [];
     
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
     let count = 0;
     for (const file of files) {
       const content = fs.readFileSync(file.fullPath);
       const base64Content = content.toString('base64');
       
-      const { data: blob } = await octokit.git.createBlob({
-        owner: user.login,
-        repo: repoName,
-        content: base64Content,
-        encoding: 'base64',
-      });
-      
-      blobs.push({
-        path: file.path,
-        sha: blob.sha,
-        mode: '100644',
-        type: 'blob',
-      });
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          const { data: blob } = await octokit.git.createBlob({
+            owner: user.login,
+            repo: repoName,
+            content: base64Content,
+            encoding: 'base64',
+          });
+          
+          blobs.push({
+            path: file.path,
+            sha: blob.sha,
+            mode: '100644',
+            type: 'blob',
+          });
+          break;
+        } catch (err: any) {
+          if (err.status === 403 && retries > 1) {
+            console.log(`  Rate limited, waiting 60s before retry...`);
+            await delay(60000);
+            retries--;
+          } else {
+            throw err;
+          }
+        }
+      }
       
       count++;
       if (count % 20 === 0) {
         console.log(`  Uploaded ${count}/${files.length} files...`);
+        await delay(2000);
       }
     }
     console.log(`  Uploaded ${count}/${files.length} files.`);
