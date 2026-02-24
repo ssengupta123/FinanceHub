@@ -1,0 +1,34 @@
+2026-02-24T00:39:22.7043264Z AI insights error: Gg [Error]: 401 Incorrect API key provided: A5liY7iy************************************************************************a0Ji. You can find your API key at https://platform.openai.com/account/api-keys.
+2026-02-24T00:39:22.7043602Z     at r.generate (/home/site/wwwroot/dist/index.cjs:388:20693)
+2026-02-24T00:39:22.7043627Z     at sr.makeStatusError (/home/site/wwwroot/dist/index.cjs:410:1176)
+2026-02-24T00:39:22.7043649Z     at sr.makeRequest (/home/site/wwwroot/dist/index.cjs:410:4505)
+2026-02-24T00:39:22.704367Z     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-02-24T00:39:22.704369Z     at async /home/site/wwwroot/dist/index.cjs:569:229 {
+2026-02-24T00:39:22.7043707Z   status: 401,
+2026-02-24T00:39:22.7043725Z   headers: Headers {
+2026-02-24T00:39:22.7043743Z     date: 'Tue, 24 Feb 2026 00:39:22 GMT',
+2026-02-24T00:39:22.7043762Z     'content-type': 'application/json; charset=utf-8',
+2026-02-24T00:39:22.7043818Z     'content-length': '334',
+2026-02-24T00:39:22.7043838Z     connection: 'keep-alive',
+2026-02-24T00:39:22.7043857Z     vary: 'Origin',
+2026-02-24T00:39:22.7043877Z     'x-request-id': 'req_ed271501d23c4404afccd4a7724c85f5',
+2026-02-24T00:39:22.7043895Z     'x-openai-proxy-wasm': 'v0.1',
+2026-02-24T00:39:22.7043913Z     server: 'cloudflare',
+2026-02-24T00:39:22.7043931Z     'cf-cache-status': 'DYNAMIC',
+2026-02-24T00:39:22.7043969Z     'set-cookie': '__cf_bm=a3s0xOhvjFGsmtp.Kr0fpcD.ONRD10riZqXtUSY2X2o-1771893562.4646986-1.0.1.1-wl_fjVca7erydp_3HPSEHIBl.Gpgd6TJHxlziRrSQhWfTbUVHAtiOG3bY9AwhGNhdel5nQf.nTnBHtCxN7V2Yg3Anv5RnHrGa9MparJq3qpQvrBE7V2RiCQGzzAtYXUj; HttpOnly; Secure; Path=/; Domain=api.openai.com; Expires=Tue, 24 Feb 2026 01:09:22 GMT, _cfuvid=NZ_UWNG0jp_RKbNDS_LYNZqnFG64E0ocoWr2OHsM5Bc-1771893562.4646986-1.0.1.1-jykUNTYRUQIgrs79MaJ0Dx3hUSLtzOIhQMBKsZd8xd4; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.openai.com',
+2026-02-24T00:39:22.7043989Z     'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+2026-02-24T00:39:22.7044009Z     'x-content-type-options': 'nosniff',
+2026-02-24T00:39:22.7044057Z     'cf-ray': '9d2ae7cd6a6ba7fc-SYD',
+2026-02-24T00:39:22.7044077Z     'alt-svc': 'h3=":443"; ma=86400'
+2026-02-24T00:39:22.7044094Z   },
+2026-02-24T00:39:22.7044113Z   requestID: 'req_ed271501d23c4404afccd4a7724c85f5',
+2026-02-24T00:39:22.704413Z   error: {
+2026-02-24T00:39:22.7044155Z     message: 'Incorrect API key provided: A5liY7iy************************************************************************a0Ji. You can find your API key at https://platform.openai.com/account/api-keys.',
+2026-02-24T00:39:22.7044172Z     type: 'invalid_request_error',
+2026-02-24T00:39:22.7044191Z     param: null,
+2026-02-24T00:39:22.7044209Z     code: 'invalid_api_key'
+2026-02-24T00:39:22.7044226Z   },
+2026-02-24T00:39:22.7044243Z   code: 'invalid_api_key',
+2026-02-24T00:39:22.7044292Z   param: null,
+2026-02-24T00:39:22.7044311Z   type: 'invalid_request_error'
+2026-02-24T00:39:22.7044347Z }
