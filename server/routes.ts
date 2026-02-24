@@ -337,7 +337,17 @@ export async function registerRoutes(
         .groupBy("timesheets.employee_id", "timesheets.week_ending",
           "employees.first_name", "employees.last_name", "employees.role")
         .orderBy([{ column: "week_ending", order: "desc" }, { column: "total_hours", order: "desc" }]);
-      res.json(rows);
+      const normalized = rows.map((r: any) => ({
+        employee_id: Number(r.employee_id),
+        week_ending: r.week_ending instanceof Date ? r.week_ending.toISOString().split("T")[0] : String(r.week_ending).split("T")[0],
+        employee_name: r.employee_name || "Unknown",
+        employee_role: r.employee_role || "",
+        total_hours: String(r.total_hours ?? 0),
+        billable_hours: String(r.billable_hours ?? 0),
+        cost_value: String(r.cost_value ?? 0),
+        sale_value: String(r.sale_value ?? 0),
+      }));
+      res.json(normalized);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
