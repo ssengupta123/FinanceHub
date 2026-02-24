@@ -132,7 +132,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: "opsCommentary", label: "Ops Commentary" },
 ];
 
-const MONTH_LABELS = ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12"];
+const FY_MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
 const initialForm = {
   projectCode: "",
@@ -182,7 +182,7 @@ function MonthlyDetail({ projectId }: { projectId: number }) {
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[80px]">Type</TableHead>
-              {MONTH_LABELS.map(label => (
+              {FY_MONTH_LABELS.map(label => (
                 <TableHead key={label} className="text-right min-w-[70px]">{label}</TableHead>
               ))}
               <TableHead className="text-right min-w-[80px] font-semibold">Total</TableHead>

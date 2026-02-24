@@ -132,9 +132,15 @@ export default function UtilizationDashboard() {
       rpByEmpMonth.set(mapKey, existing + parseNum(rp.allocationPercent));
     });
 
-    const activeProjects = (projects || []).filter(p =>
-      p.client !== "Internal" && (p.status === "active" || (p as any).adStatus === "Active")
-    );
+    const activeProjects = (projects || []).filter(p => {
+      if (p.client === "Internal") return false;
+      if (p.status !== "active" && (p as any).adStatus !== "Active") return false;
+      if (p.endDate) {
+        const end = new Date(p.endDate);
+        if (end < today) return false;
+      }
+      return true;
+    });
 
     const recentWindowStart = new Date(today);
     recentWindowStart.setDate(recentWindowStart.getDate() - 56);
