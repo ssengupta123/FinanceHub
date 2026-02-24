@@ -429,9 +429,9 @@ export default function Resources() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Consultant">Consultant</SelectItem>
-                      <SelectItem value="Engineer">Engineer</SelectItem>
+                      <SelectItem value="Permanent">Permanent</SelectItem>
                       <SelectItem value="Contractor">Contractor</SelectItem>
+                      <SelectItem value="Vendor">Vendor</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -564,9 +564,9 @@ export default function Resources() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="Consultant">Consultant</SelectItem>
-            <SelectItem value="Engineer">Engineer</SelectItem>
+            <SelectItem value="Permanent">Permanent</SelectItem>
             <SelectItem value="Contractor">Contractor</SelectItem>
+            <SelectItem value="Vendor">Vendor</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterTeam} onValueChange={setFilterTeam}>
