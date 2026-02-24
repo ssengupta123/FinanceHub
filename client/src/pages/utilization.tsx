@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { TrendingUp, Target, Users, AlertTriangle } from "lucide-react";
+import { TrendingUp, Target, Users, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
@@ -50,6 +50,7 @@ const STANDARD_WEEKLY_HOURS = 40;
 
 export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+  const [expandedOverutil, setExpandedOverutil] = useState<Set<number>>(new Set());
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
@@ -289,7 +290,19 @@ export default function UtilizationDashboard() {
 
     const overutilised = rolling
       .filter(r => r.avgUtil > 100)
-      .map(r => ({ name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil, projectCount: r.maxProjectCount }))
+      .map(r => {
+        const allocations = empProjectAllocations.get(r.employeeId) || [];
+        const projectBreakdown = allocations.map(a => {
+          const proj = activeProjects.find(p => p.id === a.projectId);
+          return {
+            projectName: proj ? (proj.projectCode || proj.name) : `Project ${a.projectId}`,
+            client: proj?.client || "",
+            avgHoursPerWeek: a.avgHoursPerWeek,
+            allocationPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
+          };
+        }).sort((a, b) => b.avgHoursPerWeek - a.avgHoursPerWeek);
+        return { name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil, projectCount: r.maxProjectCount, projectBreakdown };
+      })
       .sort((a, b) => b.pct - a.pct);
 
     return {
@@ -447,19 +460,61 @@ export default function UtilizationDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {overutilisedList.map((emp: any, idx: number) => (
-                  <TableRow key={idx} data-testid={`row-overutilised-${idx}`}>
-                    <TableCell className="font-medium">{emp.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
-                    <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
-                    <TableCell className="text-right">{emp.projectCount > 0 ? emp.projectCount : "\u2014"}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
-                        {emp.pct.toFixed(0)}%
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {overutilisedList.map((emp: any, idx: number) => {
+                  const isExpanded = expandedOverutil.has(idx);
+                  return (
+                    <>
+                      <TableRow
+                        key={idx}
+                        data-testid={`row-overutilised-${idx}`}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => {
+                          setExpandedOverutil(prev => {
+                            const next = new Set(prev);
+                            if (next.has(idx)) next.delete(idx);
+                            else next.add(idx);
+                            return next;
+                          });
+                        }}
+                      >
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-1">
+                            {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                            {emp.name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
+                        <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
+                        <TableCell className="text-right">{emp.projectCount > 0 ? emp.projectCount : "\u2014"}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
+                            {emp.pct.toFixed(0)}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && emp.projectBreakdown && emp.projectBreakdown.length > 0 && (
+                        emp.projectBreakdown.map((proj: any, pi: number) => (
+                          <TableRow key={`${idx}-proj-${pi}`} className="bg-muted/30" data-testid={`row-overutil-project-${idx}-${pi}`}>
+                            <TableCell className="pl-10 text-sm text-muted-foreground">{proj.projectName}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{proj.client || "\u2014"}</TableCell>
+                            <TableCell className="text-right text-sm">{proj.avgHoursPerWeek.toFixed(1)}</TableCell>
+                            <TableCell className="text-right"></TableCell>
+                            <TableCell className="text-right text-sm">
+                              <Badge variant="secondary" className="text-xs">
+                                {proj.allocationPct.toFixed(0)}%
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                      {isExpanded && (!emp.projectBreakdown || emp.projectBreakdown.length === 0) && (
+                        <TableRow key={`${idx}-no-proj`} className="bg-muted/30">
+                          <TableCell colSpan={5} className="pl-10 text-sm text-muted-foreground italic">No project allocation data available</TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
