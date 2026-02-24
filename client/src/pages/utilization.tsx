@@ -70,7 +70,13 @@ export default function UtilizationDashboard() {
   }, [timesheets]);
 
   const permanentEmployees = useMemo(
-    () => (employees || []).filter(e => (e as any).staffType === "Permanent" && e.status !== "inactive"),
+    () => (employees || []).filter(e => {
+      if ((e as any).staffType !== "Permanent") return false;
+      if (e.status === "inactive") return false;
+      const fn = ((e as any).firstName || "").trim();
+      if (fn.startsWith("Perm-") || fn.startsWith("Contractor-") || fn === "Contingency") return false;
+      return true;
+    }),
     [employees]
   );
 
