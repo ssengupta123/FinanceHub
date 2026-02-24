@@ -1296,6 +1296,35 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Standalone Sheet Uploads (Project Hours / Personal Hours) ───
+  app.post("/api/upload/single-sheet", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const sheetType = req.body.sheetType;
+      if (!sheetType || !["Project Hours", "Personal Hours - inc non-projec"].includes(sheetType)) {
+        return res.status(400).json({ message: "Invalid sheet type" });
+      }
+
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      let ws = wb.Sheets[sheetType];
+      if (!ws) {
+        ws = wb.Sheets[wb.SheetNames[0]];
+      }
+      if (!ws) return res.status(400).json({ message: "No sheet found in file" });
+
+      let result: { imported: number; errors: string[] };
+      if (sheetType === "Project Hours") {
+        result = await importProjectHours(ws);
+      } else {
+        result = await importPersonalHours(ws);
+      }
+
+      res.json({ results: { [sheetType]: result } });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Import failed" });
+    }
+  });
+
   // ─── AI Insights ───
   let openai: OpenAI | null = null;
   try {

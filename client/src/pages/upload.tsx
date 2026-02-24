@@ -486,8 +486,154 @@ export default function UploadPage() {
 
       <Separator className="my-6" />
 
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Standalone Sheet Uploads</h2>
+        <p className="text-muted-foreground text-sm mb-4">Upload individual sheets from the KPI raw file independently</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SingleSheetUpload
+            title="Project Hours"
+            description="Project-level hours and KPI summary data"
+            sheetType="Project Hours"
+          />
+          <SingleSheetUpload
+            title="Personal Hours"
+            description="Timesheet entries including non-project hours"
+            sheetType="Personal Hours - inc non-projec"
+          />
+        </div>
+      </div>
+
+      <Separator className="my-6" />
+
       <VatPptxUpload />
     </div>
+  );
+}
+
+function SingleSheetUpload({ title, description, sheetType }: { title: string; description: string; sheetType: string }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const { can } = useAuth();
+
+  async function handleImport() {
+    if (!file) return;
+    setImporting(true);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("sheetType", sheetType);
+      const res = await fetch("/api/upload/single-sheet", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Import failed");
+      }
+      const data = await res.json();
+      const sheetResult = data.results[sheetType];
+      setResult(sheetResult);
+
+      toast({
+        title: "Import Complete",
+        description: `${sheetResult.imported} records imported for ${title}`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kpis"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/utilization/weekly"] });
+    } catch (err: any) {
+      toast({ title: "Import Error", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function clearFile() {
+    setFile(null);
+    setResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  return (
+    <Card data-testid={`card-upload-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileSpreadsheet className="h-4 w-4" />
+          {title}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </CardHeader>
+      <CardContent>
+        {!file ? (
+          <div
+            className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate"
+            onClick={() => fileInputRef.current?.click()}
+            data-testid={`drop-zone-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+          >
+            <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm font-medium">Click to select file</p>
+            <p className="text-xs text-muted-foreground">.xlsx file with {title} data</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) { setFile(f); setResult(null); }
+              }}
+              data-testid={`input-file-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+            />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileSpreadsheet className="h-5 w-5 text-green-600 flex-shrink-0" />
+                <p className="text-sm font-medium truncate">{file.name}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={clearFile} data-testid={`button-clear-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+            {can("upload", "upload") && (
+              <Button
+                onClick={handleImport}
+                disabled={importing}
+                className="w-full"
+                size="sm"
+                data-testid={`button-import-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+              >
+                {importing ? "Importing..." : `Import ${title}`}
+              </Button>
+            )}
+            {result && (
+              <div className="p-2 rounded-md border text-sm">
+                {result.imported > 0 && (
+                  <div className="flex items-center gap-1 text-green-600">
+                    <CheckCircle className="h-3 w-3" />
+                    {result.imported} records imported
+                  </div>
+                )}
+                {result.errors.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {result.errors.slice(0, 5).map((err, idx) => (
+                      <p key={idx} className="text-xs text-destructive">{err}</p>
+                    ))}
+                    {result.errors.length > 5 && (
+                      <p className="text-xs text-muted-foreground">...and {result.errors.length - 5} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
