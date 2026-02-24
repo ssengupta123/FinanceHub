@@ -323,6 +323,19 @@ export default function Resources() {
     },
   });
 
+  const toggleStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      await apiRequest("PATCH", `/api/employees/${id}`, { status });
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      toast({ title: `Employee marked ${variables.status}` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleSubmit = (e: { preventDefault: () => void }) => {
     e.preventDefault();
     createMutation.mutate(form);
@@ -775,7 +788,21 @@ export default function Resources() {
                       </TableCell>}
                       {isCol("location") && <TableCell data-testid={`text-employee-location-${emp.id}`}>{emp.location || "--"}</TableCell>}
                       {isCol("status") && <TableCell>
-                        <Badge variant={statusVariant(emp.status)} data-testid={`badge-employee-status-${emp.id}`}>{emp.status}</Badge>
+                        {can("resources", "edit") ? (
+                          <Badge
+                            variant={statusVariant(emp.status)}
+                            className="cursor-pointer hover:opacity-80"
+                            data-testid={`badge-employee-status-${emp.id}`}
+                            onClick={() => toggleStatusMutation.mutate({
+                              id: emp.id,
+                              status: emp.status === "active" ? "inactive" : "active"
+                            })}
+                          >
+                            {emp.status}
+                          </Badge>
+                        ) : (
+                          <Badge variant={statusVariant(emp.status)} data-testid={`badge-employee-status-${emp.id}`}>{emp.status}</Badge>
+                        )}
                       </TableCell>}
                       <TableCell>
                         {can("resources", "delete") && (
