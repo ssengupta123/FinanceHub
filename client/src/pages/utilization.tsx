@@ -132,10 +132,8 @@ export default function UtilizationDashboard() {
       rpByEmpMonth.set(mapKey, existing + parseNum(rp.allocationPercent));
     });
 
-    const excludedProjectCodes = new Set(["RGT001", "RGT002"]);
     const activeProjects = (projects || []).filter(p => {
       if (p.client === "Internal") return false;
-      if (excludedProjectCodes.has(p.projectCode || "")) return false;
       if (p.status !== "active" && (p as any).adStatus !== "Active") return false;
       if (p.endDate) {
         const end = new Date(p.endDate);
