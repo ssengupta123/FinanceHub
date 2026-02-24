@@ -92,7 +92,7 @@ export default function UtilizationDashboard() {
       return fyTimesheets.some(t => {
         if (t.employeeId !== emp.id) return false;
         const proj = (projects || []).find(p => p.id === t.projectId);
-        return proj && proj.client !== "Internal" && (proj.status === "active" || (proj as any).adStatus === "Active");
+        return proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || (proj as any).adStatus === "Active");
       });
     });
   }, [permanentEmployees, fyTimesheets, projects]);
@@ -139,7 +139,7 @@ export default function UtilizationDashboard() {
     });
 
     const activeProjects = (projects || []).filter(p => {
-      if (p.client === "Internal") return false;
+      if (p.client === "Internal" || p.client === "RGT") return false;
       if (p.status !== "active" && (p as any).adStatus !== "Active") return false;
       if (p.endDate) {
         const end = new Date(p.endDate);
