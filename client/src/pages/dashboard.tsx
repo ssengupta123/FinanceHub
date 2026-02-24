@@ -144,6 +144,19 @@ export default function Dashboard() {
 
   const avgUtilization = utilizationData?.utilization ?? 0;
 
+  const monthlyTrend = useMemo(() => {
+    const monthData: { month: string; revenue: number; cost: number; profit: number; gm: number }[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const monthRecords = fyProjectMonthly.filter(r => r.month === m);
+      const rev = monthRecords.reduce((s, r) => s + parseFloat(r.revenue || "0"), 0);
+      const cost = monthRecords.reduce((s, r) => s + parseFloat(r.cost || "0"), 0);
+      const profit = rev - cost;
+      const gm = rev > 0 ? (profit / rev) * 100 : 0;
+      monthData.push({ month: FY_MONTHS[m - 1], revenue: rev, cost, profit, gm });
+    }
+    return monthData.filter(d => d.revenue > 0 || d.cost > 0);
+  }, [fyProjectMonthly]);
+
   const projectBillingMap = new Map(fyProjects.map(p => [p.id, p.billingCategory || "Other"]));
 
   const billingBreakdown = useMemo(() => {
@@ -529,43 +542,35 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-testid="card-monthly-trend">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-            <CardTitle className="text-sm sm:text-base">Target Tracking</CardTitle>
+            <CardTitle className="text-sm sm:text-base">Monthly Revenue & Margin</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6 pt-0">
+          <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? (
-              Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 sm:h-10 w-full" />)
+              <Skeleton className="h-[200px] sm:h-[260px] w-full" />
+            ) : monthlyTrend.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No monthly data available</p>
             ) : (
-              <>
-                {[
-                  { label: "Revenue vs Target", actual: totalRevenue, target: REVENUE_TARGET * elapsedMonths / 12, format: "currency" as const },
-                  { label: "Contract Pipeline", actual: totalContracted, target: REVENUE_TARGET, format: "currency" as const },
-                  { label: "Gross Margin", actual: marginPercent, target: MARGIN_TARGET, format: "percent" as const },
-                  { label: "Utilisation", actual: avgUtilization, target: UTILIZATION_TARGET, format: "percent" as const },
-                ].map((item) => {
-                  const pctComplete = item.target > 0 ? Math.min(item.actual / item.target, 1) : 0;
-                  return (
-                    <div key={item.label} className="space-y-1" data-testid={`target-${item.label.replace(/\s/g, "-").toLowerCase()}`}>
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                          <RagDot actual={item.actual} target={item.target} />
-                          <span className="text-xs sm:text-sm truncate">{item.label}</span>
-                        </div>
-                        <span className={`text-xs sm:text-sm font-medium flex-shrink-0 ${ragColor(item.actual, item.target)}`}>
-                          {item.format === "currency" ? formatCurrency(item.actual) : formatPercent(item.actual)}
-                        </span>
-                      </div>
-                      <div className="h-1.5 sm:h-2 w-full rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${item.actual >= item.target ? "bg-green-500" : item.actual >= item.target * 0.8 ? "bg-amber-500" : "bg-red-500"}`}
-                          style={{ width: `${pctComplete * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={monthlyTrend}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="left" tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={(v: number) => `${v.toFixed(0)}%`} tick={{ fontSize: 11 }} domain={[0, 50]} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => {
+                      if (name === "GM %") return [`${value.toFixed(1)}%`, name];
+                      return [`$${(value / 1000).toFixed(0)}K`, name];
+                    }}
+                  />
+                  <Legend />
+                  <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="cost" name="Cost" fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                  <Line yAxisId="right" dataKey="gm" name="GM %" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                  <ReferenceLine yAxisId="right" y={MARGIN_TARGET * 100} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "Target", position: "right", fontSize: 10, fill: "#ef4444" }} />
+                </ComposedChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
