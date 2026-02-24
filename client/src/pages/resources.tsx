@@ -159,7 +159,7 @@ export default function Resources() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
 
-  const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
+  const [selectedFY, setSelectedFY] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStaffType, setFilterStaffType] = useState("all");
   const [filterTeam, setFilterTeam] = useState("all");
@@ -263,7 +263,7 @@ export default function Resources() {
   const filtered = useMemo(() => {
     if (!employees) return [];
 
-    const base = fyEmployeeIds.size > 0
+    const base = selectedFY !== "all" && fyEmployeeIds.size > 0
       ? employees.filter(emp => fyEmployeeIds.has(emp.id))
       : employees;
 
@@ -354,7 +354,7 @@ export default function Resources() {
           <p className="text-sm text-muted-foreground" data-testid="text-resources-subtitle">Staff Schedule of Tasks & Costing</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} includeAll />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" data-testid="button-column-toggle">
