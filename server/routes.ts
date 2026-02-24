@@ -30,6 +30,7 @@ import {
   insertVatPlannerTaskSchema,
   insertVatChangeLogSchema,
   insertVatTargetSchema,
+  insertFeatureRequestSchema,
   VAT_NAMES,
   APP_ROLES,
 } from "@shared/schema";
@@ -2073,8 +2074,62 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       const insights: string[] = [];
       let synced = 0;
       let newCount = 0;
-      let completedCount = 0;
+      let newlyCompletedCount = 0;
       let updatedCount = 0;
+
+      const newTasks: { title: string; dueDate: string }[] = [];
+      const updatedTasks: { title: string; changes: string[] }[] = [];
+      const newlyCompletedTasks: { title: string; completedBy: string; completedDate: string }[] = [];
+      const fourWeeksAgo = new Date();
+      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+
+      const allUserIds = new Set<string>();
+      for (const pt of plannerTasks) {
+        if (pt.assignments) {
+          for (const uid of Object.keys(pt.assignments)) {
+            if (uid) allUserIds.add(uid);
+          }
+        }
+        if (pt.completedBy?.user?.id) {
+          allUserIds.add(pt.completedBy.user.id);
+        }
+      }
+
+      const userIdCache = new Map<string, string>();
+      for (const pt of plannerTasks) {
+        if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
+          userIdCache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
+        }
+      }
+      const batchIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
+      const BATCH_SIZE = 20;
+      for (let i = 0; i < batchIds.length; i += BATCH_SIZE) {
+        const batch = batchIds.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(async (uid) => {
+            try {
+              const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName`, {
+                headers: { Authorization: `Bearer ${tokenData.access_token}` },
+              });
+              if (userRes.ok) {
+                const userData = await userRes.json() as { displayName?: string };
+                return { uid, name: userData.displayName || uid };
+              }
+            } catch {}
+            return { uid, name: uid };
+          })
+        );
+        for (const result of results) {
+          if (result.status === "fulfilled") {
+            userIdCache.set(result.value.uid, result.value.name);
+          }
+        }
+      }
+
+      const resolveUserName = (userId: string): string => {
+        if (!userId) return "Unknown";
+        return userIdCache.get(userId) || userId;
+      };
 
       for (const pt of plannerTasks) {
         const extId = pt.id;
@@ -2084,7 +2139,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         const progress = percentComplete === 100 ? "Completed" : percentComplete > 0 ? "In progress" : "Not started";
         const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
         const priority = pt.priority === 1 ? "Important" : pt.priority === 5 ? "Low" : "Medium";
-        const assignedTo = pt.assignments ? Object.keys(pt.assignments).join(", ") : "";
+        const assignedToIds = pt.assignments ? Object.keys(pt.assignments) : [];
+        const assignedTo = assignedToIds.map(uid => resolveUserName(uid)).join(", ");
         seenExtIds.add(extId);
 
         let existing = existingByExtId.get(extId);
@@ -2098,12 +2154,32 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
 
         if (existing) {
           const wasCompleted = existing.progress !== "Completed" && progress === "Completed";
-          if (wasCompleted) completedCount++;
-          if (existing.progress !== progress || existing.dueDate !== dueDate || !existing.externalId) {
+          const changes: string[] = [];
+          if (existing.progress !== progress) changes.push(`progress: "${existing.progress}" → "${progress}"`);
+          if (existing.dueDate !== dueDate && dueDate) changes.push(`due date: "${existing.dueDate || "none"}" → "${dueDate}"`);
+          if (existing.priority !== priority) changes.push(`priority: "${existing.priority}" → "${priority}"`);
+          if (existing.taskName !== taskName) changes.push(`title: "${existing.taskName}" → "${taskName}"`);
+
+          if (wasCompleted) {
+            newlyCompletedCount++;
+            let completedByName = "Unknown";
+            if (pt.completedBy?.user?.id) {
+              completedByName = resolveUserName(pt.completedBy.user.id);
+            } else if (pt.completedBy?.user?.displayName) {
+              completedByName = pt.completedBy.user.displayName;
+            }
+            const completedDate = pt.completedDateTime ? pt.completedDateTime.split("T")[0] : new Date().toISOString().split("T")[0];
+            newlyCompletedTasks.push({ title: taskName, completedBy: completedByName, completedDate });
+          }
+          if (changes.length > 0 || !existing.externalId) {
             await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, externalId: extId });
-            updatedCount++;
+            if (changes.length > 0) {
+              updatedCount++;
+              updatedTasks.push({ title: taskName, changes });
+            }
           }
         } else {
+          const createdDate = pt.createdDateTime ? pt.createdDateTime.split("T")[0] : "";
           await storage.createVatPlannerTask({
             vatReportId: reportId,
             bucketName,
@@ -2117,29 +2193,88 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             externalId: extId,
           });
           newCount++;
+          newTasks.push({ title: taskName, dueDate });
         }
         synced++;
       }
 
+      const recentCompletedInLast4Weeks: { title: string; completedBy: string; completedDate: string }[] = [];
+      for (const pt of plannerTasks) {
+        if (pt.percentComplete !== 100) continue;
+        if (!pt.completedDateTime) continue;
+        if (new Date(pt.completedDateTime) < fourWeeksAgo) continue;
+        let completedByName = "Unknown";
+        if (pt.completedBy?.user?.id) {
+          completedByName = resolveUserName(pt.completedBy.user.id);
+        } else if (pt.completedBy?.user?.displayName) {
+          completedByName = pt.completedBy.user.displayName;
+        }
+        recentCompletedInLast4Weeks.push({
+          title: pt.title || "Untitled",
+          completedBy: completedByName,
+          completedDate: pt.completedDateTime.split("T")[0],
+        });
+      }
+
       let removedCount = 0;
-      for (const [extId, task] of existingByExtId) {
+      const removedTasks: string[] = [];
+      for (const [extId, task] of Array.from(existingByExtId.entries())) {
         if (!seenExtIds.has(extId)) {
+          removedTasks.push(task.taskName || "Untitled");
           await storage.deleteVatPlannerTask(task.id);
           removedCount++;
         }
       }
 
-      if (completedCount > 0) insights.push(`${completedCount} task${completedCount > 1 ? "s" : ""} completed`);
+      if (newlyCompletedCount > 0) insights.push(`${newlyCompletedCount} task${newlyCompletedCount > 1 ? "s" : ""} newly completed this sync`);
       if (newCount > 0) insights.push(`${newCount} new task${newCount > 1 ? "s" : ""} added from Planner`);
       if (updatedCount > 0) insights.push(`${updatedCount} task${updatedCount > 1 ? "s" : ""} updated`);
       if (removedCount > 0) insights.push(`${removedCount} task${removedCount > 1 ? "s" : ""} removed (no longer in Planner)`);
+      if (recentCompletedInLast4Weeks.length > 0) insights.push(`${recentCompletedInLast4Weeks.length} task${recentCompletedInLast4Weeks.length > 1 ? "s" : ""} completed in last 4 weeks`);
       if (insights.length === 0) insights.push("All tasks are up to date");
+
+      let aiSummary = "";
+      if (openai && (newCount > 0 || updatedCount > 0 || newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0)) {
+        try {
+          const syncDataForAI = {
+            newTasksCreated: newTasks,
+            updatedTasks,
+            newlyCompletedThisSync: newlyCompletedTasks,
+            removedTasks,
+            completedTasksLast4Weeks: recentCompletedInLast4Weeks,
+            totalTasksInPlan: synced,
+          };
+          const aiRes = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            max_tokens: 600,
+            messages: [
+              {
+                role: "system",
+                content: `You are a concise project status summariser. Summarise planner task sync results in a clear, structured format using short bullet points. Use plain English. Structure your response as:
+- **New Tasks Created** (if any): tasks newly imported from Planner this sync — count and list each with title
+- **Updated Tasks** (if any): tasks whose fields changed during this sync — count and list what changed for each
+- **Completed Tasks (Last 4 Weeks)** (if any): ALL tasks in the plan completed within the last 4 weeks — count and list each with who completed it and when
+- **Removed Tasks** (if any): tasks no longer present in Planner — count and list
+Keep it brief and factual. If a section has no items, skip it entirely.`
+              },
+              {
+                role: "user",
+                content: `Summarise these Planner sync results:\n${JSON.stringify(syncDataForAI, null, 2)}`
+              }
+            ],
+          });
+          aiSummary = aiRes.choices?.[0]?.message?.content || "";
+        } catch (aiErr: any) {
+          console.error("[Planner Sync] AI summary error:", aiErr.message);
+          aiSummary = "";
+        }
+      }
 
       await storage.createVatChangeLog({
         vatReportId: reportId,
         fieldName: "planner_sync",
         oldValue: null,
-        newValue: insights.join("; "),
+        newValue: (aiSummary || insights.join("; ")).slice(0, 2000),
         changedBy: req.session?.username || "system",
         entityType: "planner",
         entityId: null,
@@ -2148,10 +2283,18 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       res.json({
         synced,
         newCount,
-        completedCount,
+        newlyCompletedCount,
         updatedCount,
         removedCount,
         insights,
+        aiSummary,
+        details: {
+          newTasks,
+          updatedTasks,
+          newlyCompletedTasks,
+          removedTasks,
+          recentCompletedInLast4Weeks,
+        },
       });
     } catch (error: any) {
       console.error("[Planner Sync] Error:", error);
@@ -2433,6 +2576,95 @@ Return this exact JSON structure:
       res.json(refVats.map((r: any) => ({ name: r.key, displayName: r.value, order: r.display_order })));
     } else {
       res.json(VAT_NAMES.map((name, i) => ({ name, displayName: name, order: i + 1 })));
+    }
+  });
+
+  // ─── Feature Requests ───
+  app.get("/api/feature-requests", requirePermission("feature_requests", "view"), async (_req, res) => {
+    try {
+      const requests = await storage.getFeatureRequests();
+      res.json(requests);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load feature requests" });
+    }
+  });
+
+  app.post("/api/feature-requests", requirePermission("feature_requests", "create"), async (req, res) => {
+    try {
+      const userId = (req.session as any).userId;
+      const data = insertFeatureRequestSchema.parse({ ...req.body, submittedBy: userId });
+      const result = await storage.createFeatureRequest(data);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to create feature request" });
+    }
+  });
+
+  app.patch("/api/feature-requests/:id", requirePermission("feature_requests", "edit"), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const userId = (req.session as any).userId;
+      const { status, notes, githubBranch } = req.body;
+      const updateData: any = {};
+      if (status) updateData.status = status;
+      if (notes !== undefined) updateData.notes = notes;
+      if (githubBranch !== undefined) updateData.githubBranch = githubBranch;
+      if (status === "under_review" || status === "in_progress") {
+        updateData.reviewedBy = userId;
+      }
+      const result = await storage.updateFeatureRequest(id, updateData);
+      if (!result) return res.status(404).json({ message: "Feature request not found" });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to update feature request" });
+    }
+  });
+
+  app.post("/api/feature-requests/:id/create-branch", requirePermission("feature_requests", "edit"), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const fr = await storage.getFeatureRequest(id);
+      if (!fr) return res.status(404).json({ message: "Feature request not found" });
+
+      const branchName = `feature/fr-${id}-${fr.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+
+      const pat = process.env.GITHUB_PAT;
+      if (!pat) return res.status(500).json({ message: "GitHub PAT not configured" });
+
+      const owner = "ssengupta123";
+      const repo = "FinanceHub";
+      const headers = {
+        "Authorization": `token ${pat}`,
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+      };
+
+      const mainRef = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/main`, { headers });
+      if (!mainRef.ok) return res.status(500).json({ message: "Failed to get main branch ref" });
+      const mainData: any = await mainRef.json();
+      const sha = mainData.object.sha;
+
+      const createRef = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha }),
+      });
+
+      if (!createRef.ok) {
+        const errData: any = await createRef.json();
+        if (errData.message?.includes("Reference already exists")) {
+          await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+          const updated = await storage.getFeatureRequest(id);
+          return res.json({ ...updated, message: "Branch already exists, linked to this request" });
+        }
+        return res.status(500).json({ message: `Failed to create branch: ${errData.message}` });
+      }
+
+      await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+      const updated = await storage.getFeatureRequest(id);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create GitHub branch" });
     }
   });
 

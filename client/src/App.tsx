@@ -34,6 +34,7 @@ import AdminPage from "@/pages/admin";
 import VatReportsPage from "@/pages/vat-reports";
 import VatOverview from "@/pages/vat-overview";
 import PartnerView from "@/pages/partner-view";
+import FeatureRequests from "@/pages/feature-requests";
 
 function Router() {
   return (
@@ -58,6 +59,7 @@ function Router() {
       <Route path="/vat-reports" component={VatReportsPage} />
       <Route path="/vat-overview" component={VatOverview} />
       <Route path="/partner-view" component={PartnerView} />
+      <Route path="/feature-requests" component={FeatureRequests} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>

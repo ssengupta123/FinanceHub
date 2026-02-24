@@ -20,6 +20,7 @@ import {
   Shield,
   FileText,
   Handshake,
+  Lightbulb,
 } from "lucide-react";
 import {
   Sidebar,
@@ -78,6 +79,7 @@ const navGroups = [
     items: [
       { title: "Data Sources", icon: Database, path: "/data-sources", resource: "data_sources" },
       { title: "Data Upload", icon: Upload, path: "/upload", resource: "upload" },
+      { title: "Feature Requests", icon: Lightbulb, path: "/feature-requests", resource: "feature_requests" },
     ],
   },
 ];

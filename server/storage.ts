@@ -51,6 +51,8 @@ import {
   type RolePermission,
   type VatTarget,
   type InsertVatTarget,
+  type FeatureRequest,
+  type InsertFeatureRequest,
 } from "@shared/schema";
 
 const EMPLOYEE_FIELD_MAP_TO_DB: Record<string, string> = {
@@ -372,6 +374,11 @@ export interface IStorage {
     totalActualHours: number;
     utilization: number;
   }[]>;
+
+  getFeatureRequests(): Promise<FeatureRequest[]>;
+  getFeatureRequest(id: number): Promise<FeatureRequest | undefined>;
+  createFeatureRequest(data: InsertFeatureRequest): Promise<FeatureRequest>;
+  updateFeatureRequest(id: number, data: Partial<{ status: string; reviewedBy: number; githubBranch: string; notes: string }>): Promise<FeatureRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1073,6 +1080,119 @@ export class DatabaseStorage implements IStorage {
   async getAllUsers(): Promise<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>> {
     const rows = await db("users").select("id", "username", "role", "email", "display_name");
     return rows.map((r: any) => ({ id: r.id, username: r.username, role: r.role || "employee", email: r.email, displayName: r.display_name }));
+  }
+
+  async getFeatureRequests(): Promise<FeatureRequest[]> {
+    const rows = await db("feature_requests")
+      .leftJoin("users as submitter", "feature_requests.submitted_by", "submitter.id")
+      .leftJoin("users as reviewer", "feature_requests.reviewed_by", "reviewer.id")
+      .select(
+        "feature_requests.*",
+        db.raw("COALESCE(submitter.display_name, submitter.username) as submitted_by_name"),
+        db.raw("COALESCE(reviewer.display_name, reviewer.username) as reviewed_by_name")
+      )
+      .orderBy("feature_requests.submitted_at", "desc");
+    return rows.map((r: any) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      category: r.category,
+      priority: r.priority,
+      area: r.area,
+      status: r.status,
+      submittedBy: r.submitted_by,
+      reviewedBy: r.reviewed_by,
+      githubBranch: r.github_branch,
+      notes: r.notes,
+      submittedAt: r.submitted_at,
+      updatedAt: r.updated_at,
+      submittedByName: r.submitted_by_name,
+      reviewedByName: r.reviewed_by_name,
+    }));
+  }
+
+  async getFeatureRequest(id: number): Promise<FeatureRequest | undefined> {
+    const rows = await db("feature_requests")
+      .leftJoin("users as submitter", "feature_requests.submitted_by", "submitter.id")
+      .leftJoin("users as reviewer", "feature_requests.reviewed_by", "reviewer.id")
+      .select(
+        "feature_requests.*",
+        db.raw("COALESCE(submitter.display_name, submitter.username) as submitted_by_name"),
+        db.raw("COALESCE(reviewer.display_name, reviewer.username) as reviewed_by_name")
+      )
+      .where("feature_requests.id", id)
+      .first();
+    if (!rows) return undefined;
+    return {
+      id: rows.id,
+      title: rows.title,
+      description: rows.description,
+      category: rows.category,
+      priority: rows.priority,
+      area: rows.area,
+      status: rows.status,
+      submittedBy: rows.submitted_by,
+      reviewedBy: rows.reviewed_by,
+      githubBranch: rows.github_branch,
+      notes: rows.notes,
+      submittedAt: rows.submitted_at,
+      updatedAt: rows.updated_at,
+      submittedByName: rows.submitted_by_name,
+      reviewedByName: rows.reviewed_by_name,
+    };
+  }
+
+  async createFeatureRequest(data: InsertFeatureRequest): Promise<FeatureRequest> {
+    const [row] = await db("feature_requests").insert({
+      title: data.title,
+      description: data.description,
+      category: data.category,
+      priority: data.priority,
+      area: data.area,
+      status: data.status || "submitted",
+      submitted_by: data.submittedBy,
+      notes: data.notes || null,
+    }).returning("*");
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      area: row.area,
+      status: row.status,
+      submittedBy: row.submitted_by,
+      reviewedBy: row.reviewed_by,
+      githubBranch: row.github_branch,
+      notes: row.notes,
+      submittedAt: row.submitted_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async updateFeatureRequest(id: number, data: Partial<{ status: string; reviewedBy: number; githubBranch: string; notes: string }>): Promise<FeatureRequest | undefined> {
+    const updateData: Record<string, any> = { updated_at: new Date() };
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.reviewedBy !== undefined) updateData.reviewed_by = data.reviewedBy;
+    if (data.githubBranch !== undefined) updateData.github_branch = data.githubBranch;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+    const [row] = await db("feature_requests").where({ id }).update(updateData).returning("*");
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      area: row.area,
+      status: row.status,
+      submittedBy: row.submitted_by,
+      reviewedBy: row.reviewed_by,
+      githubBranch: row.github_branch,
+      notes: row.notes,
+      submittedAt: row.submitted_at,
+      updatedAt: row.updated_at,
+    };
   }
 }
 
