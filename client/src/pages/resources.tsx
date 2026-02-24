@@ -789,17 +789,18 @@ export default function Resources() {
                       {isCol("location") && <TableCell data-testid={`text-employee-location-${emp.id}`}>{emp.location || "--"}</TableCell>}
                       {isCol("status") && <TableCell>
                         {can("resources", "edit") ? (
-                          <Badge
-                            variant={statusVariant(emp.status)}
-                            className="cursor-pointer hover:opacity-80"
-                            data-testid={`badge-employee-status-${emp.id}`}
-                            onClick={() => toggleStatusMutation.mutate({
-                              id: emp.id,
-                              status: emp.status === "active" ? "inactive" : "active"
-                            })}
+                          <Select
+                            value={emp.status}
+                            onValueChange={(v) => toggleStatusMutation.mutate({ id: emp.id, status: v })}
                           >
-                            {emp.status}
-                          </Badge>
+                            <SelectTrigger className="w-[120px] h-8 text-xs" data-testid={`select-employee-status-${emp.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Badge variant={statusVariant(emp.status)} data-testid={`badge-employee-status-${emp.id}`}>{emp.status}</Badge>
                         )}
