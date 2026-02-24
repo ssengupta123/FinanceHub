@@ -70,6 +70,7 @@ const ROLE_LABELS: Record<string, string> = {
 function statusVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
     case "active": return "default";
+    case "bench": return "outline";
     case "inactive": return "secondary";
     case "onboarding": return "outline";
     default: return "secondary";
@@ -492,6 +493,7 @@ export default function Resources() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="bench">Bench</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                     <SelectItem value="onboarding">Onboarding</SelectItem>
                   </SelectContent>
@@ -585,6 +587,7 @@ export default function Resources() {
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="bench">Bench</SelectItem>
             <SelectItem value="inactive">Inactive</SelectItem>
             <SelectItem value="onboarding">Onboarding</SelectItem>
           </SelectContent>
@@ -798,6 +801,7 @@ export default function Resources() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="bench">Bench</SelectItem>
                               <SelectItem value="inactive">Inactive</SelectItem>
                             </SelectContent>
                           </Select>
