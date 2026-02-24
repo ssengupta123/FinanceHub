@@ -709,6 +709,7 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
   const [showSync, setShowSync] = useState(false);
   const [planId, setPlanId] = useState(() => localStorage.getItem(`planner_plan_id_${reportId}`) || "");
   const [syncInsights, setSyncInsights] = useState<string[] | null>(null);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<VatPlannerTask[]>({
     queryKey: ["/api/vat-reports", reportId, "planner"],
@@ -760,10 +761,11 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
       const res = await apiRequest("POST", `/api/vat-reports/${reportId}/planner/sync`, { planId: syncPlanId });
       return res.json();
     },
-    onSuccess: (data: { insights: string[]; synced: number; newCount: number; completedCount: number; updatedCount: number; removedCount: number }) => {
+    onSuccess: (data: { insights: string[]; synced: number; newCount: number; newlyCompletedCount: number; updatedCount: number; removedCount: number; aiSummary?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports", reportId, "planner"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports", reportId, "changelog"] });
       setSyncInsights(data.insights);
+      setAiSummary(data.aiSummary || null);
       toast({ title: "Planner synced", description: data.insights.join(", ") });
     },
     onError: (err: any) => {
@@ -782,7 +784,7 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
           <CardTitle className="text-lg">Planner Status</CardTitle>
           <div className="flex items-center gap-2">
             {can("vat_reports", "edit") && (
-              <Button size="sm" variant="outline" onClick={() => { setShowSync(!showSync); setSyncInsights(null); }} data-testid="button-sync-planner">
+              <Button size="sm" variant="outline" onClick={() => { setShowSync(!showSync); setSyncInsights(null); setAiSummary(null); }} data-testid="button-sync-planner">
                 <Loader2 className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />Sync with Planner
               </Button>
             )}
@@ -830,6 +832,14 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {aiSummary && (
+              <div className="border rounded-md p-3 bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800" data-testid="planner-ai-summary">
+                <p className="text-xs font-bold flex items-center gap-1 mb-2"><Sparkles className="h-3.5 w-3.5 text-purple-500" /> AI Summary</p>
+                <div className="text-xs whitespace-pre-wrap leading-relaxed text-foreground/90">
+                  {aiSummary}
+                </div>
               </div>
             )}
           </div>
