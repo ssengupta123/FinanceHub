@@ -2226,8 +2226,10 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             const completedDate = pt.completedDateTime ? pt.completedDateTime.split("T")[0] : new Date().toISOString().split("T")[0];
             newlyCompletedTasks.push({ title: taskName, completedBy: completedByName, completedDate });
           }
-          if (changes.length > 0 || !existing.externalId) {
-            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, externalId: extId });
+          const needsBucketUpdate = existing.bucketName !== bucketName && bucketName;
+          const needsAssigneeUpdate = existing.assignedTo !== assignedTo && assignedTo;
+          if (changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate) {
+            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, bucketName, externalId: extId });
             if (changes.length > 0) {
               updatedCount++;
               updatedTasks.push({ title: taskName, changes });
