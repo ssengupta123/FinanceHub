@@ -229,7 +229,7 @@ export default function ProjectsList() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVat, setFilterVat] = useState("all");
-  const [filterBilling, setFilterBilling] = useState("all");
+  const [filterBilling, setFilterBilling] = useState("Fixed");
   const [filterStatus, setFilterStatus] = useState("all");
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
     new Set(ALL_COLUMNS.map(c => c.key))
@@ -265,6 +265,11 @@ export default function ProjectsList() {
       if (filterBilling !== "all" && p.billingCategory !== filterBilling) return false;
       if (filterStatus !== "all" && p.status !== filterStatus) return false;
       return true;
+    }).sort((a, b) => {
+      const order: Record<string, number> = { active: 0, closed: 1 };
+      const aOrder = order[a.status] ?? 2;
+      const bOrder = order[b.status] ?? 2;
+      return aOrder - bOrder;
     });
   }, [projects, fyProjectIds, searchQuery, filterVat, filterBilling, filterStatus]);
 
