@@ -143,7 +143,7 @@ export default function UtilizationDashboard() {
     });
 
     const recentWindowStart = new Date(today);
-    recentWindowStart.setDate(recentWindowStart.getDate() - 56);
+    recentWindowStart.setDate(recentWindowStart.getDate() - 28);
 
     const empProjectAllocations = new Map<number, { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[]>();
     permanentEmployees.forEach(emp => {
@@ -154,6 +154,7 @@ export default function UtilizationDashboard() {
       });
 
       const projectWeekHours = new Map<number, Map<string, number>>();
+      const projectLastSeen = new Map<number, Date>();
       empRecentTimesheets.forEach(t => {
         if (!t.projectId) return;
         const proj = activeProjects.find(p => p.id === t.projectId);
@@ -162,12 +163,20 @@ export default function UtilizationDashboard() {
         if (!projectWeekHours.has(t.projectId)) projectWeekHours.set(t.projectId, new Map());
         const weekMap = projectWeekHours.get(t.projectId)!;
         weekMap.set(wk, (weekMap.get(wk) || 0) + parseNum(t.hoursWorked));
+        const tsDate = new Date(t.weekEnding);
+        const prev = projectLastSeen.get(t.projectId);
+        if (!prev || tsDate > prev) projectLastSeen.set(t.projectId, tsDate);
       });
+
+      const twoWeeksAgo = new Date(today);
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
       const allocations: { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[] = [];
       projectWeekHours.forEach((weekMap, projId) => {
         const proj = activeProjects.find(p => p.id === projId);
         if (!proj) return;
+        const lastSeen = projectLastSeen.get(projId);
+        if (!lastSeen || lastSeen < twoWeeksAgo) return;
         const weekHours = Array.from(weekMap.values());
         const avgPerWeek = weekHours.length > 0 ? weekHours.reduce((s, h) => s + h, 0) / weekHours.length : 0;
         if (avgPerWeek < 0.5) return;
