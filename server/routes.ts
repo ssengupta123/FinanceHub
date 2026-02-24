@@ -1120,7 +1120,7 @@ export async function registerRoutes(
       }
       const redirectUri = getSsoRedirectUri(req);
       const authUrl = await client.getAuthCodeUrl({
-        scopes: ["openid", "profile", "email", "User.Read"],
+        scopes: ["openid", "profile", "email", "User.Read", "Tasks.Read", "Group.Read.All"],
         redirectUri,
         prompt: "select_account",
       });
@@ -1144,7 +1144,7 @@ export async function registerRoutes(
       const redirectUri = getSsoRedirectUri(req);
       const tokenResponse = await client.acquireTokenByCode({
         code,
-        scopes: ["openid", "profile", "email", "User.Read"],
+        scopes: ["openid", "profile", "email", "User.Read", "Tasks.Read", "Group.Read.All"],
         redirectUri,
       });
 
@@ -1172,6 +1172,13 @@ export async function registerRoutes(
       req.session.userId = user.id;
       req.session.username = user.username;
       req.session.role = (user as any).role || "user";
+      if (tokenResponse.accessToken) {
+        (req.session as any).graphAccessToken = tokenResponse.accessToken;
+        (req.session as any).graphTokenExpires = tokenResponse.expiresOn ? new Date(tokenResponse.expiresOn).getTime() : Date.now() + 3600000;
+      }
+      if (account) {
+        (req.session as any).msalAccountKey = account.homeAccountId;
+      }
 
       res.redirect("/");
     } catch (error: any) {
@@ -2024,29 +2031,49 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         return res.status(400).json({ message: "planId is required" });
       }
 
-      const clientId = process.env.AZURE_CLIENT_ID;
-      const clientSecret = process.env.AZURE_CLIENT_SECRET;
-      const tenantId = process.env.AZURE_TENANT_ID;
-      if (!clientId || !clientSecret || !tenantId) {
-        return res.status(503).json({ message: "Azure AD is not configured. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID." });
+      let graphToken: string | null = null;
+
+      const sessionToken = (req.session as any).graphAccessToken;
+      const tokenExpires = (req.session as any).graphTokenExpires;
+      if (sessionToken && tokenExpires && Date.now() < tokenExpires) {
+        graphToken = sessionToken;
+        console.log("[Planner Sync] Using delegated user token from session");
       }
 
-      const tokenRes = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          scope: "https://graph.microsoft.com/.default",
-          grant_type: "client_credentials",
-        }),
-      });
-      if (!tokenRes.ok) {
-        const err = await tokenRes.text();
-        console.error("[Planner Sync] Token error:", err);
-        return res.status(502).json({ message: "Failed to authenticate with Microsoft Graph. Ensure the app has Tasks.Read.All permission." });
+      if (!graphToken) {
+        const accountKey = (req.session as any).msalAccountKey;
+        if (accountKey) {
+          try {
+            const client = await getMsalClient();
+            if (client) {
+              const accounts = await (client as any).getTokenCache().getAllAccounts();
+              const account = accounts.find((a: any) => a.homeAccountId === accountKey);
+              if (account) {
+                const silentResult = await client.acquireTokenSilent({
+                  account,
+                  scopes: ["Tasks.Read", "Group.Read.All", "User.Read"],
+                });
+                if (silentResult?.accessToken) {
+                  graphToken = silentResult.accessToken;
+                  (req.session as any).graphAccessToken = silentResult.accessToken;
+                  (req.session as any).graphTokenExpires = silentResult.expiresOn ? new Date(silentResult.expiresOn).getTime() : Date.now() + 3600000;
+                  console.log("[Planner Sync] Refreshed delegated token via MSAL silent flow");
+                }
+              }
+            }
+          } catch (silentErr: any) {
+            console.warn("[Planner Sync] Silent token refresh failed:", silentErr.message);
+          }
+        }
       }
-      const tokenData = await tokenRes.json() as { access_token: string };
+
+      if (!graphToken) {
+        return res.status(401).json({
+          message: "Planner sync requires a delegated user token. Please log out and log back in via Azure AD SSO to grant Planner permissions, then try again."
+        });
+      }
+
+      const tokenData = { access_token: graphToken };
 
       const graphRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/tasks`, {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
