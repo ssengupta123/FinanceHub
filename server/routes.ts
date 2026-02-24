@@ -2135,15 +2135,15 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         const results = await Promise.allSettled(
           batch.map(async (uid) => {
             try {
-              const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName`, {
+              const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName,mail`, {
                 headers: { Authorization: `Bearer ${tokenData.access_token}` },
               });
               if (userRes.ok) {
-                const userData = await userRes.json() as { displayName?: string };
-                return { uid, name: userData.displayName || uid };
+                const userData = await userRes.json() as { displayName?: string; mail?: string };
+                return { uid, name: userData.displayName || uid, email: userData.mail || null };
               }
             } catch {}
-            return { uid, name: uid };
+            return { uid, name: uid, email: null };
           })
         );
         for (const result of results) {
@@ -2153,9 +2153,21 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         }
       }
 
+      const allEmployees = await storage.getEmployees();
+      const employeeByName = new Map<string, string>();
+      for (const emp of allEmployees) {
+        const fullName = `${emp.firstName} ${emp.lastName}`.trim();
+        if (fullName) employeeByName.set(fullName.toLowerCase(), fullName);
+      }
+
       const resolveUserName = (userId: string): string => {
         if (!userId) return "Unknown";
-        return userIdCache.get(userId) || userId;
+        const cached = userIdCache.get(userId);
+        if (cached && cached !== userId) {
+          const empMatch = employeeByName.get(cached.toLowerCase());
+          return empMatch || cached;
+        }
+        return cached || userId;
       };
 
       for (const pt of plannerTasks) {

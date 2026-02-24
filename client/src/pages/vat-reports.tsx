@@ -848,7 +848,6 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs w-[150px]">Bucket</TableHead>
                 <TableHead className="text-xs">Task Name</TableHead>
                 <TableHead className="text-xs w-[100px]">Progress</TableHead>
                 <TableHead className="text-xs w-[100px]">Due Date</TableHead>
@@ -860,13 +859,12 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
             </TableHeader>
             <TableBody>
               {tasks.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-4">No planner tasks</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-4">No planner tasks</TableCell></TableRow>
               ) : (
                 tasks.map((task) => {
                   if (editingId === task.id) {
                     return (
                       <TableRow key={task.id}>
-                        <TableCell><Input value={editForm.bucketName || ""} onChange={(e) => setEditForm({ ...editForm, bucketName: e.target.value })} className="h-8 text-xs" /></TableCell>
                         <TableCell><Input value={editForm.taskName || ""} onChange={(e) => setEditForm({ ...editForm, taskName: e.target.value })} className="h-8 text-xs" /></TableCell>
                         <TableCell>
                           <Select value={editForm.progress || "Not started"} onValueChange={(v) => setEditForm({ ...editForm, progress: v })}>
@@ -911,7 +909,6 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
                   }
                   return (
                     <TableRow key={task.id}>
-                      <TableCell className="text-xs font-medium">{task.bucketName}</TableCell>
                       <TableCell className="text-xs">{task.taskName}</TableCell>
                       <TableCell className="text-xs">{task.progress || "—"}</TableCell>
                       <TableCell className="text-xs whitespace-nowrap">{task.dueDate || "—"}</TableCell>
@@ -945,10 +942,6 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
             <CardContent className="pt-4 space-y-3">
               <h4 className="text-sm font-semibold">New Planner Task</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">Bucket</label>
-                  <Input value={newTask.bucketName || ""} onChange={(e) => setNewTask({ ...newTask, bucketName: e.target.value })} className="h-8 text-xs" placeholder="e.g. OPEN OPPS TASKS" data-testid="input-task-bucket" />
-                </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Task Name</label>
                   <Input value={newTask.taskName || ""} onChange={(e) => setNewTask({ ...newTask, taskName: e.target.value })} className="h-8 text-xs" data-testid="input-task-name" />
@@ -999,7 +992,7 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
               </div>
               <div className="flex gap-2 justify-end">
                 <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => addMutation.mutate(newTask)} disabled={!newTask.taskName || !newTask.bucketName} data-testid="button-submit-task">
+                <Button size="sm" onClick={() => addMutation.mutate(newTask)} disabled={!newTask.taskName} data-testid="button-submit-task">
                   {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Task"}
                 </Button>
               </div>
@@ -1597,7 +1590,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
                       <div key={t.id} className="border rounded-lg p-2 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
                         <p className="text-xs font-medium">{t.taskName}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {t.bucketName ? `Bucket: ${t.bucketName} · ` : ""}Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
+                          Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
                         </p>
                       </div>
                     ))}
@@ -1610,7 +1603,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: { vatName: stri
                       <div key={t.id} className="border rounded-lg p-2 bg-background">
                         <p className="text-xs font-medium">{t.taskName}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {t.bucketName ? `Bucket: ${t.bucketName} · ` : ""}Progress: {t.progress || "Not started"} · Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
+                          Progress: {t.progress || "Not started"} · Assigned: {t.assignedTo || "N/A"}{t.dueDate ? ` · Due: ${t.dueDate}` : ""}
                         </p>
                       </div>
                     ))}
