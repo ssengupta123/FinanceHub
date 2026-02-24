@@ -2086,6 +2086,22 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       const graphData = await graphRes.json() as { value: any[] };
       const plannerTasks = graphData.value || [];
 
+      const bucketNameCache = new Map<string, string>();
+      try {
+        const bucketsRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/buckets`, {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        if (bucketsRes.ok) {
+          const bucketsData = await bucketsRes.json() as { value: { id: string; name: string }[] };
+          for (const b of bucketsData.value || []) {
+            bucketNameCache.set(b.id, b.name);
+          }
+          console.log(`[Planner Sync] Resolved ${bucketNameCache.size} bucket names`);
+        }
+      } catch (bucketErr: any) {
+        console.warn("[Planner Sync] Could not fetch bucket names:", bucketErr.message);
+      }
+
       const existingTasks = await storage.getVatPlannerTasks(reportId);
       const existingByExtId = new Map<string, any>();
       const existingWithoutExtId: any[] = [];
@@ -2173,7 +2189,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       for (const pt of plannerTasks) {
         const extId = pt.id;
         const taskName = pt.title || "Untitled";
-        const bucketName = pt.bucketId || "";
+        const bucketName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "") || "";
         const percentComplete = pt.percentComplete || 0;
         const progress = percentComplete === 100 ? "Completed" : percentComplete > 0 ? "In progress" : "Not started";
         const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
