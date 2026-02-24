@@ -775,13 +775,17 @@ export async function registerRoutes(
         const fyEnd = `${fyStartYear + 1}-07-01`;
         const result = await db.raw(`
           SELECT
-            (SELECT COUNT(*) FROM employees WHERE staff_type = 'Permanent' AND status = 'active') as total_permanent,
+            (SELECT COUNT(*) FROM employees
+             WHERE staff_type = 'Permanent' AND status != 'inactive'
+             AND first_name NOT LIKE 'Perm-%' AND first_name NOT LIKE 'Contractor-%' AND first_name != 'Contingency'
+            ) as total_permanent,
             (SELECT COUNT(DISTINCT t.employee_id)
              FROM timesheets t
              JOIN employees e ON e.id = t.employee_id
              JOIN projects p ON p.id = t.project_id
-             WHERE e.staff_type = 'Permanent' AND e.status = 'active'
-             AND p.client != 'Internal'
+             WHERE e.staff_type = 'Permanent' AND e.status != 'inactive'
+             AND e.first_name NOT LIKE 'Perm-%' AND e.first_name NOT LIKE 'Contractor-%' AND e.first_name != 'Contingency'
+             AND p.client != 'Internal' AND p.client != 'RGT'
              AND (p.status = 'active' OR p.ad_status = 'Active')
              AND t.week_ending >= ? AND t.week_ending < ?
             ) as allocated_permanent
