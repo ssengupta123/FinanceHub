@@ -55,6 +55,8 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
   }
 }
 
+const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
 function gpRagColor(gpPercent: number): string {
   if (gpPercent >= 20) return "bg-green-500";
   if (gpPercent >= 10) return "bg-amber-500";
@@ -206,6 +208,18 @@ export default function FinanceDashboard() {
   const totalQ3 = clientRows.reduce((s, r) => s + r.q3Rev, 0);
   const totalQ4 = clientRows.reduce((s, r) => s + r.q4Rev, 0);
 
+  const monthlySnapshot = useMemo(() => {
+    return FY_MONTHS.map((_, mi) => {
+      const monthNum = mi + 1;
+      const monthRecords = fyMonthlyData.filter(m => m.month === monthNum);
+      const revenue = monthRecords.reduce((s, m) => s + parseNum(m.revenue), 0);
+      const cost = monthRecords.reduce((s, m) => s + parseNum(m.cost), 0);
+      const profit = revenue - cost;
+      const gm = revenue > 0 ? (profit / revenue) * 100 : 0;
+      return { revenue, cost, profit, gm };
+    });
+  }, [fyMonthlyData]);
+
   const vatCategories = ["Growth", "VIC", "DAFF", "Emerging", "DISR", "SAU"];
   const vatBreakdown = vatCategories.map((vat) => {
     const rev = clientRows.filter((r) => r.vat === vat).reduce((s, r) => s + r.ytdRevenue, 0);
@@ -318,6 +332,63 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <Card data-testid="card-monthly-snapshot">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+            <CardTitle className="text-base">Monthly Snapshot</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[100px] text-xs sticky left-0 bg-background z-10">Metric</TableHead>
+                      {FY_MONTHS.map(m => (
+                        <TableHead key={m} className="text-right min-w-[70px] text-xs">{m}</TableHead>
+                      ))}
+                      <TableHead className="text-right min-w-[80px] text-xs font-bold">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Revenue</TableCell>
+                      {monthlySnapshot.map((d, i) => (
+                        <TableCell key={i} className="text-right text-xs">{formatCurrency(d.revenue)}</TableCell>
+                      ))}
+                      <TableCell className="text-right text-xs font-bold">{formatCurrency(monthlySnapshot.reduce((s, d) => s + d.revenue, 0))}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Cost</TableCell>
+                      {monthlySnapshot.map((d, i) => (
+                        <TableCell key={i} className="text-right text-xs">{formatCurrency(d.cost)}</TableCell>
+                      ))}
+                      <TableCell className="text-right text-xs font-bold">{formatCurrency(monthlySnapshot.reduce((s, d) => s + d.cost, 0))}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Profit</TableCell>
+                      {monthlySnapshot.map((d, i) => (
+                        <TableCell key={i} className={`text-right text-xs font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
+                      ))}
+                      {(() => { const tot = monthlySnapshot.reduce((s, d) => s + d.profit, 0); return (
+                        <TableCell className={`text-right text-xs font-bold ${tot >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(tot)}</TableCell>
+                      ); })()}
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">GM%</TableCell>
+                      {monthlySnapshot.map((d, i) => (
+                        <TableCell key={i} className={`text-right text-xs font-medium ${d.gm >= 20 ? "text-green-600 dark:text-green-400" : d.gm >= 10 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>{d.revenue > 0 ? `${d.gm.toFixed(1)}%` : "-"}</TableCell>
+                      ))}
+                      <TableCell className="text-right text-xs font-bold">{totalGPPercent.toFixed(1)}%</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
