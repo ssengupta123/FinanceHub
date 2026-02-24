@@ -5,15 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DollarSign, FolderOpen, TrendingUp, ArrowRight, Target } from "lucide-react";
+import { DollarSign, FolderOpen, TrendingUp, ArrowRight } from "lucide-react";
 import {
   PieChart as RechartsPie, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -240,17 +232,6 @@ export default function Dashboard() {
     });
   }, [fyProjectMonthly, elapsedMonths, REVENUE_TARGET]);
 
-  const marginBarData = fyProjects
-    .filter(p => p.status === "active")
-    .map(p => {
-      const forecastMargin = parseFloat(p.forecastGmPercent || "0") * 100;
-      return {
-        name: p.projectCode || p.name.substring(0, 10),
-        margin: forecastMargin,
-        target: MARGIN_TARGET * 100,
-      };
-    });
-
   const isLoading = loadingProjects || loadingEmployees || loadingUtil || loadingPipeline || loadingMonthly;
 
   const customTooltipFormatter = (value: number) => formatCurrency(value);
@@ -435,75 +416,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Project Margin vs Target ({(MARGIN_TARGET * 100).toFixed(0)}%)</CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 pt-0">
-          {isLoading ? <Skeleton className="h-[200px] sm:h-[250px] w-full" /> : marginBarData.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active projects with margin data</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={200} data-testid="chart-margin-bar">
-              <BarChart data={marginBarData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis type="number" domain={[0, 'auto']} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                <Bar dataKey="margin" name="Forecast Margin %">
-                  {marginBarData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.margin >= MARGIN_TARGET * 100 ? "#16a34a" : entry.margin >= MARGIN_TARGET * 80 ? "#f59e0b" : "#ef4444"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-3 sm:p-6">
-          <CardTitle className="text-sm sm:text-base">Monthly Snapshot (FY {selectedFY})</CardTitle>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 pt-0">
-          {isLoading ? (
-            <Skeleton className="h-32 sm:h-40 w-full" />
-          ) : (
-            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[70px] sm:min-w-[120px] text-xs sm:text-sm sticky left-0 bg-background z-10">Metric</TableHead>
-                    {FY_MONTHS.map(m => (
-                      <TableHead key={m} className="text-right min-w-[55px] sm:min-w-[80px] text-xs">{m}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Revenue</TableCell>
-                    {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className="text-right text-xs">{formatCurrency(d.revenue)}</TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Cost</TableCell>
-                    {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className="text-right text-xs">{formatCurrency(d.cost)}</TableCell>
-                    ))}
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-xs sm:text-sm sticky left-0 bg-background z-10">Profit</TableCell>
-                    {monthlyTrendData.map((d, i) => (
-                      <TableCell key={i} className={`text-right text-xs font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
-                    ))}
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2">
         <Card>
