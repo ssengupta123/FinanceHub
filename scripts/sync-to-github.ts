@@ -184,8 +184,8 @@ async function main() {
           break;
         } catch (err: any) {
           if (err.status === 403 && retries > 1) {
-            console.log(`  Rate limited, waiting 60s before retry...`);
-            await delay(60000);
+            console.log(`  Rate limited, waiting 30s before retry...`);
+            await delay(30000);
             retries--;
           } else {
             throw err;
@@ -196,7 +196,7 @@ async function main() {
       count++;
       if (count % 20 === 0) {
         console.log(`  Uploaded ${count}/${files.length} files...`);
-        await delay(2000);
+        await delay(3000);
       }
     }
     console.log(`  Uploaded ${count}/${files.length} files.`);
