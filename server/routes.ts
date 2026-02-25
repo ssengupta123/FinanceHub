@@ -1120,7 +1120,7 @@ export async function registerRoutes(
       }
       const redirectUri = getSsoRedirectUri(req);
       const authUrl = await client.getAuthCodeUrl({
-        scopes: ["openid", "profile", "email", "User.Read", "Tasks.Read", "Group.Read.All"],
+        scopes: ["openid", "profile", "email", "User.Read", "User.ReadBasic.All", "Tasks.Read", "Group.Read.All"],
         redirectUri,
         prompt: "select_account",
       });
@@ -1144,7 +1144,7 @@ export async function registerRoutes(
       const redirectUri = getSsoRedirectUri(req);
       const tokenResponse = await client.acquireTokenByCode({
         code,
-        scopes: ["openid", "profile", "email", "User.Read", "Tasks.Read", "Group.Read.All"],
+        scopes: ["openid", "profile", "email", "User.Read", "User.ReadBasic.All", "Tasks.Read", "Group.Read.All"],
         redirectUri,
       });
 
@@ -2051,7 +2051,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
               if (account) {
                 const silentResult = await client.acquireTokenSilent({
                   account,
-                  scopes: ["Tasks.Read", "Group.Read.All", "User.Read"],
+                  scopes: ["Tasks.Read", "Group.Read.All", "User.Read", "User.ReadBasic.All"],
                 });
                 if (silentResult?.accessToken) {
                   graphToken = silentResult.accessToken;
@@ -2126,6 +2126,40 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       const fourWeeksAgo = new Date();
       fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
+      const userIdCache = new Map<string, string>();
+      for (const pt of plannerTasks) {
+        if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
+          userIdCache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
+        }
+      }
+
+      try {
+        const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        if (planRes.ok) {
+          const planData = await planRes.json() as { owner?: string };
+          if (planData.owner) {
+            const membersRes = await fetch(`https://graph.microsoft.com/v1.0/groups/${planData.owner}/members?$select=id,displayName,mail&$top=999`, {
+              headers: { Authorization: `Bearer ${tokenData.access_token}` },
+            });
+            if (membersRes.ok) {
+              const membersData = await membersRes.json() as { value: { id: string; displayName?: string; mail?: string }[] };
+              for (const m of membersData.value || []) {
+                if (m.id && m.displayName) {
+                  userIdCache.set(m.id, m.displayName);
+                }
+              }
+              console.log(`[Planner Sync] Resolved ${membersData.value?.length || 0} group members for user name lookups`);
+            } else {
+              console.warn(`[Planner Sync] Could not fetch group members (status ${membersRes.status}), falling back to individual lookups`);
+            }
+          }
+        }
+      } catch (groupErr: any) {
+        console.warn("[Planner Sync] Group members lookup failed:", groupErr.message);
+      }
+
       const allUserIds = new Set<string>();
       for (const pt of plannerTasks) {
         if (pt.assignments) {
@@ -2137,43 +2171,43 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
           allUserIds.add(pt.completedBy.user.id);
         }
       }
-
-      const userIdCache = new Map<string, string>();
-      for (const pt of plannerTasks) {
-        if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
-          userIdCache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
-        }
-      }
-      const batchIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
-      const BATCH_SIZE = 20;
-      for (let i = 0; i < batchIds.length; i += BATCH_SIZE) {
-        const batch = batchIds.slice(i, i + BATCH_SIZE);
-        const results = await Promise.allSettled(
-          batch.map(async (uid) => {
-            try {
-              const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName,mail`, {
-                headers: { Authorization: `Bearer ${tokenData.access_token}` },
-              });
-              if (userRes.ok) {
-                const userData = await userRes.json() as { displayName?: string; mail?: string };
-                return { uid, name: userData.displayName || uid, email: userData.mail || null };
-              }
-            } catch {}
-            return { uid, name: uid, email: null };
-          })
-        );
-        for (const result of results) {
-          if (result.status === "fulfilled") {
-            userIdCache.set(result.value.uid, result.value.name);
+      const unresolvedIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
+      if (unresolvedIds.length > 0) {
+        console.log(`[Planner Sync] ${unresolvedIds.length} user IDs still unresolved after group members lookup, trying individual lookups...`);
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < unresolvedIds.length; i += BATCH_SIZE) {
+          const batch = unresolvedIds.slice(i, i + BATCH_SIZE);
+          const results = await Promise.allSettled(
+            batch.map(async (uid) => {
+              try {
+                const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName,mail`, {
+                  headers: { Authorization: `Bearer ${tokenData.access_token}` },
+                });
+                if (userRes.ok) {
+                  const userData = await userRes.json() as { displayName?: string; mail?: string };
+                  return { uid, name: userData.displayName || uid };
+                } else {
+                  console.warn(`[Planner Sync] User lookup failed for ${uid}: status ${userRes.status}`);
+                }
+              } catch {}
+              return { uid, name: uid };
+            })
+          );
+          for (const result of results) {
+            if (result.status === "fulfilled" && result.value.name !== result.value.uid) {
+              userIdCache.set(result.value.uid, result.value.name);
+            }
           }
         }
       }
 
       const allEmployees = await storage.getEmployees();
       const employeeByName = new Map<string, string>();
+      const employeeByEmail = new Map<string, string>();
       for (const emp of allEmployees) {
         const fullName = `${emp.firstName} ${emp.lastName}`.trim();
         if (fullName) employeeByName.set(fullName.toLowerCase(), fullName);
+        if (emp.email) employeeByEmail.set(emp.email.toLowerCase(), fullName);
       }
 
       const resolveUserName = (userId: string): string => {

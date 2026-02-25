@@ -33,3 +33,4 @@ The application is built with a React + Vite frontend using Tailwind CSS and sha
 - **SharePoint:** External API for hourly data synchronization.
 - **xlsx (SheetJS):** Excel file parsing for the import system.
 - **Azure Active Directory:** For SSO (Single Sign-On) login integration.
+- **jsonwebtoken:** JWT validation for SSO token handoff from Launchpad app. Requires `SSO_HANDOFF_SECRET` env var (same value on both Launchpad and FinanceHub). Middleware in `server/index.ts` validates tokens issued by Launchpad with issuer "launchpad", auto-provisions users, creates sessions, and redirects to strip the token from the URL.

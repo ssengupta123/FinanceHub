@@ -1,0 +1,55 @@
+What I've Built in Launchpad
+SSO Token Handoff — when a user clicks a tile on the dashboard, Launchpad:
+
+Calls /api/sso-token with the target app's URL
+Gets back a signed JWT containing the user's identity (oid, email, name)
+Appends ?sso_token=<token> to the iframe URL
+The token expires after 5 minutes (it's only used once for initial handoff)
+This only activates on Azure (when Entra ID auth is in use). In development on Replit, it gracefully falls back to loading the tile URL directly.
+
+What You Need to Set Up
+1. Set SSO_HANDOFF_SECRET on Both Apps
+In Azure Portal, set the same environment variable on both the Launchpad and Finance Hub App Services:
+
+Name: SSO_HANDOFF_SECRET
+Value: A strong random string (e.g., 64 characters). Use the same value on both apps.
+You can generate one with: openssl rand -hex 32
+
+2. Add Token Validation to Finance Hub
+Finance Hub needs a small change to accept the SSO token. When it receives a request with ?sso_token=xxx in the URL, it should:
+
+Validate the JWT signature using SSO_HANDOFF_SECRET
+Extract the user info (oid, email, name)
+Create a session for that user automatically
+Here's the code you'd add to Finance Hub's server:
+
+// Install: npm install jsonwebtoken
+import jwt from "jsonwebtoken";
+// Middleware to handle SSO token handoff from Launchpad
+app.use((req, res, next) => {
+  const ssoToken = req.query.sso_token as string;
+  if (!ssoToken || req.isAuthenticated()) return next();
+  
+  const secret = process.env.SSO_HANDOFF_SECRET;
+  if (!secret) return next();
+  
+  try {
+    const payload = jwt.verify(ssoToken, secret, {
+      issuer: "launchpad",
+      audience: `${req.protocol}://${req.get("host")}`,
+    });
+    
+    // Auto-login the user with the identity from Launchpad
+    req.login(payload, (err) => {
+      if (err) console.error("SSO handoff login error:", err);
+      // Redirect to remove the token from URL
+      const url = new URL(req.originalUrl, `${req.protocol}://${req.get("host")}`);
+      url.searchParams.delete("sso_token");
+      res.redirect(url.pathname + url.search);
+    });
+  } catch (err) {
+    console.error("SSO token validation failed:", err);
+    next();
+  }
+});
+Add this middleware after passport/session setup but before your routes in Finance Hub.
