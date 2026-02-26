@@ -58,7 +58,7 @@ app.use(
       secure: isProduction,
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000,
-      sameSite: isProduction ? "lax" : undefined,
+      sameSite: isProduction ? "none" : undefined,
     },
   })
 );
