@@ -151,7 +151,7 @@ export default function UploadPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
       queryClient.invalidateQueries({ queryKey: ["/api/pipeline-opportunities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/timesheets") });
       queryClient.invalidateQueries({ queryKey: ["/api/kpis"] });
       queryClient.invalidateQueries({ queryKey: ["/api/project-monthly"] });
     } catch (err: any) {
@@ -541,9 +541,9 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
         description: `${sheetResult.imported} records imported for ${title}`,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/timesheets") });
       queryClient.invalidateQueries({ queryKey: ["/api/kpis"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/utilization/weekly"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/utilization/weekly") });
     } catch (err: any) {
       toast({ title: "Import Error", description: err.message, variant: "destructive" });
     } finally {

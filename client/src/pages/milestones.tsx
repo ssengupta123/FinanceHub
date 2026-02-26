@@ -165,7 +165,7 @@ export default function Milestones() {
 
   const { data: milestones, isLoading } = useQuery<Milestone[]>({ queryKey: ["/api/milestones"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-  const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: [`/api/timesheets?fy=${selectedFY}`] });
 
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
 

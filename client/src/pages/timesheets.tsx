@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -32,7 +32,8 @@ export default function Timesheets() {
 
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
-  const { data: timesheets, isLoading } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
+  const { data: timesheets, isLoading } = useQuery<Timesheet[]>({ queryKey: [`/api/timesheets?fy=${selectedFY}`] });
   const { data: employees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
@@ -40,22 +41,18 @@ export default function Timesheets() {
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
 
   const availableFYs = useMemo(() => {
-    if (!timesheets) return [getCurrentFy()];
-    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
-    return getFyOptions(fys);
-  }, [timesheets]);
+    if (!availableFYsData) return [getCurrentFy()];
+    return getFyOptions(availableFYsData);
+  }, [availableFYsData]);
 
-  const filteredTimesheets = useMemo(() => {
-    if (!timesheets) return [];
-    return timesheets.filter(t => getFyFromDate(t.weekEnding) === selectedFY);
-  }, [timesheets, selectedFY]);
+  const filteredTimesheets = timesheets || [];
 
   const createMutation = useMutation({
     mutationFn: async (data: Partial<Timesheet>) => {
       await apiRequest("POST", "/api/timesheets", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/timesheets"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/timesheets") });
       toast({ title: "Timesheet entry created" });
       resetForm();
       setOpen(false);

@@ -20,7 +20,7 @@ const knexConfig: Knex.Knex.Config = isMSSQL
   : {
       client: "pg",
       connection: process.env.DATABASE_URL,
-      pool: { min: 2, max: 10 },
+      pool: { min: 1, max: 5 },
     };
 
 export const db = Knex(knexConfig);

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, Target, Users, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 
 interface WeeklyUtilData {
   employee_id: number;
@@ -53,11 +53,13 @@ export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [selectedTeam, setSelectedTeam] = useState("all");
   const [expandedOverutil, setExpandedOverutil] = useState<Set<number>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-  const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
+  const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: [`/api/timesheets?fy=${selectedFY}`] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-  const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: ["/api/utilization/weekly"] });
+  const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: [`/api/utilization/weekly?fy=${selectedFY}`] });
   const { data: resourcePlans } = useQuery<ResourcePlan[]>({
     queryKey: ["/api/resource-plans"],
     retry: false,
@@ -66,10 +68,9 @@ export default function UtilizationDashboard() {
   const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
 
   const availableFYs = useMemo(() => {
-    if (!timesheets) return [getCurrentFy()];
-    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
-    return getFyOptions(fys);
-  }, [timesheets]);
+    if (!availableFYsData) return [getCurrentFy()];
+    return getFyOptions(availableFYsData);
+  }, [availableFYsData]);
 
   const allPermanentEmployees = useMemo(
     () => (employees || []).filter(e => {
@@ -94,10 +95,7 @@ export default function UtilizationDashboard() {
 
   const permanentIds = useMemo(() => new Set(permanentEmployees.map(e => e.id)), [permanentEmployees]);
 
-  const fyTimesheets = useMemo(() => {
-    if (!timesheets) return [];
-    return timesheets.filter(t => getFyFromDate(t.weekEnding) === selectedFY);
-  }, [timesheets, selectedFY]);
+  const fyTimesheets = timesheets || [];
 
   const allocatedPermanent = useMemo(() => {
     return permanentEmployees.filter(emp => {
@@ -109,12 +107,14 @@ export default function UtilizationDashboard() {
     });
   }, [permanentEmployees, fyTimesheets, projects]);
 
-  const { weekColumns, rollingView, benchSummary, overutilisedList } = useMemo(() => {
+  const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects, empProjectAllocations } = useMemo(() => {
     const emptyResult = {
       weekColumns: [] as { key: string; label: string }[],
       rollingView: [] as any[],
       benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 },
       overutilisedList: [] as { name: string; role: string; avgHours: number; pct: number }[],
+      allActiveProjects: [] as Project[],
+      empProjectAllocations: new Map<number, { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[]>(),
     };
 
     if (!weeklyData || permanentEmployees.length === 0) return emptyResult;
@@ -141,6 +141,7 @@ export default function UtilizationDashboard() {
     });
 
     const rpByEmpMonth = new Map<string, number>();
+    const rpByEmpMonthProjects = new Map<string, { projectId: number; allocPct: number }[]>();
     const hasResourcePlans = (resourcePlans || []).length > 0;
     (resourcePlans || []).forEach(rp => {
       if (!rp.employeeId || !rp.month) return;
@@ -148,6 +149,9 @@ export default function UtilizationDashboard() {
       const mapKey = `${rp.employeeId}-${monthKey}`;
       const existing = rpByEmpMonth.get(mapKey) || 0;
       rpByEmpMonth.set(mapKey, existing + parseNum(rp.allocationPercent));
+      const projList = rpByEmpMonthProjects.get(mapKey) || [];
+      projList.push({ projectId: rp.projectId ?? 0, allocPct: parseNum(rp.allocationPercent) });
+      rpByEmpMonthProjects.set(mapKey, projList);
     });
 
     const activeProjects = (projects || []).filter(p => {
@@ -261,7 +265,7 @@ export default function UtilizationDashboard() {
         if (actual && actual.totalHours > 0) {
           const utilPct = (actual.totalHours / STANDARD_WEEKLY_HOURS) * 100;
           const bench = Math.max(STANDARD_WEEKLY_HOURS - actual.totalHours, 0);
-          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0 };
+          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0, projectAllocations: [] as { projectId: number; hours: number; allocPct: number }[] };
         }
 
         const weekDate = fw.date;
@@ -274,7 +278,13 @@ export default function UtilizationDashboard() {
             const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
             const utilPct = rpAlloc;
             const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
-            return { worked: projHours, billable: projHours, bench, utilization: utilPct, isProjected: true, projectCount: 0 };
+            const rpProjects = rpByEmpMonthProjects.get(rpKey) || [];
+            const projAllocs = rpProjects.map(rp => ({
+              projectId: rp.projectId,
+              hours: (rp.allocPct / 100) * STANDARD_WEEKLY_HOURS,
+              allocPct: rp.allocPct,
+            }));
+            return { worked: projHours, billable: projHours, bench, utilization: utilPct, isProjected: true, projectCount: rpProjects.length, projectAllocations: projAllocs };
           }
         }
 
@@ -289,10 +299,15 @@ export default function UtilizationDashboard() {
           const utilPct = (totalProjectedHours / STANDARD_WEEKLY_HOURS) * 100;
           const bench = Math.max(STANDARD_WEEKLY_HOURS - totalProjectedHours, 0);
           const billableRatio = recent.avgHours > 0 ? recent.avgBillable / recent.avgHours : 0.8;
-          return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length };
+          const projAllocs = activeAllocsForWeek.map(a => ({
+            projectId: a.projectId,
+            hours: a.avgHoursPerWeek,
+            allocPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
+          }));
+          return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length, projectAllocations: projAllocs };
         }
 
-        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0 };
+        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: [] as { projectId: number; hours: number; allocPct: number }[] };
       });
 
       const avgUtil = weeks.length > 0
@@ -343,6 +358,8 @@ export default function UtilizationDashboard() {
       rollingView: rolling,
       benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
       overutilisedList: overutilised,
+      allActiveProjects: activeProjects,
+      empProjectAllocations,
     };
   }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
 
@@ -599,37 +616,117 @@ export default function UtilizationDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rollingView.map(row => (
-                    <TableRow key={row.employeeId} data-testid={`row-rolling-${row.employeeId}`}>
-                      <TableCell className="font-medium sticky left-0 bg-background z-10">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-block w-2 h-2 rounded-full ${utilColor(row.avgUtil)}`} />
-                          {row.name}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={
-                          row.avgUtil > 100 ? "text-red-600 dark:text-red-400" :
-                          row.avgUtil >= 80 ? "text-green-600 dark:text-green-400" :
-                          row.avgUtil >= 50 ? "text-amber-600 dark:text-amber-400" :
-                          "text-red-600 dark:text-red-400"
-                        }>
-                          {row.avgUtil.toFixed(0)}%
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
-                      {row.weeks.map((week: any, wi: number) => (
-                        <TableCell key={wi} className="text-center p-1">
-                          <div
-                            className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
-                            title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
-                          >
-                            {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
-                          </div>
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
+                  {rollingView.map(row => {
+                    const isExpanded = expandedRows.has(row.employeeId);
+                    const uniqueProjectIds = new Set<number>();
+                    row.weeks.forEach((w: any) => {
+                      (w.projectAllocations || []).forEach((pa: any) => {
+                        if (pa.projectId) uniqueProjectIds.add(pa.projectId);
+                      });
+                    });
+                    const hasProjects = uniqueProjectIds.size > 0;
+
+                    return (
+                      <>
+                        <TableRow
+                          key={row.employeeId}
+                          data-testid={`row-rolling-${row.employeeId}`}
+                          className={hasProjects ? "cursor-pointer hover:bg-muted/50" : ""}
+                          onClick={() => {
+                            if (!hasProjects) return;
+                            setExpandedRows(prev => {
+                              const next = new Set(prev);
+                              if (next.has(row.employeeId)) next.delete(row.employeeId);
+                              else next.add(row.employeeId);
+                              return next;
+                            });
+                          }}
+                        >
+                          <TableCell className="font-medium sticky left-0 bg-background z-10">
+                            <div className="flex items-center gap-2">
+                              {hasProjects ? (
+                                isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              ) : (
+                                <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />
+                              )}
+                              {row.name}
+                              {hasProjects && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{uniqueProjectIds.size}p</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={
+                              row.avgUtil > 100 ? "text-red-600 dark:text-red-400" :
+                              row.avgUtil >= 80 ? "text-green-600 dark:text-green-400" :
+                              row.avgUtil >= 50 ? "text-amber-600 dark:text-amber-400" :
+                              "text-red-600 dark:text-red-400"
+                            }>
+                              {row.avgUtil.toFixed(0)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
+                          {row.weeks.map((week: any, wi: number) => (
+                            <TableCell key={wi} className="text-center p-1">
+                              <div
+                                className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
+                                title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
+                              >
+                                {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
+                              </div>
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                        {isExpanded && Array.from(uniqueProjectIds).map(projId => {
+                          const proj = allActiveProjects.find((p: any) => p.id === projId) || (projects || []).find((p: any) => p.id === projId);
+                          const projName = proj ? (proj.projectCode || proj.name) : `Project ${projId}`;
+                          const projClient = proj?.client || "";
+                          return (
+                            <TableRow key={`${row.employeeId}-proj-${projId}`} className="bg-muted/20" data-testid={`row-project-alloc-${row.employeeId}-${projId}`}>
+                              <TableCell className="sticky left-0 bg-muted/20 z-10 pl-8">
+                                <span className="text-xs text-muted-foreground">{projName}{projClient ? ` (${projClient})` : ""}</span>
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">
+                                {(() => {
+                                  const weekAllocs = row.weeks.map((w: any) => {
+                                    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
+                                    return pa ? pa.allocPct : 0;
+                                  });
+                                  const nonZero = weekAllocs.filter((v: number) => v > 0);
+                                  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}%` : "-";
+                                })()}
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">
+                                {(() => {
+                                  const weekHrs = row.weeks.map((w: any) => {
+                                    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
+                                    return pa ? pa.hours : 0;
+                                  });
+                                  const nonZero = weekHrs.filter((v: number) => v > 0);
+                                  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}h` : "-";
+                                })()}
+                              </TableCell>
+                              {row.weeks.map((week: any, wi: number) => {
+                                const pa = (week.projectAllocations || []).find((a: any) => a.projectId === projId);
+                                const hours = pa ? pa.hours : 0;
+                                const pct = pa ? pa.allocPct : 0;
+                                return (
+                                  <TableCell key={wi} className="text-center p-1">
+                                    <div className="text-[10px] text-muted-foreground leading-tight" title={`${hours.toFixed(1)}h (${pct.toFixed(0)}%)`}>
+                                      {hours > 0 ? (
+                                        <>
+                                          <div>{hours.toFixed(0)}h</div>
+                                          <div className="opacity-70">{pct.toFixed(0)}%</div>
+                                        </>
+                                      ) : "-"}
+                                    </div>
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          );
+                        })}
+                      </>
+                    );
+                  })}
                   <TableRow className="font-bold border-t-2">
                     <TableCell className="sticky left-0 bg-background z-10">Total</TableCell>
                     <TableCell className="text-right">
