@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TrendingUp, Target, Users, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 
 interface WeeklyUtilData {
   employee_id: number;
@@ -56,9 +56,10 @@ export default function UtilizationDashboard() {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-  const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
+  const { data: timesheets, isLoading: loadingTimesheets } = useQuery<Timesheet[]>({ queryKey: [`/api/timesheets?fy=${selectedFY}`] });
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-  const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: ["/api/utilization/weekly"] });
+  const { data: weeklyData, isLoading: loadingWeekly } = useQuery<WeeklyUtilData[]>({ queryKey: [`/api/utilization/weekly?fy=${selectedFY}`] });
   const { data: resourcePlans } = useQuery<ResourcePlan[]>({
     queryKey: ["/api/resource-plans"],
     retry: false,
@@ -67,10 +68,9 @@ export default function UtilizationDashboard() {
   const isLoading = loadingEmployees || loadingTimesheets || loadingProjects || loadingWeekly;
 
   const availableFYs = useMemo(() => {
-    if (!timesheets) return [getCurrentFy()];
-    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
-    return getFyOptions(fys);
-  }, [timesheets]);
+    if (!availableFYsData) return [getCurrentFy()];
+    return getFyOptions(availableFYsData);
+  }, [availableFYsData]);
 
   const allPermanentEmployees = useMemo(
     () => (employees || []).filter(e => {
@@ -95,10 +95,7 @@ export default function UtilizationDashboard() {
 
   const permanentIds = useMemo(() => new Set(permanentEmployees.map(e => e.id)), [permanentEmployees]);
 
-  const fyTimesheets = useMemo(() => {
-    if (!timesheets) return [];
-    return timesheets.filter(t => getFyFromDate(t.weekEnding) === selectedFY);
-  }, [timesheets, selectedFY]);
+  const fyTimesheets = timesheets || [];
 
   const allocatedPermanent = useMemo(() => {
     return permanentEmployees.filter(emp => {

@@ -4,7 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Employee, Timesheet } from "@shared/schema";
 import { APP_ROLES } from "@shared/schema";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -182,7 +182,10 @@ export default function Resources() {
   const [linkPopoverId, setLinkPopoverId] = useState<number | null>(null);
 
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-  const { data: timesheets } = useQuery<Timesheet[]>({ queryKey: ["/api/timesheets"] });
+  const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
+  const { data: timesheets } = useQuery<Timesheet[]>({
+    queryKey: [`/api/timesheets${selectedFY !== "all" ? `?fy=${selectedFY}` : ""}`],
+  });
   const { data: allUsers } = useQuery<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>>({ queryKey: ["/api/users"] });
 
   const linkedUserIds = useMemo(() => {
@@ -238,16 +241,14 @@ export default function Resources() {
   });
 
   const availableFYs = useMemo(() => {
-    if (!timesheets) return [getCurrentFy()];
-    const fys = timesheets.map(t => getFyFromDate(t.weekEnding)).filter(Boolean) as string[];
-    return getFyOptions(fys);
-  }, [timesheets]);
+    if (!availableFYsData) return [getCurrentFy()];
+    return getFyOptions(availableFYsData);
+  }, [availableFYsData]);
 
   const fyEmployeeIds = useMemo(() => {
-    if (!timesheets) return new Set<number>();
+    if (!timesheets || selectedFY === "all") return new Set<number>();
     return new Set(
       timesheets
-        .filter(t => getFyFromDate(t.weekEnding) === selectedFY)
         .map(t => t.employeeId)
         .filter((id): id is number => id !== null && id !== undefined)
     );

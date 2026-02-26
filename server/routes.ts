@@ -218,6 +218,26 @@ export async function registerRoutes(
   });
 
   // ─── Timesheets ───
+  app.get("/api/timesheets/available-fys", requirePermission("timesheets", "view"), async (req, res) => {
+    try {
+      const rows = await db("timesheets")
+        .select(db.raw("DISTINCT week_ending"))
+        .orderBy("week_ending", "asc");
+      const fySet = new Set<string>();
+      for (const r of rows) {
+        const d = r.week_ending instanceof Date ? r.week_ending : new Date(r.week_ending);
+        if (isNaN(d.getTime())) continue;
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        const fyStart = m >= 6 ? y : y - 1;
+        fySet.add(String(fyStart).slice(2) + "-" + String(fyStart + 1).slice(2));
+      }
+      res.json(Array.from(fySet).sort());
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/timesheets", requirePermission("timesheets", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getTimesheetsByProject(Number(req.query.projectId));
@@ -226,6 +246,34 @@ export async function registerRoutes(
     if (req.query.employeeId) {
       const data = await storage.getTimesheetsByEmployee(Number(req.query.employeeId));
       return res.json(data);
+    }
+    if (req.query.fy) {
+      try {
+        const fy = String(req.query.fy);
+        const parts = fy.split("-");
+        if (parts.length === 2) {
+          const fyStartYear = 2000 + parseInt(parts[0], 10);
+          const startDate = `${fyStartYear}-07-01`;
+          const endDate = `${fyStartYear + 1}-06-30`;
+          const data = await db("timesheets")
+            .where("week_ending", ">=", startDate)
+            .where("week_ending", "<=", endDate)
+            .orderBy("week_ending", "desc");
+          const mapped = data.map((r: any) => ({
+            id: r.id,
+            employeeId: r.employee_id,
+            projectId: r.project_id,
+            weekEnding: r.week_ending instanceof Date ? r.week_ending.toISOString().split("T")[0] : String(r.week_ending).split("T")[0],
+            hoursWorked: String(r.hours_worked ?? 0),
+            billable: r.billable,
+            costValue: String(r.cost_value ?? 0),
+            saleValue: String(r.sale_value ?? 0),
+          }));
+          return res.json(mapped);
+        }
+      } catch (err: any) {
+        return res.status(500).json({ message: err.message });
+      }
     }
     const data = await storage.getTimesheets();
     res.json(data);
@@ -325,7 +373,7 @@ export async function registerRoutes(
       const billableExpr = isMSSQL
         ? `CASE WHEN timesheets.billable = 1 THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END`
         : `CASE WHEN timesheets.billable = true THEN CAST(timesheets.hours_worked AS numeric) ELSE 0 END`;
-      const rows = await db("timesheets")
+      let query = db("timesheets")
         .select("timesheets.employee_id")
         .select(db.raw(`timesheets.week_ending`))
         .select(db.raw(`${nameExpr} as employee_name`))
@@ -334,7 +382,20 @@ export async function registerRoutes(
         .sum({ billable_hours: db.raw(billableExpr) })
         .sum({ cost_value: db.raw("CAST(timesheets.cost_value AS numeric)") })
         .sum({ sale_value: db.raw("CAST(timesheets.sale_value AS numeric)") })
-        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .leftJoin("employees", "timesheets.employee_id", "employees.id");
+
+      if (req.query.fy) {
+        const fy = String(req.query.fy);
+        const parts = fy.split("-");
+        if (parts.length === 2) {
+          const fyStartYear = 2000 + parseInt(parts[0], 10);
+          query = query
+            .where("timesheets.week_ending", ">=", `${fyStartYear}-07-01`)
+            .where("timesheets.week_ending", "<=", `${fyStartYear + 1}-06-30`);
+        }
+      }
+
+      const rows = await query
         .groupBy("timesheets.employee_id", "timesheets.week_ending",
           "employees.first_name", "employees.last_name", "employees.role")
         .orderBy([{ column: "week_ending", order: "desc" }, { column: "total_hours", order: "desc" }]);
