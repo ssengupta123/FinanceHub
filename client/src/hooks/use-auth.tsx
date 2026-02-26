@@ -1,6 +1,6 @@
-import { createContext, useContext, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn, setAuthToken, clearAuthToken } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 type AuthUser = {
@@ -29,6 +29,18 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authToken = params.get("auth_token");
+    if (authToken) {
+      setAuthToken(authToken);
+      params.delete("auth_token");
+      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+      window.history.replaceState({}, "", newUrl);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    }
+  }, []);
 
   const { data, isLoading } = useQuery<{ user: AuthUser } | null>({
     queryKey: ["/api/auth/me"],
@@ -92,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
+      clearAuthToken();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/permissions"] });
     },
