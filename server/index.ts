@@ -142,24 +142,43 @@ app.use((req, res, next) => {
         console.log(`[SSO Handoff] Auto-provisioned user: ${email}`);
       }
 
-      req.session.userId = user.id;
-      req.session.username = user.username;
-      req.session.role = (user as any).role || "user";
+      const sessionSecret = process.env.SESSION_SECRET || "financehub-dev-secret-key";
+      const authToken = jwt.sign(
+        { userId: user.id, username: user.username, role: (user as any).role || "user", email },
+        sessionSecret,
+        { expiresIn: "24h", issuer: "financehub" }
+      );
 
-      req.session.save((err) => {
-        if (err) {
-          console.error("[SSO Handoff] Session save error:", err);
-          return next();
-        }
-        const url = new URL(req.originalUrl, `${proto}://${host}`);
-        url.searchParams.delete("sso_token");
-        console.log(`[SSO Handoff] Authenticated ${email}, redirecting to ${url.pathname}${url.search}`);
-        res.redirect(url.pathname + url.search);
-      });
+      const url = new URL(req.originalUrl, `${proto}://${host}`);
+      url.searchParams.delete("sso_token");
+      url.searchParams.set("auth_token", authToken);
+      console.log(`[SSO Handoff] Authenticated ${email}, redirecting with auth token to ${url.pathname}`);
+      res.redirect(url.pathname + url.search);
     } catch (err: any) {
       console.error("[SSO Handoff] Token validation failed:", err.message);
       next();
     }
+  });
+
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if ((req.session as any)?.userId) return next();
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
+
+    const token = authHeader.slice(7);
+    const sessionSecret = process.env.SESSION_SECRET || "financehub-dev-secret-key";
+
+    try {
+      const payload = jwt.verify(token, sessionSecret, { issuer: "financehub" }) as {
+        userId: number; username: string; role: string; email: string;
+      };
+      (req.session as any).userId = payload.userId;
+      (req.session as any).username = payload.username;
+      (req.session as any).role = payload.role;
+    } catch {}
+
+    next();
   });
 
   await registerRoutes(httpServer, app);
