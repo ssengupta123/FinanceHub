@@ -9,8 +9,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/button";
-import { LogOut, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import FinanceDashboard from "@/pages/finance";
@@ -75,7 +74,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function AuthenticatedApp() {
-  const { user, logoutMutation } = useAuth();
+  const { user } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
@@ -97,14 +96,6 @@ function AuthenticatedApp() {
                 </span>
               )}
               <ThemeToggle />
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => logoutMutation.mutate(undefined)}
-                data-testid="button-logout"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
             </div>
           </header>
           <main className="flex-1 overflow-auto flex flex-col">
