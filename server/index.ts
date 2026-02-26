@@ -77,11 +77,20 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedSummary: string | undefined = undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
+    if (Array.isArray(bodyJson)) {
+      capturedSummary = `[${bodyJson.length} items]`;
+    } else if (bodyJson && typeof bodyJson === "object") {
+      try {
+        const json = JSON.stringify(bodyJson);
+        capturedSummary = json.length > 500 ? json.substring(0, 500) + "..." : json;
+      } catch {
+        capturedSummary = "[object]";
+      }
+    }
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 
@@ -89,16 +98,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        const isArray = Array.isArray(capturedJsonResponse);
-        if (isArray && capturedJsonResponse.length > 20) {
-          logLine += ` :: [${capturedJsonResponse.length} items]`;
-        } else {
-          const json = JSON.stringify(capturedJsonResponse);
-          logLine += json.length > 500 ? ` :: ${json.substring(0, 500)}...` : ` :: ${json}`;
-        }
+      if (capturedSummary) {
+        logLine += ` :: ${capturedSummary}`;
       }
-
       log(logLine);
     }
   });
