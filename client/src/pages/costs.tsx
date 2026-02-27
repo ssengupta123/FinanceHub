@@ -98,7 +98,7 @@ export default function Costs() {
 
   const availableMonths = useMemo(() => {
     const months = new Set(fyFilteredSummary.map(r => r.month));
-    return Array.from(months).sort().reverse();
+    return Array.from(months).sort((a, b) => a.localeCompare(b)).reverse();
   }, [fyFilteredSummary]);
 
   const filteredSummary = useMemo(() => {

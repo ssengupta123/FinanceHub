@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn, setAuthToken, clearAuthToken } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -110,20 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const contextValue = useMemo(() => ({
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    isAdmin: user?.role === "admin",
+    permissions,
+    can,
+    loginMutation,
+    registerMutation,
+    logoutMutation,
+  }), [user, isLoading, permissions, can, loginMutation, registerMutation, logoutMutation]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        isAdmin: user?.role === "admin",
-        permissions,
-        can,
-        loginMutation,
-        registerMutation,
-        logoutMutation,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

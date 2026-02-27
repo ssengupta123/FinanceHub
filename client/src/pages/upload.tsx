@@ -72,7 +72,7 @@ export default function UploadPage() {
   const [deleteResult, setDeleteResult] = useState<{ message: string; counts: Record<string, number> } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { isAdmin, can } = useAuth();
+  const { can } = useAuth();
 
   async function handleDeleteAll() {
     setDeleting(true);
@@ -276,6 +276,9 @@ export default function UploadPage() {
             <div
               className="border-2 border-dashed rounded-md p-12 text-center cursor-pointer hover-elevate"
               onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
+              role="button"
+              tabIndex={0}
               data-testid="drop-zone"
             >
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
@@ -340,6 +343,9 @@ export default function UploadPage() {
                         if (isImportable) toggleSheet(sheet.name);
                         setPreviewSheet(sheet.name);
                       }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { if (isImportable) toggleSheet(sheet.name); setPreviewSheet(sheet.name); } }}
+                      role="button"
+                      tabIndex={0}
                       data-testid={`sheet-row-${sheet.name.replace(/\s+/g, "-").toLowerCase()}`}
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -571,6 +577,9 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
           <div
             className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate"
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
+            role="button"
+            tabIndex={0}
             data-testid={`drop-zone-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
           >
             <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
@@ -840,6 +849,9 @@ function VatPptxUpload() {
             <div
               className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate"
               onClick={() => pptxInputRef.current?.click()}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") pptxInputRef.current?.click(); }}
+              role="button"
+              tabIndex={0}
               data-testid="drop-zone-pptx"
             >
               <Presentation className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
@@ -909,6 +921,9 @@ function VatPptxUpload() {
                     key={report.vatName}
                     className={`flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer hover-elevate ${isSelected ? "bg-primary/5 border-primary/30" : ""}`}
                     onClick={() => toggleVat(report.vatName)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleVat(report.vatName); }}
+                    role="button"
+                    tabIndex={0}
                     data-testid={`pptx-vat-row-${report.vatName.toLowerCase().replace(/[&\s]/g, "-")}`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
