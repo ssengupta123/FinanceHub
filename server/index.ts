@@ -126,13 +126,18 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
       { expiresIn: "24h", issuer: "financehub" }
     );
 
+    const ALLOWED_PATHS = new Set([
+      "/", "/dashboard", "/projects", "/pipeline", "/resources",
+      "/utilization", "/timesheets", "/costs", "/milestones",
+      "/scenarios", "/finance", "/vat-overview", "/vat-reports",
+      "/feature-requests", "/partner-view", "/upload", "/admin",
+      "/ai-insights", "/login",
+    ]);
     const url = new URL(req.originalUrl, `${proto}://${host}`);
-    url.searchParams.delete("sso_token");
-    url.searchParams.set("auth_token", authToken);
-    const safePath = url.pathname.replace(/[^a-zA-Z0-9\-._~/]/g, "");
-    const redirectUrl = safePath + url.search;
+    const requestedPath = url.pathname;
+    const targetPath = ALLOWED_PATHS.has(requestedPath) ? requestedPath : "/";
     console.log("[SSO Handoff] Authenticated user, redirecting with auth token");
-    res.redirect(redirectUrl);
+    res.redirect(`${targetPath}?auth_token=${encodeURIComponent(authToken)}`);
   } catch (err: any) {
     console.error("[SSO Handoff] Token validation failed:", err.message);
     next();
