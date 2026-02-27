@@ -4,16 +4,17 @@ import { Octokit } from '@octokit/rest';
 let connectionSettings: any;
 
 async function getAccessToken() {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
+  if (connectionSettings?.settings?.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
     return connectionSettings.settings.access_token;
   }
 
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL
-    : null;
+  let xReplitToken: string | null = null;
+  if (process.env.REPL_IDENTITY) {
+    xReplitToken = 'repl ' + process.env.REPL_IDENTITY;
+  } else if (process.env.WEB_REPL_RENEWAL) {
+    xReplitToken = 'depl ' + process.env.WEB_REPL_RENEWAL;
+  }
 
   if (!xReplitToken) {
     throw new Error('X_REPLIT_TOKEN not found for repl/depl');

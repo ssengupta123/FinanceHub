@@ -60,7 +60,7 @@ export default function PartnerView() {
 
   const fyOptions = useMemo(() => {
     const fys = new Set(allOpps.map(o => o.fyYear).filter(Boolean));
-    return ["all", ...Array.from(fys).sort()];
+    return ["all", ...Array.from(fys).sort((a, b) => a.localeCompare(b))];
   }, [allOpps]);
 
   const partnerOpps = useMemo(() => {
@@ -92,13 +92,13 @@ export default function PartnerView() {
         });
       }
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [partnerOpps]);
 
   const uniqueVats = useMemo(() => {
     const set = new Set<string>();
     partnerOpps.forEach(o => { if (o.vat) set.add(o.vat); });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [partnerOpps]);
 
   const totalValue = useMemo(() => {
@@ -131,7 +131,7 @@ export default function PartnerView() {
       .sort((a, b) => b.value - a.value);
   }, [filtered]);
 
-  const byPhaseChart = useMemo(() => {
+  const _byPhaseChart = useMemo(() => {
     const map: Record<string, { count: number; value: number }> = {};
     filtered.forEach(o => {
       const phase = PHASE_MAP[o.classification] || o.classification;

@@ -232,7 +232,7 @@ export async function registerRoutes(
         const fyStart = m >= 6 ? y : y - 1;
         fySet.add(String(fyStart).slice(2) + "-" + String(fyStart + 1).slice(2));
       }
-      res.json(Array.from(fySet).sort());
+      res.json(Array.from(fySet).sort((a, b) => a.localeCompare(b)));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -1169,7 +1169,7 @@ export async function registerRoutes(
     const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
     const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
     const uri = `${proto}://${host}/api/auth/sso/callback`;
-    console.log(`[SSO] Computed redirect URI: ${uri}`);
+    console.log("[SSO] Computed redirect URI for callback");
     return uri;
   }
 
@@ -1550,7 +1550,7 @@ Identify risks including:
           const pm = projectMonthly.filter(m => m.projectId === p.id);
           const totalCost = pm.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
           const totalRev = pm.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-          const monthCosts = pm.sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => parseFloat(m.cost || "0"));
+          const monthCosts = [...pm].sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => parseFloat(m.cost || "0"));
           return { name: p.name, code: (p as any).projectCode, billing: (p as any).billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
         }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
 
@@ -1669,7 +1669,7 @@ For each prediction, state your confidence level (High/Medium/Low) and the key a
 
         const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
         const negativeBalance = projectRisks.filter(p => p.balance < 0).map(p => `${p.name} ($${p.balance.toLocaleString()})`);
-        const topRevProject = projectRisks.sort((a, b) => b.totalRev - a.totalRev)[0];
+        const topRevProject = [...projectRisks].sort((a, b) => b.totalRev - a.totalRev)[0];
         const revConcentration = topRevProject && totalRevenue > 0 ? (topRevProject.totalRev / totalRevenue * 100).toFixed(1) : "0";
 
         userPrompt = `Identify the top risks facing this organization RIGHT NOW. Be specific and blunt.
@@ -2088,8 +2088,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     try {
       const reportId = Number(req.params.reportId);
       const { planId } = req.body;
-      if (!planId || typeof planId !== "string") {
-        return res.status(400).json({ message: "planId is required" });
+      if (!planId || typeof planId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(planId)) {
+        return res.status(400).json({ message: "planId is required and must be alphanumeric" });
       }
 
       let graphToken: string | null = null;
@@ -2264,11 +2264,9 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
 
       const allEmployees = await storage.getEmployees();
       const employeeByName = new Map<string, string>();
-      const employeeByEmail = new Map<string, string>();
       for (const emp of allEmployees) {
         const fullName = `${emp.firstName} ${emp.lastName}`.trim();
         if (fullName) employeeByName.set(fullName.toLowerCase(), fullName);
-        if (emp.email) employeeByEmail.set(emp.email.toLowerCase(), fullName);
       }
 
       const resolveUserName = (userId: string): string => {
@@ -2331,7 +2329,6 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             }
           }
         } else {
-          const createdDate = pt.createdDateTime ? pt.createdDateTime.split("T")[0] : "";
           await storage.createVatPlannerTask({
             vatReportId: reportId,
             bucketName,
@@ -2393,9 +2390,12 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
             if (!bucketGroups[bName]) bucketGroups[bName] = [];
             const pct = pt.percentComplete || 0;
-            const status = pct === 100 ? "Completed" : pct > 0 ? "In Progress" : "Not Started";
+            let status = "Not Started";
+            if (pct === 100) status = "Completed";
+            else if (pct > 0) status = "In Progress";
             const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
-            bucketGroups[bName].push(`${pt.title} [${status}]${assignees ? ` (${assignees})` : ""}`);
+            const taskEntry = assignees ? `${pt.title} [${status}] (${assignees})` : `${pt.title} [${status}]`;
+            bucketGroups[bName].push(taskEntry);
           }
 
           const syncDataForAI = {
@@ -2630,10 +2630,16 @@ Your role:
 
       const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
       const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
-      const plannerSummary = [
-        ...(completedTasks.length > 0 ? [`Completed:\n${completedTasks.map((t: any) => `  - ${t.taskName} (Bucket: ${t.bucketName || "N/A"})`).join("\n")}`] : []),
-        ...(inProgressTasks.length > 0 ? [`In Progress:\n${inProgressTasks.map((t: any) => `  - ${t.taskName} (${t.progress || "N/A"}, Due: ${t.dueDate || "N/A"})`).join("\n")}`] : []),
-      ].join("\n");
+      const plannerParts: string[] = [];
+      if (completedTasks.length > 0) {
+        const lines = completedTasks.map((t: any) => "  - " + t.taskName + " (Bucket: " + (t.bucketName || "N/A") + ")").join("\n");
+        plannerParts.push("Completed:\n" + lines);
+      }
+      if (inProgressTasks.length > 0) {
+        const lines = inProgressTasks.map((t: any) => "  - " + t.taskName + " (" + (t.progress || "N/A") + ", Due: " + (t.dueDate || "N/A") + ")").join("\n");
+        plannerParts.push("In Progress:\n" + lines);
+      }
+      const plannerSummary = plannerParts.join("\n");
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
@@ -3221,7 +3227,7 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         const newProj = await storage.createProject({
-          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -3290,7 +3296,7 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         match = await storage.createProject({
-          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d\-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",

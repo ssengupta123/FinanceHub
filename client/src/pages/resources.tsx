@@ -184,7 +184,7 @@ export default function Resources() {
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
   const { data: timesheets } = useQuery<Timesheet[]>({
-    queryKey: [`/api/timesheets${selectedFY !== "all" ? `?fy=${selectedFY}` : ""}`],
+    queryKey: ["/api/timesheets" + (selectedFY !== "all" ? "?fy=" + selectedFY : "")],
   });
   const { data: allUsers } = useQuery<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>>({ queryKey: ["/api/users"] });
 
@@ -258,7 +258,7 @@ export default function Resources() {
     if (!employees) return [];
     const set = new Set<string>();
     employees.forEach(e => { if (e.team) set.add(e.team); });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [employees]);
 
   const filtered = useMemo(() => {

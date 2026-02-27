@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,7 +85,7 @@ export default function UtilizationDashboard() {
 
   const availableTeams = useMemo(() => {
     const teams = new Set(allPermanentEmployees.map(e => (e as any).team).filter(Boolean));
-    return Array.from(teams).sort() as string[];
+    return (Array.from(teams) as string[]).sort((a, b) => a.localeCompare(b));
   }, [allPermanentEmployees]);
 
   const permanentEmployees = useMemo(
@@ -107,14 +107,13 @@ export default function UtilizationDashboard() {
     });
   }, [permanentEmployees, fyTimesheets, projects]);
 
-  const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects, empProjectAllocations } = useMemo(() => {
+  const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects } = useMemo(() => {
     const emptyResult = {
       weekColumns: [] as { key: string; label: string }[],
       rollingView: [] as any[],
       benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 },
       overutilisedList: [] as { name: string; role: string; avgHours: number; pct: number }[],
       allActiveProjects: [] as Project[],
-      empProjectAllocations: new Map<number, { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[]>(),
     };
 
     if (!weeklyData || permanentEmployees.length === 0) return emptyResult;
@@ -359,7 +358,6 @@ export default function UtilizationDashboard() {
       benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
       overutilisedList: overutilised,
       allActiveProjects: activeProjects,
-      empProjectAllocations,
     };
   }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
 
@@ -526,9 +524,8 @@ export default function UtilizationDashboard() {
                 {overutilisedList.map((emp: any, idx: number) => {
                   const isExpanded = expandedOverutil.has(idx);
                   return (
-                    <>
+                    <Fragment key={idx}>
                       <TableRow
-                        key={idx}
                         data-testid={`row-overutilised-${idx}`}
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => {
@@ -575,7 +572,7 @@ export default function UtilizationDashboard() {
                           <TableCell colSpan={5} className="pl-10 text-sm text-muted-foreground italic">No project allocation data available</TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </TableBody>
@@ -598,11 +595,11 @@ export default function UtilizationDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <Skeleton className="h-60 w-full" />
-          ) : rollingView.length === 0 ? (
+          {isLoading && <Skeleton className="h-60 w-full" />}
+          {!isLoading && rollingView.length === 0 && (
             <p className="text-sm text-muted-foreground">No permanent employee data available</p>
-          ) : (
+          )}
+          {!isLoading && rollingView.length > 0 && (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -627,9 +624,8 @@ export default function UtilizationDashboard() {
                     const hasProjects = uniqueProjectIds.size > 0;
 
                     return (
-                      <>
+                      <Fragment key={row.employeeId}>
                         <TableRow
-                          key={row.employeeId}
                           data-testid={`row-rolling-${row.employeeId}`}
                           className={hasProjects ? "cursor-pointer hover:bg-muted/50" : ""}
                           onClick={() => {
@@ -724,7 +720,7 @@ export default function UtilizationDashboard() {
                             </TableRow>
                           );
                         })}
-                      </>
+                      </Fragment>
                     );
                   })}
                   <TableRow className="font-bold border-t-2">

@@ -70,7 +70,7 @@ export default function ResourcePlans() {
 
   const availableMonths = useMemo(() => {
     const months = new Set((allocations || []).map(r => r.month));
-    return Array.from(months).sort().reverse();
+    return Array.from(months).sort((a, b) => (a ?? 0) - (b ?? 0)).reverse();
   }, [allocations]);
 
   const uniqueEmployees = useMemo(() => {

@@ -94,7 +94,7 @@ function BulletText({ text }: { text: string | null | undefined }) {
   return (
     <ul className="list-none space-y-0.5 text-[11px] leading-[1.4]">
       {lines.map((line, i) => {
-        const trimmed = line.replace(/^[\s•\-\*]+/, "");
+        const trimmed = line.replace(/^[\s•\-*]+/, "");
         const indent = line.match(/^(\s{2,}|\t)/);
         return (
           <li key={i} className={indent ? "ml-4" : ""}>
@@ -775,7 +775,7 @@ function PlannerTasksTable({ reportId }: { reportId: number }) {
 
   if (isLoading) return <Skeleton className="h-40" />;
 
-  const buckets = Array.from(new Set(tasks.map(t => t.bucketName)));
+  const _buckets = Array.from(new Set(tasks.map(t => t.bucketName)));
 
   return (
     <Card>
@@ -1077,7 +1077,7 @@ function ActionItemsSection({ reportId }: { reportId: number }) {
 
   if (isLoading) return <Skeleton className="h-40" />;
 
-  const sections = Array.from(new Set(items.map(i => i.section)));
+  const _sections = Array.from(new Set(items.map(i => i.section)));
 
   return (
     <Card>

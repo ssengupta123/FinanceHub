@@ -20,7 +20,7 @@ export function getFyOptions(existing: string[]): string[] {
   const current = getCurrentFy();
   const set = new Set(existing);
   set.add(current);
-  return Array.from(set).sort();
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
 export function getElapsedFyMonths(fy: string): number {

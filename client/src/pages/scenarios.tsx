@@ -141,8 +141,8 @@ export default function Scenarios() {
 
   const availableFYs = useMemo(() => {
     if (!pipeline) return fyPeriods;
-    const fromData = Array.from(new Set(pipeline.map(o => o.fyYear).filter(Boolean) as string[])).sort();
-    const merged = Array.from(new Set([...fyPeriods, ...fromData])).sort();
+    const fromData = Array.from(new Set(pipeline.map(o => o.fyYear).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
+    const merged = Array.from(new Set([...fyPeriods, ...fromData])).sort((a, b) => a.localeCompare(b));
     return merged.length > 0 ? merged : FY_PERIODS;
   }, [pipeline, fyPeriods]);
 
@@ -204,10 +204,9 @@ export default function Scenarios() {
     const totalMargin = totalRev > 0 ? (totalGP / totalRev) * 100 : 0;
 
     const cumulativeRev: number[] = [];
-    monthlyRevenue.reduce((prev, cur, i) => {
-      cumulativeRev[i] = prev + cur;
-      return cumulativeRev[i];
-    }, 0);
+    monthlyRevenue.forEach((cur, i) => {
+      cumulativeRev[i] = (i > 0 ? cumulativeRev[i - 1] : 0) + cur;
+    });
 
     return {
       monthlyRevenue,

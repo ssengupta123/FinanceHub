@@ -122,7 +122,7 @@ function sanitizeDateFields(data: Record<string, any>, table?: string): Record<s
   const textDateCols = table ? TEXT_DATE_COLUMNS_BY_TABLE[table] : undefined;
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {
-      if (textDateCols && textDateCols.has(key)) continue;
+      if (textDateCols?.has(key)) continue;
       const val = data[key];
       if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
         data[key] = null;

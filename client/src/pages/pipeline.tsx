@@ -109,7 +109,6 @@ type SortDir = "asc" | "desc";
 const defaultVisible = new Set<PipelineColumnKey>(["name", "classification", "vat", "workType", "value", "margin", "weightedValue", "status", "dueDate", "casLead", "clientCode"]);
 
 export default function Pipeline() {
-  const { can } = useAuth();
   const [classFilter, setClassFilter] = useState("all");
   const [vatFilter, setVatFilter] = useState("all");
   const [workTypeFilter, setWorkTypeFilter] = useState("all");
@@ -176,12 +175,12 @@ export default function Pipeline() {
 
   const vatCategories = useMemo(() => {
     const cats = Array.from(new Set(openOpps.map(o => o.vat).filter((v): v is string => !!v)));
-    return cats.sort();
+    return cats.sort((a, b) => a.localeCompare(b));
   }, [openOpps]);
 
   const workTypes = useMemo(() => {
     const wt = Array.from(new Set(openOpps.map(o => o.workType).filter((v): v is string => !!v)));
-    return wt.sort();
+    return wt.sort((a, b) => a.localeCompare(b));
   }, [openOpps]);
 
   const toggleSort = (field: SortField) => {

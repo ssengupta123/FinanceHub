@@ -63,7 +63,7 @@ export default function FeatureRequestsPage() {
   const [category, setCategory] = useState<string>("");
   const [priority, setPriority] = useState<string>("Medium");
   const [area, setArea] = useState<string>("");
-  const [selectedRequest, setSelectedRequest] = useState<FeatureRequest | null>(null);
+  const [_selectedRequest, setSelectedRequest] = useState<FeatureRequest | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
 
   const { data: requests = [], isLoading } = useQuery<FeatureRequest[]>({
@@ -170,8 +170,9 @@ export default function FeatureRequestsPage() {
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium">Title *</label>
+                  <label htmlFor="fr-title" className="text-sm font-medium">Title *</label>
                   <Input
+                    id="fr-title"
                     value={title}
                     onChange={e => setTitle(e.target.value)}
                     placeholder="Brief summary of your request"
@@ -179,8 +180,9 @@ export default function FeatureRequestsPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Description *</label>
+                  <label htmlFor="fr-description" className="text-sm font-medium">Description *</label>
                   <Textarea
+                    id="fr-description"
                     value={description}
                     onChange={e => setDescription(e.target.value)}
                     placeholder="Detailed description of what you need and why"
@@ -190,9 +192,9 @@ export default function FeatureRequestsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium">Category *</label>
+                    <label htmlFor="fr-category" className="text-sm font-medium">Category *</label>
                     <Select value={category} onValueChange={setCategory}>
-                      <SelectTrigger data-testid="select-category">
+                      <SelectTrigger id="fr-category" data-testid="select-category">
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
@@ -203,9 +205,9 @@ export default function FeatureRequestsPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Priority</label>
+                    <label htmlFor="fr-priority" className="text-sm font-medium">Priority</label>
                     <Select value={priority} onValueChange={setPriority}>
-                      <SelectTrigger data-testid="select-priority">
+                      <SelectTrigger id="fr-priority" data-testid="select-priority">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -217,9 +219,9 @@ export default function FeatureRequestsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Area *</label>
+                  <label htmlFor="fr-area" className="text-sm font-medium">Area *</label>
                   <Select value={area} onValueChange={setArea}>
-                    <SelectTrigger data-testid="select-area">
+                    <SelectTrigger id="fr-area" data-testid="select-area">
                       <SelectValue placeholder="Select area" />
                     </SelectTrigger>
                     <SelectContent>
@@ -369,7 +371,7 @@ export default function FeatureRequestsPage() {
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
-                              <label className="text-sm font-medium">Description</label>
+                              <span className="text-sm font-medium">Description</span>
                               <p className="text-sm text-muted-foreground mt-1">{fr.description}</p>
                             </div>
                             <div className="grid grid-cols-3 gap-2 text-sm">
@@ -378,8 +380,9 @@ export default function FeatureRequestsPage() {
                               <div><strong>Area:</strong> {fr.area}</div>
                             </div>
                             <div>
-                              <label className="text-sm font-medium">Admin Notes</label>
+                              <label htmlFor={`admin-notes-${fr.id}`} className="text-sm font-medium">Admin Notes</label>
                               <Textarea
+                                id={`admin-notes-${fr.id}`}
                                 value={adminNotes}
                                 onChange={e => setAdminNotes(e.target.value)}
                                 placeholder="Add notes about this request..."
