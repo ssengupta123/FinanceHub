@@ -62,7 +62,7 @@ const EMPLOYEE_FIELD_MAP_FROM_DB: Record<string, string> = {
   gross_cost_rate: "grossCost",
 };
 
-function toSnakeCase(obj: Record<string, any>, table?: string): Record<string, any> {
+export function toSnakeCase(obj: Record<string, any>, table?: string): Record<string, any> {
   const fieldMap = table === "employees" ? EMPLOYEE_FIELD_MAP_TO_DB : {};
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -73,7 +73,7 @@ function toSnakeCase(obj: Record<string, any>, table?: string): Record<string, a
   return result;
 }
 
-function toCamelCase(obj: Record<string, any>): Record<string, any> {
+export function toCamelCase(obj: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
     const mappedKey = EMPLOYEE_FIELD_MAP_FROM_DB[key];
@@ -83,7 +83,7 @@ function toCamelCase(obj: Record<string, any>): Record<string, any> {
   return result;
 }
 
-function rowToModel<T>(row: Record<string, any>): T {
+export function rowToModel<T>(row: Record<string, any>): T {
   const camel = toCamelCase(row);
   for (const key of Object.keys(camel)) {
     const val = camel[key];
@@ -113,12 +113,12 @@ const TEXT_DATE_COLUMNS_BY_TABLE: Record<string, Set<string>> = {
   pipeline_opportunities: new Set(["due_date", "start_date", "expiry_date"]),
 };
 
-function isReasonableDate(d: Date): boolean {
+export function isReasonableDate(d: Date): boolean {
   const year = d.getFullYear();
   return year >= 1900 && year <= 2100;
 }
 
-function sanitizeDateFields(data: Record<string, any>, table?: string): Record<string, any> {
+export function sanitizeDateFields(data: Record<string, any>, table?: string): Record<string, any> {
   const textDateCols = table ? TEXT_DATE_COLUMNS_BY_TABLE[table] : undefined;
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {

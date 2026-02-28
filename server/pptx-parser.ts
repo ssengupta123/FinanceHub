@@ -69,11 +69,11 @@ const VAT_NAME_MAP: Record<string, string> = {
   "EMERGING ACCOUNTS": "Emerging",
 };
 
-function decodeXmlEntities(s: string): string {
+export function decodeXmlEntities(s: string): string {
   return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/\u2011/g, "-").replace(/\u2013/g, "–").replace(/\u2014/g, "—");
 }
 
-function resolveVatName(raw: string): string | null {
+export function resolveVatName(raw: string): string | null {
   const cleaned = decodeXmlEntities(raw).replace(/\s*VAT\s*/gi, " ").trim().toUpperCase();
   for (const [key, val] of Object.entries(VAT_NAME_MAP)) {
     if (cleaned === key.toUpperCase() || cleaned.includes(key.toUpperCase())) {
