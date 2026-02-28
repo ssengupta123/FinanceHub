@@ -3222,7 +3222,7 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         const origName = String(r[9]).trim();
 
         const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
         let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
@@ -3291,7 +3291,7 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
 
       let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
-        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
         let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);

@@ -193,7 +193,7 @@ function isPlannerSlide(slide: ParsedSlide): boolean {
 function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
   const allParas = [...paragraphs.slice(0, 5), ...titleSlideParas];
   for (const p of allParas) {
-    const dateMatch = p.match(/(\d{1,2}\s+\w+,?\s+\d{4})/);
+    const dateMatch = p.match(/(\d{1,2}\s[A-Za-z]+,?\s\d{4})/);
     if (dateMatch) {
       try {
         const d = new Date(dateMatch[1].replace(",", ""));
