@@ -69,11 +69,11 @@ const VAT_NAME_MAP: Record<string, string> = {
   "EMERGING ACCOUNTS": "Emerging",
 };
 
-function decodeXmlEntities(s: string): string {
+export function decodeXmlEntities(s: string): string {
   return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/\u2011/g, "-").replace(/\u2013/g, "–").replace(/\u2014/g, "—");
 }
 
-function resolveVatName(raw: string): string | null {
+export function resolveVatName(raw: string): string | null {
   const cleaned = decodeXmlEntities(raw).replace(/\s*VAT\s*/gi, " ").trim().toUpperCase();
   for (const [key, val] of Object.entries(VAT_NAME_MAP)) {
     if (cleaned === key.toUpperCase() || cleaned.includes(key.toUpperCase())) {
@@ -193,7 +193,7 @@ function isPlannerSlide(slide: ParsedSlide): boolean {
 function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
   const allParas = [...paragraphs.slice(0, 5), ...titleSlideParas];
   for (const p of allParas) {
-    const dateMatch = p.match(/(\d{1,2}\s+\w+,?\s+\d{4})/);
+    const dateMatch = p.match(/(\d{1,2}\s[A-Za-z]+,?\s\d{4})/);
     if (dateMatch) {
       try {
         const d = new Date(dateMatch[1].replace(",", ""));

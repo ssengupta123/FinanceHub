@@ -37,6 +37,8 @@ The application is built with a React + Vite frontend using Tailwind CSS and sha
 - **Azure Active Directory:** For SSO (Single Sign-On) login integration.
 - **jsonwebtoken:** JWT validation for SSO token handoff from Launchpad app. Requires `SSO_HANDOFF_SECRET` env var (same value on both Launchpad and FinanceHub). Middleware in `server/index.ts` validates tokens issued by Launchpad with issuer "launchpad", auto-provisions users, creates sessions, and redirects to strip the token from the URL.
 
+- **Test Coverage:** Vitest unit tests in `tests/` directory with V8 coverage provider. Run `npx vitest run --coverage` to generate LCOV report at `coverage/lcov.info`. Tests cover server utility functions: data transformation (toSnakeCase/toCamelCase/rowToModel), date validation (isReasonableDate/sanitizeDateFields), Excel import helpers (excelDateToString/toNum/toDecimal/excelDateToISOString), and PPTX parser (decodeXmlEntities/resolveVatName). CI pipeline runs tests and uploads coverage to SonarCloud. Config: `vitest.config.ts`.
+
 ## Important Notes
 - **SIGHUP Handling:** `server/index.ts` ignores SIGHUP signals to prevent the Replit workflow PTY from killing the server process when the terminal disconnects.
 - **API Data Optimization:** Timesheets and weekly utilization endpoints support `?fy=XX-XX` query parameter for server-side FY filtering to reduce data transfer. The `/api/timesheets/available-fys` endpoint provides a lightweight list of available financial years. Frontend pages (utilization, resources, timesheets, milestones) use FY-filtered queries instead of loading all records.

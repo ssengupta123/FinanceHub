@@ -2853,7 +2853,7 @@ Return this exact JSON structure:
   return httpServer;
 }
 
-function excelDateToString(val: any): string | null {
+export function excelDateToString(val: any): string | null {
   if (!val) return null;
   if (typeof val === "number") {
     const d = XLSX.SSF.parse_date_code(val);
@@ -2883,13 +2883,13 @@ function excelDateToString(val: any): string | null {
   return null;
 }
 
-function toNum(val: any): string {
+export function toNum(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
   const n = typeof val === "number" ? val : parseFloat(String(val));
   return isNaN(n) ? "0" : n.toFixed(2);
 }
 
-function toDecimal(val: any): string {
+export function toDecimal(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
   const n = typeof val === "number" ? val : parseFloat(String(val));
   return isNaN(n) ? "0" : n.toFixed(4);
@@ -3222,7 +3222,7 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         const origName = String(r[9]).trim();
 
         const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
         let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
@@ -3291,7 +3291,7 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
 
       let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
-        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s+(.+)$/i);
+        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
         let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
@@ -3540,7 +3540,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
   return { imported, errors };
 }
 
-function excelDateToISOString(serial: any): string | null {
+export function excelDateToISOString(serial: any): string | null {
   if (!serial || serial === "") return null;
   const num = Number(serial);
   if (isNaN(num)) {
