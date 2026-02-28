@@ -695,5 +695,13 @@ export async function runIncrementalMigrations() {
     console.log(`Seeded ${rows.length} default role permissions`);
   }
 
+  const hasCertifications = await db.schema.hasColumn("employees", "certifications");
+  if (!hasCertifications) {
+    await db.schema.alterTable("employees", (t) => {
+      t.text("certifications");
+    });
+    console.log("Added certifications column to employees");
+  }
+
   console.log("Incremental migrations completed");
 }
