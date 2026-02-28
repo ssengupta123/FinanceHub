@@ -16,6 +16,7 @@ jobs:
   sonarqube:
     name: SonarQube Quality Gate
     runs-on: ubuntu-latest
+    if: vars.SONAR_ENABLED == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,6 +36,7 @@ jobs:
   deploy:
     name: Build and Deploy
     needs: sonarqube
+    if: always() && (needs.sonarqube.result == 'success' || needs.sonarqube.result == 'skipped')
     runs-on: ubuntu-latest
 
     steps:
