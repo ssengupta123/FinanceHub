@@ -78,6 +78,8 @@ app.use((req, res, next) => {
   next();
 });
 
+async function startServer() {
+
 await runMigrations().catch((err) => console.error("Migration error:", err));
 await runIncrementalMigrations().catch((err) => console.error("Incremental migration error:", err));
 
@@ -198,4 +200,11 @@ httpServer.on("close", () => {
 
 httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
   log(`serving on port ${port}`);
+});
+
+}
+
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
 });
