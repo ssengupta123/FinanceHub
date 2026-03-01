@@ -58,6 +58,17 @@ function parseSseLine(line: string): { content?: string; done?: boolean; error?:
   }
 }
 
+function processSseLines(lines: string[], onContent: (text: string) => void): boolean {
+  for (const line of lines) {
+    const data = parseSseLine(line);
+    if (!data) continue;
+    if (data.done) return true;
+    if (data.error) throw new Error(data.error);
+    if (data.content) onContent(data.content);
+  }
+  return false;
+}
+
 async function processSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   onContent: (text: string) => void,
@@ -73,13 +84,7 @@ async function processSseStream(
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
 
-    for (const line of lines) {
-      const data = parseSseLine(line);
-      if (!data) continue;
-      if (data.done) return;
-      if (data.error) throw new Error(data.error);
-      if (data.content) onContent(data.content);
-    }
+    if (processSseLines(lines, onContent)) return;
   }
 }
 

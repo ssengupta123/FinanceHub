@@ -9,6 +9,9 @@ import {
   shouldSkipParagraph,
   groupSlidesByVat,
   processTableForReport,
+  processStatusTable,
+  processRiskTableForReport,
+  processPlannerTableForReport,
   appendContentFields,
   findFallbackOverallStatus,
   buildReportsSummary,
@@ -1311,5 +1314,69 @@ describe("collectPlannerTasks", () => {
   it("returns empty for slides with no tables", () => {
     const slides = [{ paragraphs: ["test"], tables: [], index: 1, xml: "" }];
     expect(collectPlannerTasks(slides)).toEqual([]);
+  });
+});
+
+describe("processStatusTable", () => {
+  it("updates report overallStatus from status table", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    const table = [
+      ["Overall Status: GREEN", "", ""],
+      ["Open Opportunities", "", "Some opps"],
+      ["Big Plays", "", "Some plays"],
+      ["Account Goals", "", "Goals here"],
+      ["Relationships", "", "Rels here"],
+    ];
+    processStatusTable(table, report);
+    expect(report.overallStatus).toBe("GREEN");
+  });
+
+  it("does not override existing statusSummary", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    report.statusSummary = "existing summary";
+    const table = [
+      ["Section", "RAG", "Summary"],
+      ["Overall", "AMBER", "New summary"],
+      ["Open Opps", "", ""],
+      ["Big Plays", "", ""],
+      ["Account Goals", "", ""],
+      ["Relationships", "", ""],
+    ];
+    processStatusTable(table, report);
+    expect(report.statusSummary).toBe("existing summary");
+  });
+});
+
+describe("processRiskTableForReport", () => {
+  it("adds parsed risks to report", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    const header = ["ID", "Risk", "Impact", "Likelihood", "Status", "Owner", "Raised By", "Date Raised", "Mitigation", "Due", "RAG"];
+    const row = ["1", "Server outage", "High", "Medium", "Open", "John", "Jane", "2025-01-01", "Backup plan", "2025-02-01", "RED"];
+    processRiskTableForReport([header, row], report);
+    expect(report.risks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles empty table body", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    const header = ["ID", "Risk", "Impact", "Likelihood", "Status", "Owner", "Raised By", "Date Raised", "Mitigation", "Due", "RAG"];
+    processRiskTableForReport([header], report);
+    expect(report.risks.length).toBe(0);
+  });
+});
+
+describe("processPlannerTableForReport", () => {
+  it("adds parsed planner tasks to report", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    const header = ["Bucket", "Task", "Progress", "Due", "Priority", "Assigned", "Labels"];
+    const row = ["Sprint 1", "Fix bug", "50%", "2025-02-01", "High", "John", "urgent"];
+    processPlannerTableForReport([header, row], report);
+    expect(report.plannerTasks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles empty table body", () => {
+    const report = createEmptyReport("TestVAT", "2025-01-01");
+    const header = ["Bucket", "Task", "Progress", "Due", "Priority", "Assigned", "Labels"];
+    processPlannerTableForReport([header], report);
+    expect(report.plannerTasks.length).toBe(0);
   });
 });

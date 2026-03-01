@@ -158,6 +158,61 @@ function gpCardClassName(isLoading: boolean, totalGP: number): string {
   return totalGP > 0 ? "border-green-500/50" : "border-red-500/50";
 }
 
+function computeGpMarginBorder(loading: boolean, gpPercent: number): string {
+  if (loading) return "";
+  if (gpPercent >= 20) return "border-green-500/50";
+  if (gpPercent >= 10) return "border-amber-500/50";
+  return "border-red-500/50";
+}
+
+function computeVatBreakdown(rows: ClientRow[], totalRev: number) {
+  const vatCategories = ["Growth", "VIC", "DAFF", "Emerging", "DISR", "SAU"];
+  const breakdown = vatCategories.map((vat) => {
+    const rev = rows.filter((r) => r.vat === vat).reduce((s, r) => s + r.ytdRevenue, 0);
+    return { vat, revenue: rev };
+  });
+  const otherVatRev = rows
+    .filter((r) => !vatCategories.includes(r.vat) && r.vat)
+    .reduce((s, r) => s + r.ytdRevenue, 0);
+  if (otherVatRev > 0) {
+    breakdown.push({ vat: "Other", revenue: otherVatRev });
+  }
+  return breakdown;
+}
+
+function computeBillingBreakdown(rows: ClientRow[]) {
+  return {
+    fixedRevenue: rows.filter((r) => r.billing === "Fixed").reduce((s, r) => s + r.ytdRevenue, 0),
+    fixedCost: rows.filter((r) => r.billing === "Fixed").reduce((s, r) => s + r.ytdCost, 0),
+    tmRevenue: rows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdRevenue, 0),
+    tmCost: rows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdCost, 0),
+  };
+}
+
+function computeFinanceSummary(clientRows: ClientRow[], loading: boolean) {
+  const totalRevenue = clientRows.reduce((s, r) => s + r.ytdRevenue, 0);
+  const totalCost = clientRows.reduce((s, r) => s + r.ytdCost, 0);
+  const totalGP = totalRevenue - totalCost;
+  const totalGPPercent = totalRevenue > 0 ? (totalGP / totalRevenue) * 100 : 0;
+  const totalQ1 = clientRows.reduce((s, r) => s + r.q1Rev, 0);
+  const totalQ2 = clientRows.reduce((s, r) => s + r.q2Rev, 0);
+  const totalQ3 = clientRows.reduce((s, r) => s + r.q3Rev, 0);
+  const totalQ4 = clientRows.reduce((s, r) => s + r.q4Rev, 0);
+
+  const vatBreakdown = computeVatBreakdown(clientRows, totalRevenue);
+  const billing = computeBillingBreakdown(clientRows);
+  const revenueCardBorder = loading ? "" : (totalRevenue > 0 ? "border-green-500/50" : "border-red-500/50");
+  const gpMarginCardBorder = computeGpMarginBorder(loading, totalGPPercent);
+
+  return {
+    totalRevenue, totalCost, totalGP, totalGPPercent,
+    totalQ1, totalQ2, totalQ3, totalQ4,
+    vatBreakdown,
+    ...billing,
+    revenueCardBorder, gpMarginCardBorder,
+  };
+}
+
 export default function FinanceDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [visibleColumns, setVisibleColumns] = useState<Set<FinanceColumnKey>>(
@@ -226,14 +281,7 @@ export default function FinanceDashboard() {
   };
   clientRows.sort((a, b) => statusOrder(a.status) - statusOrder(b.status) || a.client.localeCompare(b.client));
 
-  const totalRevenue = clientRows.reduce((s, r) => s + r.ytdRevenue, 0);
-  const totalCost = clientRows.reduce((s, r) => s + r.ytdCost, 0);
-  const totalGP = totalRevenue - totalCost;
-  const totalGPPercent = totalRevenue > 0 ? (totalGP / totalRevenue) * 100 : 0;
-  const totalQ1 = clientRows.reduce((s, r) => s + r.q1Rev, 0);
-  const totalQ2 = clientRows.reduce((s, r) => s + r.q2Rev, 0);
-  const totalQ3 = clientRows.reduce((s, r) => s + r.q3Rev, 0);
-  const totalQ4 = clientRows.reduce((s, r) => s + r.q4Rev, 0);
+  const financeSummary = computeFinanceSummary(clientRows, isLoading);
 
   const monthlySnapshot = useMemo(() => {
     return FY_MONTHS.map((_, mi) => {
@@ -247,38 +295,12 @@ export default function FinanceDashboard() {
     });
   }, [fyMonthlyData]);
 
-  const vatCategories = ["Growth", "VIC", "DAFF", "Emerging", "DISR", "SAU"];
-  const vatBreakdown = vatCategories.map((vat) => {
-    const rev = clientRows.filter((r) => r.vat === vat).reduce((s, r) => s + r.ytdRevenue, 0);
-    return { vat, revenue: rev };
-  });
-  const otherVatRev = clientRows
-    .filter((r) => !vatCategories.includes(r.vat) && r.vat)
-    .reduce((s, r) => s + r.ytdRevenue, 0);
-  if (otherVatRev > 0) {
-    vatBreakdown.push({ vat: "Other", revenue: otherVatRev });
-  }
-
-  const fixedRevenue = clientRows.filter((r) => r.billing === "Fixed").reduce((s, r) => s + r.ytdRevenue, 0);
-  const fixedCost = clientRows.filter((r) => r.billing === "Fixed").reduce((s, r) => s + r.ytdCost, 0);
-  const tmRevenue = clientRows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdRevenue, 0);
-  const tmCost = clientRows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdCost, 0);
-
-  let revenueCardBorder = "";
-  if (!isLoading) {
-    revenueCardBorder = totalRevenue > 0 ? "border-green-500/50" : "border-red-500/50";
-  }
-
-  let gpMarginCardBorder = "";
-  if (!isLoading) {
-    if (totalGPPercent >= 20) {
-      gpMarginCardBorder = "border-green-500/50";
-    } else if (totalGPPercent >= 10) {
-      gpMarginCardBorder = "border-amber-500/50";
-    } else {
-      gpMarginCardBorder = "border-red-500/50";
-    }
-  }
+  const {
+    totalRevenue, totalCost, totalGP, totalGPPercent,
+    totalQ1, totalQ2, totalQ3, totalQ4,
+    vatBreakdown, fixedRevenue, fixedCost, tmRevenue, tmCost,
+    revenueCardBorder, gpMarginCardBorder,
+  } = financeSummary;
 
   return (
     <div className="flex-1 flex flex-col h-full">

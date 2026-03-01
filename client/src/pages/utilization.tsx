@@ -131,17 +131,18 @@ type WeekProjection = {
 };
 type EmpAllocation = { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number };
 
-function computeWeekProjection(
-  empId: number,
-  weekKey: string,
-  weekDate: Date,
-  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>,
-  hasResourcePlans: boolean,
-  rpByEmpMonth: Map<string, number>,
-  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>,
-  allocations: EmpAllocation[],
-  recentAvg: { avgHours: number; avgBillable: number }
-): WeekProjection {
+function computeWeekProjection(opts: {
+  empId: number;
+  weekKey: string;
+  weekDate: Date;
+  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>;
+  hasResourcePlans: boolean;
+  rpByEmpMonth: Map<string, number>;
+  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>;
+  allocations: EmpAllocation[];
+  recentAvg: { avgHours: number; avgBillable: number };
+}): WeekProjection {
+  const { empId, weekKey, weekDate, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects, allocations, recentAvg } = opts;
   const mapKey = `${empId}-${weekKey}`;
   const actual = actualDataByEmpWeek.get(mapKey);
 
@@ -203,6 +204,27 @@ function filterActiveProjects(projects: Project[], today: Date): Project[] {
   });
 }
 
+function buildProjectTimeMaps(
+  timesheets: Timesheet[],
+  activeProjects: Project[]
+): { projectWeekHours: Map<number, Map<string, number>>; projectLastSeen: Map<number, Date> } {
+  const projectWeekHours = new Map<number, Map<string, number>>();
+  const projectLastSeen = new Map<number, Date>();
+  for (const t of timesheets) {
+    if (!t.projectId) continue;
+    const proj = activeProjects.find(p => p.id === t.projectId);
+    if (!proj) continue;
+    const wk = getISOWeekKey(t.weekEnding);
+    if (!projectWeekHours.has(t.projectId)) projectWeekHours.set(t.projectId, new Map());
+    const weekMap = projectWeekHours.get(t.projectId)!;
+    weekMap.set(wk, (weekMap.get(wk) || 0) + parseNum(t.hoursWorked));
+    const tsDate = new Date(t.weekEnding);
+    const prev = projectLastSeen.get(t.projectId);
+    if (!prev || tsDate > prev) projectLastSeen.set(t.projectId, tsDate);
+  }
+  return { projectWeekHours, projectLastSeen };
+}
+
 function buildEmpAllocationsForEmployee(
   empId: number,
   fyTimesheets: Timesheet[],
@@ -217,20 +239,7 @@ function buildEmpAllocationsForEmployee(
     return d >= recentWindowStart && d <= today;
   });
 
-  const projectWeekHours = new Map<number, Map<string, number>>();
-  const projectLastSeen = new Map<number, Date>();
-  for (const t of empRecentTimesheets) {
-    if (!t.projectId) continue;
-    const proj = activeProjects.find(p => p.id === t.projectId);
-    if (!proj) continue;
-    const wk = getISOWeekKey(t.weekEnding);
-    if (!projectWeekHours.has(t.projectId)) projectWeekHours.set(t.projectId, new Map());
-    const weekMap = projectWeekHours.get(t.projectId)!;
-    weekMap.set(wk, (weekMap.get(wk) || 0) + parseNum(t.hoursWorked));
-    const tsDate = new Date(t.weekEnding);
-    const prev = projectLastSeen.get(t.projectId);
-    if (!prev || tsDate > prev) projectLastSeen.set(t.projectId, tsDate);
-  }
+  const { projectWeekHours, projectLastSeen } = buildProjectTimeMaps(empRecentTimesheets, activeProjects);
 
   const allocations: EmpAllocation[] = [];
   for (const [projId, weekMap] of projectWeekHours) {
@@ -339,24 +348,25 @@ function buildFutureWeeks(currentWeekStart: Date): { key: string; label: string;
   return futureWeeks;
 }
 
-function computeEmployeeRolling(
-  emp: Employee,
-  futureWeeks: { key: string; label: string; date: Date }[],
-  empRecentAvg: Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>,
-  empProjectAllocations: Map<number, EmpAllocation[]>,
-  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>,
-  hasResourcePlans: boolean,
-  rpByEmpMonth: Map<string, number>,
-  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>
-) {
+function computeEmployeeRolling(opts: {
+  emp: Employee;
+  futureWeeks: { key: string; label: string; date: Date }[];
+  empRecentAvg: Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>;
+  empProjectAllocations: Map<number, EmpAllocation[]>;
+  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>;
+  hasResourcePlans: boolean;
+  rpByEmpMonth: Map<string, number>;
+  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>;
+}) {
+  const { emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects } = opts;
   const recent = empRecentAvg.get(emp.id)!;
   const allocations = empProjectAllocations.get(emp.id) || [];
 
-  const weeks = futureWeeks.map((fw) => computeWeekProjection(
-    emp.id, fw.key, fw.date, actualDataByEmpWeek,
+  const weeks = futureWeeks.map((fw) => computeWeekProjection({
+    empId: emp.id, weekKey: fw.key, weekDate: fw.date, actualDataByEmpWeek,
     hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects,
-    allocations, { avgHours: recent.avgHours, avgBillable: recent.avgBillable }
-  ));
+    allocations, recentAvg: { avgHours: recent.avgHours, avgBillable: recent.avgBillable },
+  }));
 
   const avgUtil = weeks.length > 0
     ? weeks.reduce((s, w) => s + w.utilization, 0) / weeks.length
@@ -443,7 +453,7 @@ function computeUtilizationData(
   const actualDataByEmpWeek = buildActualDataByEmpWeek(weeklyData, permanentIds);
 
   const rolling = permanentEmployees.map(emp =>
-    computeEmployeeRolling(emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects)
+    computeEmployeeRolling({ emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects })
   ).sort((a, b) => b.avgUtil - a.avgUtil);
 
   const totalCapacity = rolling.length * STANDARD_WEEKLY_HOURS * weekCols.length;
@@ -916,8 +926,7 @@ export default function UtilizationDashboard() {
           <div>
             <CardTitle className="text-base">Rolling 13-Week Resource Utilisation (Forward Projection)</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Permanent employees only. Cross-references resource plans and project date ranges to detect multi-project allocations.
-              <span className="ml-2 inline-flex items-center gap-1"><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /><span>Actual</span><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /><span>Projected</span></span>
+              Permanent employees only. Cross-references resource plans and project date ranges to detect multi-project allocations.{" "}<span className="ml-2 inline-flex items-center gap-1"><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /><span>Actual</span><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /><span>Projected</span></span>
             </p>
           </div>
         </CardHeader>

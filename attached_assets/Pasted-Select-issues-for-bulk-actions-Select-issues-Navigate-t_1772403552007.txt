@@ -1,0 +1,536 @@
+Select issues for bulk actions
+
+
+
+Select issues
+
+
+Navigate to issue
+
+
+
+
+26issues
+6h 6min effort
+
+client/src/pages/ai-insights.tsx
+
+
+Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L61
+7min effort
+16 hours ago
+Code Smell
+Critical
+client/src/pages/feature-requests.tsx
+
+
+useState call is not destructured into value + setter pair
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
++
+Open
+Not assigned
+L66
+5min effort
+2 days ago
+Code Smell
+Minor
+client/src/pages/finance.tsx
+
+
+Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L161
+17min effort
+5 days ago
+Code Smell
+Critical
+client/src/pages/login.tsx
+
+
+useState call is not destructured into value + setter pair
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
++
+Open
+Not assigned
+L14
+5min effort
+2 days ago
+Code Smell
+Minor
+client/src/pages/resources.tsx
+
+
+Refactor this code to not nest functions more than 4 levels deep.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L742
+20min effort
+44 minutes ago
+Code Smell
+Critical
+
+
+Refactor this code to not nest functions more than 4 levels deep.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L748
+20min effort
+44 minutes ago
+Code Smell
+Critical
+client/src/pages/scenarios.tsx
+
+
+Refactor this function to reduce its Cognitive Complexity from 35 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L222
+25min effort
+10 days ago
+Code Smell
+Critical
+client/src/pages/utilization.tsx
+
+
+Function 'computeWeekProjection' has too many parameters (9). Maximum allowed is 7.
+
+Adaptability
+Maintainability
+
+
+2
+Medium
+brain-overload
++
+Open
+Not assigned
+L134
+20min effort
+16 hours ago
+Code Smell
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L206
+12min effort
+44 minutes ago
+Code Smell
+Critical
+
+
+Function 'computeEmployeeRolling' has too many parameters (8). Maximum allowed is 7.
+
+Adaptability
+Maintainability
+
+
+2
+Medium
+brain-overload
++
+Open
+Not assigned
+L342
+20min effort
+44 minutes ago
+Code Smell
+Major
+
+
+Ambiguous spacing before next element span
+
+Consistency
+Reliability
+
+
+3
+Low
+Maintainability
+
+
+2
+Medium
+react
++
+Open
+Not assigned
+L920
+5min effort
+44 minutes ago
+Code Smell
+Major
+server/db.ts
+
+
+Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L704
+7min effort
+16 hours ago
+Code Smell
+Critical
+server/index.ts
+
+
+Prefer top-level await over an async IIFE.
+
+Consistency
+Maintainability
+
+
+2
+Medium
+async
+es2022
+...
++
+Open
+Not assigned
+L208
+5min effort
+44 minutes ago
+Code Smell
+Major
+server/pptx-parser.ts
+
+
+Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L586
+12min effort
+16 hours ago
+Code Smell
+Critical
+server/routes.ts
+
+
+Remove this unused import of 'Project'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L16
+1min effort
+16 hours ago
+Code Smell
+Minor
+
+
+This conditional operation returns the same value whether the condition is "true" or "false".
+
+Intentionality
+Reliability
+
+
+2
+Medium
+No tags
++
+Open
+Not assigned
+L92
+15min effort
+44 minutes ago
+Bug
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L674
+7min effort
+16 hours ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L706
+6min effort
+16 hours ago
+Code Smell
+Critical
+
+
+Function 'buildVatAiSuggestFieldsPrompt' has too many parameters (8). Maximum allowed is 7.
+
+Adaptability
+Maintainability
+
+
+2
+Medium
+brain-overload
++
+Open
+Not assigned
+L914
+20min effort
+44 minutes ago
+Code Smell
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L2436
+9min effort
+6 days ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 95 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L2743
+1h25min effort
+3 days ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L3663
+8min effort
+11 days ago
+Code Smell
+Critical
+
+
+Function 'buildResourceCostRecord' has too many parameters (8). Maximum allowed is 7.
+
+Adaptability
+Maintainability
+
+
+2
+Medium
+brain-overload
++
+Open
+Not assigned
+L3827
+20min effort
+44 minutes ago
+Code Smell
+Major
+server/vite.ts
+
+
+Prefer `node:http` over `http`.
+
+Consistency
+Maintainability
+
+
+2
+Medium
+convention
+import
+...
++
+Open
+Not assigned
+L3
+5min effort
+17 days ago
+Code Smell
+Minor
+
+
+Prefer `node:fs` over `fs`.
+
+Consistency
+Maintainability
+
+
+2
+Medium
+convention
+import
+...
++
+Open
+Not assigned
+L5
+5min effort
+17 days ago
+Code Smell
+Minor
+
+
+Prefer `node:path` over `path`.
+
+Consistency
+Maintainability
+
+
+2
+Medium
+convention
+import
+...
++
+Open
+Not assigned
+L6
+5min effort
+17 days ago
+Code Smell
+Minor

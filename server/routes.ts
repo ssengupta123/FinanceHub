@@ -13,7 +13,7 @@ declare module "express-session" {
 import multer from "multer";
 import XLSX from "xlsx";
 import OpenAI from "openai";
-import type { Project } from "@shared/schema";
+
 import {
   insertEmployeeSchema,
   insertProjectSchema,
@@ -89,7 +89,7 @@ export function normalizeWeeklyUtilRow(r: any): { employee_id: number; week_endi
 export function buildFySetFromDates(weekEndings: Array<{ week_ending: string | Date }>): string[] {
   const fySet = new Set<string>();
   for (const r of weekEndings) {
-    const fy = computeFyFromDate(r.week_ending instanceof Date ? r.week_ending : r.week_ending);
+    const fy = computeFyFromDate(String(r.week_ending));
     if (fy) fySet.add(fy);
   }
   return Array.from(fySet).sort((a, b) => a.localeCompare(b));
@@ -671,29 +671,42 @@ export function buildProjectLookupMaps(allProjects: any[]): { projMap: Map<strin
   return { projMap, projCodes };
 }
 
+export function parseOptionalTrimmed(val: any): string | null {
+  return val ? String(val).trim() : null;
+}
+
+export function parseNumericField(val: any, decimals: number): string | null {
+  const num = Number(val);
+  return val !== "" && val != null && !Number.isNaN(num) ? String(num.toFixed(decimals)) : null;
+}
+
+function cleanCsdLead(val: any): string | null {
+  return val ? String(val).replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() : null;
+}
+
+function cleanSemicolonField(val: any): string | null {
+  return val ? String(val).replaceAll(";#", ", ").trim() : null;
+}
+
 export function buildOpenOppRecord(r: any[], name: string, classification: string): any {
-  const rawValue = r[3];
-  const numRawValue = Number(rawValue);
-  const value = rawValue !== "" && rawValue != null && !Number.isNaN(numRawValue) ? String(numRawValue.toFixed(2)) : null;
-  const rawMargin = r[4];
-  const numRawMargin = Number(rawMargin);
-  const marginPercent = rawMargin !== "" && rawMargin != null && !Number.isNaN(numRawMargin) ? String(numRawMargin.toFixed(3)) : null;
-  const workType = r[5] ? String(r[5]).trim() : null;
+  const value = parseNumericField(r[3], 2);
+  const marginPercent = parseNumericField(r[4], 3);
+  const workType = parseOptionalTrimmed(r[5]);
   const startDate = excelDateToISOString(r[6]);
   const expiryDate = excelDateToISOString(r[7]);
-  let vat = r[8] ? String(r[8]).trim() : null;
+  let vat = parseOptionalTrimmed(r[8]);
   if (vat) {
     vat = vat.replaceAll(";#", "").replace(/\|.*$/, "").trim();
     if (vat.toLowerCase() === "growth") vat = "GROWTH";
   }
-  const status = r[9] ? String(r[9]).trim() : null;
-  const comment = r[10] ? String(r[10]).trim() : null;
-  const casLead = r[11] ? String(r[11]).trim() : null;
-  const csdLead = r[12] ? String(r[12]).replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() : null;
-  const category = r[13] ? String(r[13]).replaceAll(";#", ", ").trim() : null;
-  const partner = r[14] ? String(r[14]).replaceAll(";#", ", ").trim() : null;
-  const clientContact = r[15] ? String(r[15]).trim() : null;
-  const clientCode = r[16] ? String(r[16]).trim() : null;
+  const status = parseOptionalTrimmed(r[9]);
+  const comment = parseOptionalTrimmed(r[10]);
+  const casLead = parseOptionalTrimmed(r[11]);
+  const csdLead = cleanCsdLead(r[12]);
+  const category = cleanSemicolonField(r[13]);
+  const partner = cleanSemicolonField(r[14]);
+  const clientContact = parseOptionalTrimmed(r[15]);
+  const clientCode = parseOptionalTrimmed(r[16]);
   const dueDate = excelDateToISOString(r[2]);
   return {
     name, classification, vat, fyYear: "open_opps",
@@ -710,12 +723,16 @@ export function buildPlannerSyncInsights(counts: {
   removedCount: number;
   recentCompletedCount: number;
 }): string[] {
-  const insights: string[] = [];
-  if (counts.newlyCompletedCount > 0) insights.push(`${counts.newlyCompletedCount} task${counts.newlyCompletedCount > 1 ? "s" : ""} newly completed this sync`);
-  if (counts.newCount > 0) insights.push(`${counts.newCount} new task${counts.newCount > 1 ? "s" : ""} added from Planner`);
-  if (counts.updatedCount > 0) insights.push(`${counts.updatedCount} task${counts.updatedCount > 1 ? "s" : ""} updated`);
-  if (counts.removedCount > 0) insights.push(`${counts.removedCount} task${counts.removedCount > 1 ? "s" : ""} removed (no longer in Planner)`);
-  if (counts.recentCompletedCount > 0) insights.push(`${counts.recentCompletedCount} task${counts.recentCompletedCount > 1 ? "s" : ""} completed in last 4 weeks`);
+  const insightDefs: Array<{ count: number; singular: string; plural: string }> = [
+    { count: counts.newlyCompletedCount, singular: "1 task newly completed this sync", plural: `${counts.newlyCompletedCount} tasks newly completed this sync` },
+    { count: counts.newCount, singular: "1 new task added from Planner", plural: `${counts.newCount} new tasks added from Planner` },
+    { count: counts.updatedCount, singular: "1 task updated", plural: `${counts.updatedCount} tasks updated` },
+    { count: counts.removedCount, singular: "1 task removed (no longer in Planner)", plural: `${counts.removedCount} tasks removed (no longer in Planner)` },
+    { count: counts.recentCompletedCount, singular: "1 task completed in last 4 weeks", plural: `${counts.recentCompletedCount} tasks completed in last 4 weeks` },
+  ];
+  const insights = insightDefs
+    .filter(d => d.count > 0)
+    .map(d => d.count === 1 ? d.singular : d.plural);
   if (insights.length === 0) insights.push("All tasks are up to date");
   return insights;
 }
@@ -911,16 +928,17 @@ export function extractInitialUserCache(plannerTasks: any[]): Map<string, string
   return cache;
 }
 
-export function buildVatAiSuggestFieldsPrompt(
-  vatName: string,
-  pipelineSummary: string,
-  riskSummary: string,
-  completedActionsSummary: string,
-  openActionsSummary: string,
-  plannerSummary: string,
-  reportContext: string,
-  userActionNotes: string | undefined,
-): string {
+export function buildVatAiSuggestFieldsPrompt(opts: {
+  vatName: string;
+  pipelineSummary: string;
+  riskSummary: string;
+  completedActionsSummary: string;
+  openActionsSummary: string;
+  plannerSummary: string;
+  reportContext: string;
+  userActionNotes: string | undefined;
+}): string {
+  const { vatName, pipelineSummary, riskSummary, completedActionsSummary, openActionsSummary, plannerSummary, reportContext, userActionNotes } = opts;
   return `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
 
 PIPELINE DATA for ${vatName}:
@@ -2433,6 +2451,83 @@ Rules:
     }
   });
 
+  async function importSingleVatReport(report: any, reportDate: string, username: string): Promise<{ imported: boolean; reportId: number; risksImported: number; plannerTasksImported: number; errors: string[] }> {
+    const vatResult = { imported: false, reportId: 0, risksImported: 0, plannerTasksImported: 0, errors: [] as string[] };
+    try {
+      const created = await storage.createVatReport({
+        vatName: report.vatName,
+        reportDate: reportDate || report.reportDate,
+        overallStatus: report.overallStatus || null,
+        statusSummary: report.statusSummary || null,
+        openOppsSummary: report.openOppsSummary || null,
+        bigPlays: report.bigPlays || null,
+        accountGoals: report.accountGoals || null,
+        relationships: report.relationships || null,
+        research: report.research || null,
+        approachToShortfall: report.approachToShortfall || null,
+        otherActivities: report.otherActivities || null,
+        openOppsStatus: report.openOppsStatus || null,
+        bigPlaysStatus: report.bigPlaysStatus || null,
+        accountGoalsStatus: report.accountGoalsStatus || null,
+        relationshipsStatus: report.relationshipsStatus || null,
+        researchStatus: report.researchStatus || null,
+        createdBy: username,
+        updatedBy: username,
+      });
+      vatResult.imported = true;
+      vatResult.reportId = created.id;
+      for (const risk of report.risks) {
+        try {
+          await storage.createVatRisk({
+            vatReportId: created.id,
+            raisedBy: risk.raisedBy || null,
+            description: risk.description,
+            impact: risk.impact || null,
+            dateBecomesIssue: risk.dateBecomesIssue || null,
+            status: risk.status || null,
+            owner: risk.owner || null,
+            impactRating: risk.impactRating || null,
+            likelihood: risk.likelihood || null,
+            mitigation: risk.mitigation || null,
+            comments: risk.comments || null,
+            riskRating: risk.riskRating || null,
+            riskType: risk.riskType || "risk",
+          });
+          vatResult.risksImported++;
+        } catch (e: any) {
+          vatResult.errors.push(`Risk "${risk.description.substring(0, 50)}": ${e.message}`);
+        }
+      }
+      for (const task of report.plannerTasks) {
+        try {
+          await storage.createVatPlannerTask({
+            vatReportId: created.id,
+            bucketName: task.bucketName,
+            taskName: task.taskName,
+            progress: task.progress || null,
+            dueDate: task.dueDate || null,
+            priority: task.priority || null,
+            assignedTo: task.assignedTo || null,
+            labels: task.labels || null,
+          });
+          vatResult.plannerTasksImported++;
+        } catch (e: any) {
+          vatResult.errors.push(`Planner task "${task.taskName.substring(0, 50)}": ${e.message}`);
+        }
+      }
+      await storage.createVatChangeLog({
+        vatReportId: created.id,
+        fieldName: "pptx_import",
+        oldValue: null,
+        newValue: `Imported from PPTX: ${report.risks.length} risks, ${report.plannerTasks.length} planner tasks`,
+        changedBy: username,
+      });
+    } catch (e: any) {
+      vatResult.errors.push(`Failed to create report: ${e.message}`);
+    }
+    return vatResult;
+  }
+
   app.post("/api/upload/vat-pptx/import", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -2460,86 +2555,7 @@ Rules:
       const results: Record<string, { imported: boolean; reportId: number; risksImported: number; plannerTasksImported: number; errors: string[] }> = {};
 
       for (const report of toImport) {
-        const vatResult = { imported: false, reportId: 0, risksImported: 0, plannerTasksImported: 0, errors: [] as string[] };
-        try {
-          const created = await storage.createVatReport({
-            vatName: report.vatName,
-            reportDate: reportDate || report.reportDate,
-            overallStatus: report.overallStatus || null,
-            statusSummary: report.statusSummary || null,
-            openOppsSummary: report.openOppsSummary || null,
-            bigPlays: report.bigPlays || null,
-            accountGoals: report.accountGoals || null,
-            relationships: report.relationships || null,
-            research: report.research || null,
-            approachToShortfall: report.approachToShortfall || null,
-            otherActivities: report.otherActivities || null,
-            openOppsStatus: report.openOppsStatus || null,
-            bigPlaysStatus: report.bigPlaysStatus || null,
-            accountGoalsStatus: report.accountGoalsStatus || null,
-            relationshipsStatus: report.relationshipsStatus || null,
-            researchStatus: report.researchStatus || null,
-            createdBy: username,
-            updatedBy: username,
-          });
-
-          vatResult.imported = true;
-          vatResult.reportId = created.id;
-
-          for (const risk of report.risks) {
-            try {
-              await storage.createVatRisk({
-                vatReportId: created.id,
-                raisedBy: risk.raisedBy || null,
-                description: risk.description,
-                impact: risk.impact || null,
-                dateBecomesIssue: risk.dateBecomesIssue || null,
-                status: risk.status || null,
-                owner: risk.owner || null,
-                impactRating: risk.impactRating || null,
-                likelihood: risk.likelihood || null,
-                mitigation: risk.mitigation || null,
-                comments: risk.comments || null,
-                riskRating: risk.riskRating || null,
-                riskType: risk.riskType || "risk",
-              });
-              vatResult.risksImported++;
-            } catch (e: any) {
-              vatResult.errors.push(`Risk "${risk.description.substring(0, 50)}": ${e.message}`);
-            }
-          }
-
-          for (const task of report.plannerTasks) {
-            try {
-              await storage.createVatPlannerTask({
-                vatReportId: created.id,
-                bucketName: task.bucketName,
-                taskName: task.taskName,
-                progress: task.progress || null,
-                dueDate: task.dueDate || null,
-                priority: task.priority || null,
-                assignedTo: task.assignedTo || null,
-                labels: task.labels || null,
-              });
-              vatResult.plannerTasksImported++;
-            } catch (e: any) {
-              vatResult.errors.push(`Planner task "${task.taskName.substring(0, 50)}": ${e.message}`);
-            }
-          }
-
-          await storage.createVatChangeLog({
-            vatReportId: created.id,
-            fieldName: "pptx_import",
-            oldValue: null,
-            newValue: `Imported from PPTX: ${report.risks.length} risks, ${report.plannerTasks.length} planner tasks`,
-            changedBy: username,
-          });
-
-        } catch (e: any) {
-          vatResult.errors.push(`Failed to create report: ${e.message}`);
-        }
-
-        results[report.vatName] = vatResult;
+        results[report.vatName] = await importSingleVatReport(report, reportDate, username);
       }
 
       res.json({ results });
@@ -2739,6 +2755,243 @@ Rules:
     res.json({ success: true });
   });
 
+  async function acquireGraphToken(req: Request): Promise<string | null> {
+    const sessionToken = req.session.graphAccessToken;
+    const tokenExpires = req.session.graphTokenExpires;
+    if (sessionToken && tokenExpires && Date.now() < tokenExpires) {
+      console.log("[Planner Sync] Using delegated user token from session");
+      return sessionToken;
+    }
+
+    const accountKey = req.session.msalAccountKey;
+    if (!accountKey) return null;
+
+    try {
+      const client = await getMsalClient();
+      if (!client) return null;
+      const accounts = await client.getTokenCache().getAllAccounts();
+      const account = accounts.find((a: any) => a.homeAccountId === accountKey);
+      if (!account) return null;
+      const silentResult = await client.acquireTokenSilent({
+        account,
+        scopes: ["Tasks.Read", "Group.Read.All", "User.Read", "User.ReadBasic.All"],
+      });
+      if (silentResult?.accessToken) {
+        req.session.graphAccessToken = silentResult.accessToken;
+        req.session.graphTokenExpires = silentResult.expiresOn ? new Date(silentResult.expiresOn).getTime() : Date.now() + 3600000;
+        console.log("[Planner Sync] Refreshed delegated token via MSAL silent flow");
+        return silentResult.accessToken;
+      }
+    } catch (silentErr: any) {
+      console.warn("[Planner Sync] Silent token refresh failed:", silentErr.message);
+    }
+    return null;
+  }
+
+  async function fetchPlannerData(planId: string, token: string): Promise<{ plannerTasks: any[]; bucketNameCache: Map<string, string> }> {
+    const graphRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/tasks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!graphRes.ok) {
+      const err = await graphRes.text();
+      console.error("[Planner Sync] Graph error:", err);
+      throw new Error(`Failed to fetch planner tasks. Verify Plan ID and permissions. Status: ${graphRes.status}`);
+    }
+    const graphData = await graphRes.json() as { value: any[] };
+    const plannerTasks = graphData.value || [];
+
+    const bucketNameCache = new Map<string, string>();
+    try {
+      const bucketsRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/buckets`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (bucketsRes.ok) {
+        const bucketsData = await bucketsRes.json() as { value: { id: string; name: string }[] };
+        for (const b of bucketsData.value || []) {
+          bucketNameCache.set(b.id, b.name);
+        }
+        console.log(`[Planner Sync] Resolved ${bucketNameCache.size} bucket names`);
+      }
+    } catch (bucketErr: any) {
+      console.warn("[Planner Sync] Could not fetch bucket names:", bucketErr.message);
+    }
+    return { plannerTasks, bucketNameCache };
+  }
+
+  async function resolveUserNames(plannerTasks: any[], planId: string, token: string): Promise<Map<string, string>> {
+    const userIdCache = extractInitialUserCache(plannerTasks);
+
+    try {
+      const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (planRes.ok) {
+        const planData = await planRes.json() as { owner?: string };
+        if (planData.owner) {
+          const membersRes = await fetch(`https://graph.microsoft.com/v1.0/groups/${planData.owner}/members?$select=id,displayName,mail&$top=999`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (membersRes.ok) {
+            const membersData = await membersRes.json() as { value: { id: string; displayName?: string; mail?: string }[] };
+            for (const m of membersData.value || []) {
+              if (m.id && m.displayName) userIdCache.set(m.id, m.displayName);
+            }
+            console.log(`[Planner Sync] Resolved ${membersData.value?.length || 0} group members for user name lookups`);
+          } else {
+            console.warn(`[Planner Sync] Could not fetch group members (status ${membersRes.status}), falling back to individual lookups`);
+          }
+        }
+      }
+    } catch (groupErr: any) {
+      console.warn("[Planner Sync] Group members lookup failed:", groupErr.message);
+    }
+
+    const allUserIds = collectPlannerUserIds(plannerTasks);
+    const unresolvedIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
+    if (unresolvedIds.length > 0) {
+      console.log(`[Planner Sync] ${unresolvedIds.length} user IDs still unresolved after group members lookup, trying individual lookups...`);
+      await resolveUnresolvedUsers(unresolvedIds, token, userIdCache);
+    }
+    return userIdCache;
+  }
+
+  async function resolveUnresolvedUsers(unresolvedIds: string[], token: string, userIdCache: Map<string, string>): Promise<void> {
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < unresolvedIds.length; i += BATCH_SIZE) {
+      const batch = unresolvedIds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (uid) => {
+          try {
+            const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName,mail`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (userRes.ok) {
+              const userData = await userRes.json() as { displayName?: string; mail?: string };
+              return { uid, name: userData.displayName || uid };
+            }
+            console.warn(`[Planner Sync] User lookup failed for ${uid}: status ${userRes.status}`);
+          } catch (e) {
+            console.warn(`[Planner Sync] User lookup error for ${uid}:`, (e as Error).message);
+          }
+          return { uid, name: uid };
+        })
+      );
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value.name !== result.value.uid) {
+          userIdCache.set(result.value.uid, result.value.name);
+        }
+      }
+    }
+  }
+
+  async function syncPlannerTasks(
+    plannerTasks: any[],
+    reportId: number,
+    bucketNameCache: Map<string, string>,
+    resolveUserName: (uid: string) => string,
+    existingByExtId: Map<string, any>,
+    existingWithoutExtId: any[],
+  ): Promise<{
+    synced: number; newCount: number; updatedCount: number; newlyCompletedCount: number;
+    newTasks: { title: string; dueDate: string }[];
+    updatedTasks: { title: string; changes: string[] }[];
+    newlyCompletedTasks: { title: string; completedBy: string; completedDate: string }[];
+    seenExtIds: Set<string>;
+  }> {
+    const seenExtIds = new Set<string>();
+    let synced = 0, newCount = 0, updatedCount = 0, newlyCompletedCount = 0;
+    const newTasks: { title: string; dueDate: string }[] = [];
+    const updatedTasks: { title: string; changes: string[] }[] = [];
+    const newlyCompletedTasks: { title: string; completedBy: string; completedDate: string }[] = [];
+
+    for (const pt of plannerTasks) {
+      const rec = buildPlannerTaskRecord(pt, bucketNameCache, resolveUserName);
+      seenExtIds.add(rec.extId);
+
+      let existing = existingByExtId.get(rec.extId);
+      if (!existing) {
+        const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
+        if (nameMatch) {
+          existing = nameMatch;
+          existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
+        }
+      }
+
+      if (existing) {
+        const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
+        if (syncResult.wasCompleted) {
+          newlyCompletedCount++;
+          newlyCompletedTasks.push(syncResult.completedInfo!);
+        }
+        if (syncResult.needsUpdate) {
+          await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
+          if (syncResult.changes.length > 0) {
+            updatedCount++;
+            updatedTasks.push({ title: rec.taskName, changes: syncResult.changes });
+          }
+        }
+      } else {
+        await storage.createVatPlannerTask({
+          vatReportId: reportId,
+          bucketName: rec.bucketName,
+          taskName: rec.taskName,
+          progress: rec.progress,
+          dueDate: rec.dueDate,
+          priority: rec.priority,
+          assignedTo: rec.assignedTo,
+          labels: rec.progress === "Completed" ? "GREEN" : "AMBER",
+          sortOrder: synced,
+          externalId: rec.extId,
+        });
+        newCount++;
+        newTasks.push({ title: rec.taskName, dueDate: rec.dueDate });
+      }
+      synced++;
+    }
+    return { synced, newCount, updatedCount, newlyCompletedCount, newTasks, updatedTasks, newlyCompletedTasks, seenExtIds };
+  }
+
+  async function generatePlannerAiSummary(syncData: any): Promise<string> {
+    if (!openai) return "";
+    try {
+      const aiRes = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 800,
+        messages: [
+          {
+            role: "system",
+            content: `You are a senior executive advisor writing a concise executive update on VAT team activity based on Microsoft Planner task data. Your audience is leadership who need strategic insight, not a raw changelog.
+
+Write a brief executive summary (3-5 short paragraphs) covering:
+
+1. **Overall Status**: How many total tasks, how many are completed vs in-progress vs not started. Give a high-level health assessment.
+2. **Key Achievements**: What meaningful work was completed recently? Group by theme/category rather than listing every task. Mention who delivered results where known.
+3. **Active Focus Areas**: What are the main workstreams currently in progress? Highlight any urgent items or approaching deadlines.
+4. **New Initiatives**: Any newly created tasks that signal new strategic direction or priorities.
+5. **Risks & Attention Items**: Tasks removed, overdue items, or areas with no progress that need attention.
+
+Rules:
+- Write in professional business English suitable for a leadership audience
+- Be concise — no more than 200 words total
+- Group related items together rather than listing individual tasks
+- Focus on business impact and strategic themes, not individual field changes like "due date changed"
+- Skip any section that has nothing meaningful to report
+- Do NOT use markdown headers or bullet point formatting — write in flowing paragraphs
+- Reference people by name where relevant`
+          },
+          {
+            role: "user",
+            content: `Generate an executive update based on this Planner sync data:\n${JSON.stringify(syncData, null, 2)}`
+          }
+        ],
+      });
+      return aiRes.choices?.[0]?.message?.content || "";
+    } catch (aiErr: any) {
+      console.error("[Planner Sync] AI summary error:", aiErr.message);
+      return "";
+    }
+  }
+
   // ─── Microsoft Planner Sync ───
   app.post("/api/vat-reports/:reportId/planner/sync", requirePermission("vat_reports", "edit"), async (req, res) => {
     try {
@@ -2748,154 +3001,25 @@ Rules:
         return res.status(400).json({ message: "planId is required and must be alphanumeric" });
       }
 
-      let graphToken: string | null = null;
-
-      const sessionToken = req.session.graphAccessToken;
-      const tokenExpires = req.session.graphTokenExpires;
-      if (sessionToken && tokenExpires && Date.now() < tokenExpires) {
-        graphToken = sessionToken;
-        console.log("[Planner Sync] Using delegated user token from session");
-      }
-
-      if (!graphToken) {
-        const accountKey = req.session.msalAccountKey;
-        if (accountKey) {
-          try {
-            const client = await getMsalClient();
-            if (client) {
-              const accounts = await client.getTokenCache().getAllAccounts();
-              const account = accounts.find((a: any) => a.homeAccountId === accountKey);
-              if (account) {
-                const silentResult = await client.acquireTokenSilent({
-                  account,
-                  scopes: ["Tasks.Read", "Group.Read.All", "User.Read", "User.ReadBasic.All"],
-                });
-                if (silentResult?.accessToken) {
-                  graphToken = silentResult.accessToken;
-                  req.session.graphAccessToken = silentResult.accessToken;
-                  req.session.graphTokenExpires = silentResult.expiresOn ? new Date(silentResult.expiresOn).getTime() : Date.now() + 3600000;
-                  console.log("[Planner Sync] Refreshed delegated token via MSAL silent flow");
-                }
-              }
-            }
-          } catch (silentErr: any) {
-            console.warn("[Planner Sync] Silent token refresh failed:", silentErr.message);
-          }
-        }
-      }
-
+      const graphToken = await acquireGraphToken(req);
       if (!graphToken) {
         return res.status(401).json({
           message: "Planner sync requires a delegated user token. Please log out and log back in via Azure AD SSO to grant Planner permissions, then try again."
         });
       }
 
-      const tokenData = { access_token: graphToken };
-
-      const graphRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/tasks`, {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      });
-      if (!graphRes.ok) {
-        const err = await graphRes.text();
-        console.error("[Planner Sync] Graph error:", err);
-        return res.status(502).json({ message: `Failed to fetch planner tasks. Verify Plan ID and permissions. Status: ${graphRes.status}` });
-      }
-      const graphData = await graphRes.json() as { value: any[] };
-      const plannerTasks = graphData.value || [];
-
-      const bucketNameCache = new Map<string, string>();
+      let plannerData;
       try {
-        const bucketsRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}/buckets`, {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        });
-        if (bucketsRes.ok) {
-          const bucketsData = await bucketsRes.json() as { value: { id: string; name: string }[] };
-          for (const b of bucketsData.value || []) {
-            bucketNameCache.set(b.id, b.name);
-          }
-          console.log(`[Planner Sync] Resolved ${bucketNameCache.size} bucket names`);
-        }
-      } catch (bucketErr: any) {
-        console.warn("[Planner Sync] Could not fetch bucket names:", bucketErr.message);
+        plannerData = await fetchPlannerData(planId, graphToken);
+      } catch (fetchErr: any) {
+        return res.status(502).json({ message: fetchErr.message });
       }
+      const { plannerTasks, bucketNameCache } = plannerData;
 
       const existingTasks = await storage.getVatPlannerTasks(reportId);
       const { existingByExtId, existingWithoutExtId } = buildExistingTaskMaps(existingTasks);
-      const seenExtIds = new Set<string>();
 
-      const insights: string[] = [];
-      let synced = 0;
-      let newCount = 0;
-      let newlyCompletedCount = 0;
-      let updatedCount = 0;
-
-      const newTasks: { title: string; dueDate: string }[] = [];
-      const updatedTasks: { title: string; changes: string[] }[] = [];
-      const newlyCompletedTasks: { title: string; completedBy: string; completedDate: string }[] = [];
-      const fourWeeksAgo = new Date();
-      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-
-      const userIdCache = extractInitialUserCache(plannerTasks);
-
-      try {
-        const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        });
-        if (planRes.ok) {
-          const planData = await planRes.json() as { owner?: string };
-          if (planData.owner) {
-            const membersRes = await fetch(`https://graph.microsoft.com/v1.0/groups/${planData.owner}/members?$select=id,displayName,mail&$top=999`, {
-              headers: { Authorization: `Bearer ${tokenData.access_token}` },
-            });
-            if (membersRes.ok) {
-              const membersData = await membersRes.json() as { value: { id: string; displayName?: string; mail?: string }[] };
-              for (const m of membersData.value || []) {
-                if (m.id && m.displayName) {
-                  userIdCache.set(m.id, m.displayName);
-                }
-              }
-              console.log(`[Planner Sync] Resolved ${membersData.value?.length || 0} group members for user name lookups`);
-            } else {
-              console.warn(`[Planner Sync] Could not fetch group members (status ${membersRes.status}), falling back to individual lookups`);
-            }
-          }
-        }
-      } catch (groupErr: any) {
-        console.warn("[Planner Sync] Group members lookup failed:", groupErr.message);
-      }
-
-      const allUserIds = collectPlannerUserIds(plannerTasks);
-      const unresolvedIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
-      if (unresolvedIds.length > 0) {
-        console.log(`[Planner Sync] ${unresolvedIds.length} user IDs still unresolved after group members lookup, trying individual lookups...`);
-        const BATCH_SIZE = 20;
-        for (let i = 0; i < unresolvedIds.length; i += BATCH_SIZE) {
-          const batch = unresolvedIds.slice(i, i + BATCH_SIZE);
-          const results = await Promise.allSettled(
-            batch.map(async (uid) => {
-              try {
-                const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${uid}?$select=displayName,mail`, {
-                  headers: { Authorization: `Bearer ${tokenData.access_token}` },
-                });
-                if (userRes.ok) {
-                  const userData = await userRes.json() as { displayName?: string; mail?: string };
-                  return { uid, name: userData.displayName || uid };
-                } else {
-                  console.warn(`[Planner Sync] User lookup failed for ${uid}: status ${userRes.status}`);
-                }
-              } catch (e) {
-                console.warn(`[Planner Sync] User lookup error for ${uid}:`, (e as Error).message);
-              }
-              return { uid, name: uid };
-            })
-          );
-          for (const result of results) {
-            if (result.status === "fulfilled" && result.value.name !== result.value.uid) {
-              userIdCache.set(result.value.uid, result.value.name);
-            }
-          }
-        }
-      }
+      const userIdCache = await resolveUserNames(plannerTasks, planId, graphToken);
 
       const allEmployees = await storage.getEmployees();
       const employeeByName = new Map<string, string>();
@@ -2914,123 +3038,44 @@ Rules:
         return cached || userId;
       };
 
-      for (const pt of plannerTasks) {
-        const rec = buildPlannerTaskRecord(pt, bucketNameCache, resolveUserName);
-        seenExtIds.add(rec.extId);
+      const syncResult = await syncPlannerTasks(plannerTasks, reportId, bucketNameCache, resolveUserName, existingByExtId, existingWithoutExtId);
 
-        let existing = existingByExtId.get(rec.extId);
-        if (!existing) {
-          const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
-          if (nameMatch) {
-            existing = nameMatch;
-            existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
-          }
-        }
-
-        if (existing) {
-          const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
-          if (syncResult.wasCompleted) {
-            newlyCompletedCount++;
-            newlyCompletedTasks.push(syncResult.completedInfo!);
-          }
-          if (syncResult.needsUpdate) {
-            await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
-            if (syncResult.changes.length > 0) {
-              updatedCount++;
-              updatedTasks.push({ title: rec.taskName, changes: syncResult.changes });
-            }
-          }
-        } else {
-          await storage.createVatPlannerTask({
-            vatReportId: reportId,
-            bucketName: rec.bucketName,
-            taskName: rec.taskName,
-            progress: rec.progress,
-            dueDate: rec.dueDate,
-            priority: rec.priority,
-            assignedTo: rec.assignedTo,
-            labels: rec.progress === "Completed" ? "GREEN" : "AMBER",
-            sortOrder: synced,
-            externalId: rec.extId,
-          });
-          newCount++;
-          newTasks.push({ title: rec.taskName, dueDate: rec.dueDate });
-        }
-        synced++;
-      }
-
+      const fourWeeksAgo = new Date();
+      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
       const recentCompletedInLast4Weeks = findRecentlyCompletedTasks(plannerTasks, fourWeeksAgo, resolveUserName);
 
       let removedCount = 0;
       const removedTasks: string[] = [];
       for (const [extId, task] of Array.from(existingByExtId.entries())) {
-        if (!seenExtIds.has(extId)) {
+        if (!syncResult.seenExtIds.has(extId)) {
           removedTasks.push(task.taskName || "Untitled");
           await storage.deleteVatPlannerTask(task.id);
           removedCount++;
         }
       }
 
-      const computedInsights = buildPlannerSyncInsights({
-        newlyCompletedCount,
-        newCount,
-        updatedCount,
+      const insights = buildPlannerSyncInsights({
+        newlyCompletedCount: syncResult.newlyCompletedCount,
+        newCount: syncResult.newCount,
+        updatedCount: syncResult.updatedCount,
         removedCount,
         recentCompletedCount: recentCompletedInLast4Weeks.length,
       });
-      insights.push(...computedInsights);
 
       let aiSummary = "";
-      if (openai && (newCount > 0 || updatedCount > 0 || newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0)) {
-        try {
-          const bucketGroups = buildPlannerBucketGroups(plannerTasks, bucketNameCache, resolveUserName);
-
-          const syncDataForAI = {
-            totalTasksInPlan: synced,
-            bucketOverview: bucketGroups,
-            newTasksCreated: newTasks,
-            updatedTaskCount: updatedCount,
-            updatedTaskSamples: updatedTasks.slice(0, 10),
-            newlyCompletedThisSync: newlyCompletedTasks,
-            completedTasksLast4Weeks: recentCompletedInLast4Weeks,
-            removedTasks,
-          };
-          const aiRes = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            max_tokens: 800,
-            messages: [
-              {
-                role: "system",
-                content: `You are a senior executive advisor writing a concise executive update on VAT team activity based on Microsoft Planner task data. Your audience is leadership who need strategic insight, not a raw changelog.
-
-Write a brief executive summary (3-5 short paragraphs) covering:
-
-1. **Overall Status**: How many total tasks, how many are completed vs in-progress vs not started. Give a high-level health assessment.
-2. **Key Achievements**: What meaningful work was completed recently? Group by theme/category rather than listing every task. Mention who delivered results where known.
-3. **Active Focus Areas**: What are the main workstreams currently in progress? Highlight any urgent items or approaching deadlines.
-4. **New Initiatives**: Any newly created tasks that signal new strategic direction or priorities.
-5. **Risks & Attention Items**: Tasks removed, overdue items, or areas with no progress that need attention.
-
-Rules:
-- Write in professional business English suitable for a leadership audience
-- Be concise — no more than 200 words total
-- Group related items together rather than listing individual tasks
-- Focus on business impact and strategic themes, not individual field changes like "due date changed"
-- Skip any section that has nothing meaningful to report
-- Do NOT use markdown headers or bullet point formatting — write in flowing paragraphs
-- Reference people by name where relevant`
-              },
-              {
-                role: "user",
-                content: `Generate an executive update based on this Planner sync data:\n${JSON.stringify(syncDataForAI, null, 2)}`
-              }
-            ],
-          });
-          aiSummary = aiRes.choices?.[0]?.message?.content || "";
-        } catch (aiErr: any) {
-          console.error("[Planner Sync] AI summary error:", aiErr.message);
-          aiSummary = "";
-        }
+      const hasChanges = syncResult.newCount > 0 || syncResult.updatedCount > 0 || syncResult.newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0;
+      if (hasChanges) {
+        const bucketGroups = buildPlannerBucketGroups(plannerTasks, bucketNameCache, resolveUserName);
+        aiSummary = await generatePlannerAiSummary({
+          totalTasksInPlan: syncResult.synced,
+          bucketOverview: bucketGroups,
+          newTasksCreated: syncResult.newTasks,
+          updatedTaskCount: syncResult.updatedCount,
+          updatedTaskSamples: syncResult.updatedTasks.slice(0, 10),
+          newlyCompletedThisSync: syncResult.newlyCompletedTasks,
+          completedTasksLast4Weeks: recentCompletedInLast4Weeks,
+          removedTasks,
+        });
       }
 
       await storage.createVatChangeLog({
@@ -3044,17 +3089,17 @@ Rules:
       });
 
       res.json({
-        synced,
-        newCount,
-        newlyCompletedCount,
-        updatedCount,
+        synced: syncResult.synced,
+        newCount: syncResult.newCount,
+        newlyCompletedCount: syncResult.newlyCompletedCount,
+        updatedCount: syncResult.updatedCount,
         removedCount,
         insights,
         aiSummary,
         details: {
-          newTasks,
-          updatedTasks,
-          newlyCompletedTasks,
+          newTasks: syncResult.newTasks,
+          updatedTasks: syncResult.updatedTasks,
+          newlyCompletedTasks: syncResult.newlyCompletedTasks,
           removedTasks,
           recentCompletedInLast4Weeks,
         },
@@ -3180,11 +3225,11 @@ Rules:
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
 
-      const systemPrompt = buildVatAiSuggestFieldsPrompt(
+      const systemPrompt = buildVatAiSuggestFieldsPrompt({
         vatName, pipelineSummary, riskSummary,
         completedActionsSummary, openActionsSummary,
         plannerSummary, reportContext, userActionNotes,
-      );
+      });
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -3660,6 +3705,34 @@ export function parsePersonalHoursEmployeeFields(r: any[]): { firstName: string;
   return { firstName, lastName, role };
 }
 
+async function processPersonalHoursRow(
+  r: any[],
+  empMap: Map<string, number>,
+  empCodes: Set<string>,
+  empCounter: { value: number },
+  projMap: Map<string, number>,
+  projCodes: Set<string>,
+  projCounter: { value: number },
+): Promise<boolean> {
+  const empFields = parsePersonalHoursEmployeeFields(r);
+  if (!empFields) return false;
+  const employeeId = await findOrCreateEmployeeForImport(empMap, empCodes, empCounter, empFields.firstName, empFields.lastName, empFields.role);
+
+  const weekEnding = excelDateToString(r[0]);
+  if (!weekEnding) return false;
+
+  const projName = r[9] ? String(r[9]).trim() : "";
+  let projectId: number | null = projName ? (projMap.get(projName.toLowerCase()) ?? null) : null;
+  if (!projectId && projName) {
+    projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projName);
+  }
+  if (!projectId) return false;
+
+  const record = buildPersonalHoursTimesheetRecord(r, employeeId, projectId, weekEnding);
+  await storage.createTimesheet(record);
+  return true;
+}
+
 async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
   let imported = 0;
@@ -3677,23 +3750,8 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
     const r = rows[i];
     if (!r?.[0]) continue;
     try {
-      const empFields = parsePersonalHoursEmployeeFields(r);
-      if (!empFields) continue;
-      const employeeId = await findOrCreateEmployeeForImport(empMap, empCodes, empCounter, empFields.firstName, empFields.lastName, empFields.role);
-
-      const weekEnding = excelDateToString(r[0]);
-      if (!weekEnding) continue;
-
-      const projName = r[9] ? String(r[9]).trim() : "";
-      let projectId: number | null = projName ? (projMap.get(projName.toLowerCase()) ?? null) : null;
-      if (!projectId && projName) {
-        projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projName);
-      }
-      if (!projectId) continue;
-
-      const record = buildPersonalHoursTimesheetRecord(r, employeeId, projectId, weekEnding);
-      await storage.createTimesheet(record);
-      imported++;
+      const success = await processPersonalHoursRow(r, empMap, empCodes, empCounter, projMap, projCodes, projCounter);
+      if (success) imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
@@ -3824,16 +3882,17 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   return { imported, errors };
 }
 
-export function buildResourceCostRecord(
-  employeeId: number | null,
-  name: string,
-  staffType: string | null,
-  costPhase: string,
-  fyYear: string,
-  monthlyCosts: string[],
-  totalCost: string,
-  source: string,
-): any {
+export function buildResourceCostRecord(opts: {
+  employeeId: number | null;
+  name: string;
+  staffType: string | null;
+  costPhase: string;
+  fyYear: string;
+  monthlyCosts: string[];
+  totalCost: string;
+  source: string;
+}): any {
+  const { employeeId, name, staffType, costPhase, fyYear, monthlyCosts, totalCost, source } = opts;
   return {
     employeeId,
     employeeName: name,
@@ -3874,7 +3933,7 @@ async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported
       const employeeId = empMap.get(name.toLowerCase()) || null;
       const staffType = r[1] ? String(r[1]).trim() : null;
       const { costs, total } = parseMonthlyCosts(r, 2, 13);
-      const record = buildResourceCostRecord(employeeId, name, staffType, "Total", "FY23-24", costs, total.toFixed(2), "Project Resource Cost");
+      const record = buildResourceCostRecord({ employeeId, name, staffType, costPhase: "Total", fyYear: "FY23-24", monthlyCosts: costs, totalCost: total.toFixed(2), source: "Project Resource Cost" });
       await storage.createResourceCost(record);
       imported++;
     } catch (err: any) {
@@ -3901,7 +3960,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
       const employeeId = empMap.get(name.toLowerCase()) || null;
       const staffType = r[1] ? String(r[1]).trim() : null;
       const { costs: costC, total: totalC } = parseMonthlyCosts(r, 2, 13);
-      const record = buildResourceCostRecord(employeeId, name, staffType, "Phase C", "FY23-24", costC, totalC.toFixed(2), "Project Resource Cost A&F");
+      const record = buildResourceCostRecord({ employeeId, name, staffType, costPhase: "Phase C", fyYear: "FY23-24", monthlyCosts: costC, totalCost: totalC.toFixed(2), source: "Project Resource Cost A&F" });
       await storage.createResourceCost(record);
       imported++;
 
@@ -3920,7 +3979,7 @@ async function importDvfCostFromRow(r: any[], empMap: Map<string, number>): Prom
   const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
   const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
   const { costs: costDVF, total: totalDVF } = parseMonthlyCosts(r, 19, 30);
-  const record = buildResourceCostRecord(dvfEmployeeId, dvfName, dvfStaffType, "Phase DVF", "FY23-24", costDVF, totalDVF.toFixed(2), "Project Resource Cost A&F");
+  const record = buildResourceCostRecord({ employeeId: dvfEmployeeId, name: dvfName, staffType: dvfStaffType, costPhase: "Phase DVF", fyYear: "FY23-24", monthlyCosts: costDVF, totalCost: totalDVF.toFixed(2), source: "Project Resource Cost A&F" });
   await storage.createResourceCost(record);
   return 1;
 }

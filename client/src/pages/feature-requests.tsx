@@ -63,7 +63,7 @@ export default function FeatureRequestsPage() {
   const [category, setCategory] = useState<string>("");
   const [priority, setPriority] = useState<string>("Medium");
   const [area, setArea] = useState<string>("");
-  const [, setSelectedRequest] = useState<FeatureRequest | null>(null);
+  const [_selectedRequest, setSelectedRequest] = useState<FeatureRequest | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
 
   const { data: requests = [], isLoading } = useQuery<FeatureRequest[]>({

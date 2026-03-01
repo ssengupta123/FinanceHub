@@ -219,6 +219,131 @@ function getMarginStatusText(scenarioResults: ReturnType<typeof computeScenarioR
   return `${gapText} below target`;
 }
 
+function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginGoal }: Readonly<{
+  scenarioResults: ReturnType<typeof computeScenarioResults>;
+  isLoading: boolean;
+  revenueGoal: number;
+  marginGoal: number;
+}>) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Weighted Revenue</CardTitle>
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-24" /> : (
+            <div className="text-2xl font-bold" data-testid="text-weighted-revenue">
+              {scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Weighted Margin</CardTitle>
+          <Target className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-16" /> : (
+            <div className="text-2xl font-bold" data-testid="text-weighted-margin">
+              {scenarioResults ? formatPercent(scenarioResults.totalMargin) : "0%"}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">Goal: {marginGoal}%</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Revenue Gap</CardTitle>
+          {scenarioResults?.meetsRevenueGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-24" /> : (
+            <div className={`text-2xl font-bold ${scenarioResults?.meetsRevenueGoal ? "text-green-600 dark:text-green-400" : ""}`} data-testid="text-revenue-gap">
+              {scenarioResults ? formatCurrency(scenarioResults.revenueGap) : "$0"}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{scenarioResults?.meetsRevenueGoal ? "Exceeds goal" : "Below target"}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
+          <DollarSign className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-24" /> : (
+            <div className="text-2xl font-bold" data-testid="text-gross-profit">
+              {scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{getMarginStatusText(scenarioResults)}</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marginGoal, setMarginGoal }: Readonly<{
+  winRates: Record<string, number>;
+  setWinRates: (fn: (prev: Record<string, number>) => Record<string, number>) => void;
+  revenueGoal: number;
+  setRevenueGoal: (val: number) => void;
+  marginGoal: number;
+  setMarginGoal: (val: number) => void;
+}>) {
+  return (
+    <Card className="lg:col-span-1">
+      <CardHeader>
+        <CardTitle className="text-base">Win Rate Assumptions</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {CLASSIFICATIONS.map(cls => (
+          <div key={cls} className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">{cls}</Badge>
+                <span className="text-sm">{CLASS_LABELS[cls]}</span>
+              </div>
+              <span className="text-sm font-medium w-12 text-right" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
+            </div>
+            <Slider
+              value={[winRates[cls]]}
+              onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
+              max={100}
+              step={5}
+              data-testid={`slider-winrate-${cls}`}
+            />
+          </div>
+        ))}
+        <div className="border-t pt-4 space-y-3">
+          <div>
+            <Label className="text-sm">Revenue Goal</Label>
+            <Input
+              type="number"
+              value={revenueGoal}
+              onChange={e => setRevenueGoal(Number(e.target.value))}
+              data-testid="input-revenue-goal"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Margin Goal (%)</Label>
+            <Input
+              type="number"
+              value={marginGoal}
+              onChange={e => setMarginGoal(Number(e.target.value))}
+              data-testid="input-margin-goal"
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Scenarios() {
   const { toast } = useToast();
   const { can } = useAuth();
@@ -349,111 +474,10 @@ export default function Scenarios() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Weighted Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-24" /> : (
-              <div className="text-2xl font-bold" data-testid="text-weighted-revenue">
-                {scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Weighted Margin</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-2xl font-bold" data-testid="text-weighted-margin">
-                {scenarioResults ? formatPercent(scenarioResults.totalMargin) : "0%"}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">Goal: {marginGoal}%</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Revenue Gap</CardTitle>
-            {scenarioResults?.meetsRevenueGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-24" /> : (
-              <div className={`text-2xl font-bold ${scenarioResults?.meetsRevenueGoal ? "text-green-600 dark:text-green-400" : ""}`} data-testid="text-revenue-gap">
-                {scenarioResults ? formatCurrency(scenarioResults.revenueGap) : "$0"}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">{scenarioResults?.meetsRevenueGoal ? "Exceeds goal" : "Below target"}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-24" /> : (
-              <div className="text-2xl font-bold" data-testid="text-gross-profit">
-                {scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">{getMarginStatusText(scenarioResults)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <ScenarioSummaryCards scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-base">Win Rate Assumptions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {CLASSIFICATIONS.map(cls => (
-              <div key={cls} className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">{cls}</Badge>
-                    <span className="text-sm">{CLASS_LABELS[cls]}</span>
-                  </div>
-                  <span className="text-sm font-medium w-12 text-right" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
-                </div>
-                <Slider
-                  value={[winRates[cls]]}
-                  onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
-                  max={100}
-                  step={5}
-                  data-testid={`slider-winrate-${cls}`}
-                />
-              </div>
-            ))}
-            <div className="border-t pt-4 space-y-3">
-              <div>
-                <Label className="text-sm">Revenue Goal</Label>
-                <Input
-                  type="number"
-                  value={revenueGoal}
-                  onChange={e => setRevenueGoal(Number(e.target.value))}
-                  data-testid="input-revenue-goal"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">Margin Goal (%)</Label>
-                <Input
-                  type="number"
-                  value={marginGoal}
-                  onChange={e => setMarginGoal(Number(e.target.value))}
-                  data-testid="input-margin-goal"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
 
         <Card className="lg:col-span-2">
           <CardHeader>

@@ -701,7 +701,7 @@ export async function seedVatData() {
   }
 }
 
-export async function migrateEmployeeAndPermissions() {
+async function addUserIdColumn() {
   const hasEmployeeUserId = await db.schema.hasColumn("employees", "user_id");
   if (!hasEmployeeUserId) {
     await db.schema.alterTable("employees", (t) => {
@@ -709,7 +709,9 @@ export async function migrateEmployeeAndPermissions() {
     });
     console.log("Added user_id column to employees table");
   }
+}
 
+async function createRolePermissionsTable() {
   const hasRolePermissions = await db.schema.hasTable("role_permissions");
   if (!hasRolePermissions) {
     await db.schema.createTable("role_permissions", (t) => {
@@ -739,7 +741,9 @@ export async function migrateEmployeeAndPermissions() {
     }
     console.log(`Seeded ${rows.length} default role permissions`);
   }
+}
 
+async function addCertificationsColumn() {
   const hasCertifications = await db.schema.hasColumn("employees", "certifications");
   if (!hasCertifications) {
     await db.schema.alterTable("employees", (t) => {
@@ -747,6 +751,12 @@ export async function migrateEmployeeAndPermissions() {
     });
     console.log("Added certifications column to employees");
   }
+}
+
+export async function migrateEmployeeAndPermissions() {
+  await addUserIdColumn();
+  await createRolePermissionsTable();
+  await addCertificationsColumn();
 }
 
 export async function runIncrementalMigrations() {
