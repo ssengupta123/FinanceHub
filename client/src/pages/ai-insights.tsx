@@ -83,46 +83,35 @@ async function processSseStream(
   }
 }
 
-export default function AIInsights() {
-  const [activeType, setActiveType] = useState<InsightType | null>(null);
-  const [content, setContent] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+async function fetchInsightStream(
+  type: InsightType,
+  onContent: (text: string) => void,
+): Promise<void> {
+  const response = await fetch("/api/ai/insights", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type }),
+  });
 
-  const generateInsight = useCallback(async (type: InsightType) => {
-    setActiveType(type);
-    setContent("");
-    setError(null);
-    setIsLoading(true);
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.message || "Failed to generate insights");
+  }
 
-    try {
-      const response = await fetch("/api/ai/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
-      });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response stream");
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || "Failed to generate insights");
-      }
+  await processSseStream(reader, onContent);
+}
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response stream");
-
-      await processSseStream(reader, (text) => {
-        setContent(prev => prev + text);
-      });
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const allCards = [...riskCards, ...financialCards];
-
-  const renderCardGrid = (cards: typeof riskCards, sectionTitle: string) => (
+function InsightCardGrid({ cards, sectionTitle, activeType, isLoading, onGenerate }: Readonly<{
+  cards: typeof riskCards;
+  sectionTitle: string;
+  activeType: InsightType | null;
+  isLoading: boolean;
+  onGenerate: (type: InsightType) => void;
+}>) {
+  return (
     <div className="space-y-3">
       <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{sectionTitle}</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -145,7 +134,7 @@ export default function AIInsights() {
                 <p className="text-xs text-muted-foreground mb-3">{card.description}</p>
                 <Button
                   size="sm"
-                  onClick={() => generateInsight(card.type)}
+                  onClick={() => onGenerate(card.type)}
                   disabled={isCurrentlyLoading}
                   data-testid={`button-generate-${card.type}`}
                 >
@@ -159,6 +148,32 @@ export default function AIInsights() {
       </div>
     </div>
   );
+}
+
+const allCards = [...riskCards, ...financialCards];
+
+export default function AIInsights() {
+  const [activeType, setActiveType] = useState<InsightType | null>(null);
+  const [content, setContent] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generateInsight = useCallback(async (type: InsightType) => {
+    setActiveType(type);
+    setContent("");
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      await fetchInsightStream(type, (text) => {
+        setContent(prev => prev + text);
+      });
+    } catch (err: any) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
@@ -172,8 +187,8 @@ export default function AIInsights() {
         </p>
       </div>
 
-      {renderCardGrid(riskCards, "Risk Analysis")}
-      {renderCardGrid(financialCards, "Financial Intelligence")}
+      <InsightCardGrid cards={riskCards} sectionTitle="Risk Analysis" activeType={activeType} isLoading={isLoading} onGenerate={generateInsight} />
+      <InsightCardGrid cards={financialCards} sectionTitle="Financial Intelligence" activeType={activeType} isLoading={isLoading} onGenerate={generateInsight} />
 
       {error && (
         <Card className="border-destructive" data-testid="card-insight-error">

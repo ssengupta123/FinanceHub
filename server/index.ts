@@ -205,9 +205,11 @@ httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
 
 }
 
-try {
-  await startServer();
-} catch (err) {
-  console.error("Failed to start server:", err);
-  process.exit(1);
-}
+(async () => {
+  try {
+    await startServer();
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  }
+})();

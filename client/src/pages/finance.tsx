@@ -271,9 +271,13 @@ export default function FinanceDashboard() {
 
   let gpMarginCardBorder = "";
   if (!isLoading) {
-    if (totalGPPercent >= 20) gpMarginCardBorder = "border-green-500/50";
-    else if (totalGPPercent >= 10) gpMarginCardBorder = "border-amber-500/50";
-    else gpMarginCardBorder = "border-red-500/50";
+    if (totalGPPercent >= 20) {
+      gpMarginCardBorder = "border-green-500/50";
+    } else if (totalGPPercent >= 10) {
+      gpMarginCardBorder = "border-amber-500/50";
+    } else {
+      gpMarginCardBorder = "border-red-500/50";
+    }
   }
 
   return (

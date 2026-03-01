@@ -89,6 +89,101 @@ function accumulatePartnerDetails(
   }
 }
 
+function getCertColor(certLower: string): string {
+  if (certLower.includes("servicenow")) return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+  if (certLower.includes("azure") || certLower.includes("power bi")) return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+  if (certLower.includes("aws") || certLower.includes("amazon")) return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+  if (certLower.includes("tech one")) return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+  if (certLower.includes("salesforce")) return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
+  return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+}
+
+function CertBadge({ cert }: Readonly<{ cert: string }>) {
+  const trimmed = cert.trim();
+  const color = getCertColor(trimmed.toLowerCase());
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
+      {trimmed}
+    </span>
+  );
+}
+
+function CertifiedEmployeeRow({ emp }: Readonly<{ emp: Employee }>) {
+  const certs = (emp.certifications ?? "").split(";");
+  return (
+    <TableRow key={emp.id} data-testid={`row-certified-${emp.id}`}>
+      <TableCell className="font-medium text-sm">{emp.firstName} {emp.lastName}</TableCell>
+      <TableCell>
+        <Badge variant={emp.staffType === "Permanent" ? "default" : "outline"} className="text-[10px]">
+          {emp.staffType}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-sm">{emp.role || "-"}</TableCell>
+      <TableCell className="text-sm">{emp.team || "-"}</TableCell>
+      <TableCell className="text-sm">{emp.location || "-"}</TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          {certs.map(cert => (
+            <CertBadge key={cert.trim()} cert={cert} />
+          ))}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function PartnerExpandedContent({ details, certStaff, partner }: Readonly<{
+  details: { opps: PipelineOpp[]; totalValue: number } | undefined;
+  certStaff: Array<{ employee: Employee; certs: string[] }>;
+  partner: string;
+}>) {
+  return (
+    <div className="p-4 space-y-3">
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Opportunities</h4>
+        <div className="space-y-1">
+          {details?.opps.map(opp => (
+            <div key={opp.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] px-1.5">{PHASE_MAP[opp.classification] || opp.classification}</Badge>
+                <span>{opp.name}</span>
+                <span className="text-muted-foreground">({opp.vat})</span>
+              </div>
+              <span className="font-medium">{opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {certStaff.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+            <Award className="h-3 w-3" /> Certified Staff
+          </h4>
+          <div className="space-y-1">
+            {certStaff.map(({ employee, certs }) => (
+              <div key={employee.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{employee.firstName} {employee.lastName}</span>
+                  <Badge variant="outline" className="text-[10px]">{employee.staffType}</Badge>
+                  <span className="text-muted-foreground text-xs">{employee.role} - {employee.team}</span>
+                </div>
+                <div className="flex gap-1 flex-wrap justify-end">
+                  {certs.map(cert => (
+                    <Badge key={cert} variant="secondary" className="text-[10px] px-1.5">{cert}</Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {certStaff.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">No staff with {partner}-related certifications found</p>
+      )}
+    </div>
+  );
+}
+
 function getPartnerCerts(certifications: string, partnerName: string): string[] {
   const keywords = PARTNER_CERT_KEYWORDS[partnerName];
   if (!keywords) return [];
@@ -136,14 +231,13 @@ export default function PartnerView() {
 
   const uniquePartners = useMemo(() => {
     const set = new Set<string>();
-    partnerOpps.forEach(o => {
+    for (const o of partnerOpps) {
       if (o.partner) {
-        o.partner.split(/[;,#]/).forEach(p => {
-          const clean = p.trim();
-          if (clean && clean !== "(blank)") set.add(clean);
-        });
+        for (const p of splitPartnerNames(o.partner)) {
+          set.add(p);
+        }
       }
-    });
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [partnerOpps]);
 
@@ -345,49 +439,7 @@ export default function PartnerView() {
                       {isExpanded && (
                         <TableRow>
                           <TableCell colSpan={5} className="bg-muted/30 p-0">
-                            <div className="p-4 space-y-3">
-                              <div>
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Opportunities</h4>
-                                <div className="space-y-1">
-                                  {details?.opps.map(opp => (
-                                    <div key={opp.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="text-[10px] px-1.5">{PHASE_MAP[opp.classification] || opp.classification}</Badge>
-                                        <span>{opp.name}</span>
-                                        <span className="text-muted-foreground">({opp.vat})</span>
-                                      </div>
-                                      <span className="font-medium">{opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              {certStaff.length > 0 && (
-                                <div>
-                                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
-                                    <Award className="h-3 w-3" /> Certified Staff
-                                  </h4>
-                                  <div className="space-y-1">
-                                    {certStaff.map(({ employee, certs }) => (
-                                      <div key={employee.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-medium">{employee.firstName} {employee.lastName}</span>
-                                          <Badge variant="outline" className="text-[10px]">{employee.staffType}</Badge>
-                                          <span className="text-muted-foreground text-xs">{employee.role} - {employee.team}</span>
-                                        </div>
-                                        <div className="flex gap-1 flex-wrap justify-end">
-                                          {certs.map(cert => (
-                                            <Badge key={cert} variant="secondary" className="text-[10px] px-1.5">{cert}</Badge>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {certStaff.length === 0 && (
-                                <p className="text-xs text-muted-foreground italic">No staff with {partner}-related certifications found</p>
-                              )}
-                            </div>
+                            <PartnerExpandedContent details={details} certStaff={certStaff} partner={partner} />
                           </TableCell>
                         </TableRow>
                       )}
@@ -471,46 +523,15 @@ export default function PartnerView() {
                 {allEmployees
                   .filter(e => e.status === "active" && e.certifications && (e.staffType === "Permanent" || e.staffType === "Contractor"))
                   .filter(e => {
-                    const certs = e.certifications!.toLowerCase();
+                    const certs = (e.certifications ?? "").toLowerCase();
                     return Object.values(PARTNER_CERT_KEYWORDS).some(keywords =>
                       keywords.some(kw => certs.includes(kw))
                     );
                   })
                   .sort((a, b) => a.lastName.localeCompare(b.lastName))
-                  .map(emp => {
-                    return (
-                      <TableRow key={emp.id} data-testid={`row-certified-${emp.id}`}>
-                        <TableCell className="font-medium text-sm">{emp.firstName} {emp.lastName}</TableCell>
-                        <TableCell>
-                          <Badge variant={emp.staffType === "Permanent" ? "default" : "outline"} className="text-[10px]">
-                            {emp.staffType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{emp.role || "-"}</TableCell>
-                        <TableCell className="text-sm">{emp.team || "-"}</TableCell>
-                        <TableCell className="text-sm">{emp.location || "-"}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 flex-wrap">
-                            {emp.certifications!.split(";").map(cert => {
-                              const trimmed = cert.trim();
-                              const certLower = trimmed.toLowerCase();
-                              let color = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
-                              if (certLower.includes("servicenow")) color = "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-                              else if (certLower.includes("azure") || certLower.includes("power bi")) color = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-                              else if (certLower.includes("aws") || certLower.includes("amazon")) color = "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
-                              else if (certLower.includes("tech one")) color = "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-                              else if (certLower.includes("salesforce")) color = "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
-                              return (
-                                <span key={trimmed} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
-                                  {trimmed}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  .map(emp => (
+                    <CertifiedEmployeeRow key={emp.id} emp={emp} />
+                  ))}
               </TableBody>
             </Table>
           </div>

@@ -75,7 +75,7 @@ async function getGraphToken(): Promise<SharePointToken> {
   return resp.json();
 }
 
-function parseSharePointDate(val: string | null | undefined): string | null {
+export function parseSharePointDate(val: string | null | undefined): string | null {
   if (!val) return null;
   try {
     const d = new Date(val);
@@ -87,16 +87,39 @@ function parseSharePointDate(val: string | null | undefined): string | null {
   }
 }
 
-function cleanMultiValueField(val: string | null | undefined): string | null {
+export function cleanMultiValueField(val: string | null | undefined): string | null {
   if (!val) return null;
   return val.replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() || null;
 }
 
-function cleanVat(val: string | null | undefined): string | null {
+export function cleanVat(val: string | null | undefined): string | null {
   if (!val) return null;
   let vat = val.replaceAll(";#", "").replace(/\|.*$/, "").trim();
   if (vat.toLowerCase() === "growth") vat = "GROWTH";
   return vat || null;
+}
+
+export function formatNumericField(raw: any, decimals: number): string | null {
+  const num = Number(raw);
+  return raw != null && !Number.isNaN(num) ? String(num.toFixed(decimals)) : null;
+}
+
+export function extractItemFields(item: SharePointListItem): Record<string, any> {
+  return {
+    workType: item.WorkType || item.OppWorkType || null,
+    status: item.Status || item.OppStatus || item.RAGStatus || null,
+    comment: item.Comment || item.Comments || item.OppComment || null,
+    casLead: item.CASLead || item.CAS_x0020_Lead || null,
+    csdLead: cleanMultiValueField(item.CSDLead || item.CSD_x0020_Lead || null),
+    category: cleanMultiValueField(item.Category || item.OppCategory || null),
+    partner: cleanMultiValueField(item.Partner || item.OppPartner || null),
+    clientContact: item.ClientContact || item.Client_x0020_Contact || null,
+    clientCode: item.ClientCode || item.Client_x0020_Code || null,
+    vat: cleanVat(item.VAT || item.VATCategory || null),
+    dueDate: parseSharePointDate(item.DueDate || item.OppDueDate),
+    startDate: parseSharePointDate(item.StartDate || item.OppStartDate),
+    expiryDate: parseSharePointDate(item.ExpiryDate || item.OppExpiryDate),
+  };
 }
 
 export function transformSharePointItem(item: SharePointListItem): { record?: any; error?: string } {
@@ -111,38 +134,14 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   if (item.FSObjType !== undefined && !isFolder) return {};
 
   try {
-    const rawValue = item.Value ?? item.OppValue ?? item.TotalValue;
-    const numValue = Number(rawValue);
-    const value = rawValue != null && !Number.isNaN(numValue)
-      ? String(numValue.toFixed(2))
-      : null;
-
-    const rawMargin = item.Margin ?? item.MarginPercent ?? item.OppMargin;
-    const numMargin = Number(rawMargin);
-    const marginPercent = rawMargin != null && !Number.isNaN(numMargin)
-      ? String(numMargin.toFixed(3))
-      : null;
-
-    const workType = item.WorkType || item.OppWorkType || null;
-    const status = item.Status || item.OppStatus || item.RAGStatus || null;
-    const comment = item.Comment || item.Comments || item.OppComment || null;
-    const casLead = item.CASLead || item.CAS_x0020_Lead || null;
-    const csdLead = cleanMultiValueField(item.CSDLead || item.CSD_x0020_Lead || null);
-    const category = cleanMultiValueField(item.Category || item.OppCategory || null);
-    const partner = cleanMultiValueField(item.Partner || item.OppPartner || null);
-    const clientContact = item.ClientContact || item.Client_x0020_Contact || null;
-    const clientCode = item.ClientCode || item.Client_x0020_Code || null;
-    const vat = cleanVat(item.VAT || item.VATCategory || null);
-
-    const dueDate = parseSharePointDate(item.DueDate || item.OppDueDate);
-    const startDate = parseSharePointDate(item.StartDate || item.OppStartDate);
-    const expiryDate = parseSharePointDate(item.ExpiryDate || item.OppExpiryDate);
+    const value = formatNumericField(item.Value ?? item.OppValue ?? item.TotalValue, 2);
+    const marginPercent = formatNumericField(item.Margin ?? item.MarginPercent ?? item.OppMargin, 3);
+    const fields = extractItemFields(item);
 
     return {
       record: {
-        name, classification, vat, fyYear: "open_opps",
-        value, marginPercent, workType, status, dueDate, startDate, expiryDate,
-        comment, casLead, csdLead, category, partner, clientContact, clientCode,
+        name, classification, fyYear: "open_opps", value, marginPercent,
+        ...fields,
       },
     };
   } catch (err: any) {
@@ -150,29 +149,21 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   }
 }
 
-export async function syncSharePointOpenOpps(): Promise<{
-  imported: number;
-  errors: string[];
-  message: string;
-}> {
-  const errors: string[] = [];
-  let imported = 0;
+export function getSharePointConfig(): { domain: string; sitePath: string; listName: string } {
+  const domain = process.env.SHAREPOINT_DOMAIN;
+  const sitePath = process.env.SHAREPOINT_SITE_PATH;
+  const listName = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
 
-  const sharePointDomain = process.env.SHAREPOINT_DOMAIN;
-  const sharePointSite = process.env.SHAREPOINT_SITE_PATH;
-  const sharePointList = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
-
-  if (!sharePointDomain || !sharePointSite) {
+  if (!domain || !sitePath) {
     throw new Error(
       "Missing SharePoint config. Set SHAREPOINT_DOMAIN (e.g. yourcompany.sharepoint.com) and SHAREPOINT_SITE_PATH (e.g. /sites/Finance)."
     );
   }
 
-  const token = await getGraphToken();
+  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName };
+}
 
-  const siteHost = sharePointDomain;
-  const sitePath = sharePointSite.startsWith("/") ? sharePointSite : `/${sharePointSite}`;
-
+async function lookupSharePointSite(token: SharePointToken, siteHost: string, sitePath: string): Promise<string> {
   const siteUrl = `https://graph.microsoft.com/v1.0/sites/${siteHost}:${sitePath}`;
   console.log(`[SharePoint] Looking up site: ${siteUrl}`);
   const siteResp = await fetch(siteUrl, {
@@ -184,9 +175,11 @@ export async function syncSharePointOpenOpps(): Promise<{
     throw new Error(`SharePoint site not found (HTTP ${siteResp.status}). Check SHAREPOINT_DOMAIN and SHAREPOINT_SITE_PATH.`);
   }
   const siteData = await siteResp.json();
-  const siteId = siteData.id;
-  console.log(`[SharePoint] Found site ID: ${siteId}`);
+  console.log(`[SharePoint] Found site ID: ${siteData.id}`);
+  return siteData.id;
+}
 
+async function findSharePointList(token: SharePointToken, siteId: string, listName: string): Promise<string> {
   const listsUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`;
   const listsResp = await fetch(listsUrl, {
     headers: { Authorization: `Bearer ${token.access_token}` },
@@ -198,15 +191,17 @@ export async function syncSharePointOpenOpps(): Promise<{
   }
   const listsData = await listsResp.json();
   const targetList = (listsData.value || []).find((l: any) =>
-    l.displayName === sharePointList || l.name === sharePointList
+    l.displayName === listName || l.name === listName
   );
   if (!targetList) {
     const available = (listsData.value || []).map((l: any) => l.displayName).join(", ");
-    throw new Error(`SharePoint list "${sharePointList}" not found. Available lists: ${available}`);
+    throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
   }
-  const listId = targetList.id;
-  console.log(`[SharePoint] Found list "${sharePointList}" with ID: ${listId}`);
+  console.log(`[SharePoint] Found list "${listName}" with ID: ${targetList.id}`);
+  return targetList.id;
+}
 
+async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
   let nextUrl: string | null =
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
@@ -230,8 +225,12 @@ export async function syncSharePointOpenOpps(): Promise<{
     nextUrl = data["@odata.nextLink"] || null;
   }
   console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
+  return allItems;
+}
 
+export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
   const staged: any[] = [];
+  const errors: string[] = [];
   for (const item of allItems) {
     const result = transformSharePointItem(item);
     if (result.error) {
@@ -240,7 +239,22 @@ export async function syncSharePointOpenOpps(): Promise<{
       staged.push(result.record);
     }
   }
+  return { staged, errors };
+}
 
+export async function syncSharePointOpenOpps(): Promise<{
+  imported: number;
+  errors: string[];
+  message: string;
+}> {
+  const config = getSharePointConfig();
+  const token = await getGraphToken();
+  const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
+  const listId = await findSharePointList(token, siteId, config.listName);
+  const allItems = await fetchAllSharePointItems(token, siteId, listId);
+  const { staged, errors } = stageSharePointItems(allItems);
+
+  let imported = 0;
   await db.transaction(async (trx) => {
     await trx("pipeline_opportunities").where("fy_year", "open_opps").del();
     for (const record of staged) {

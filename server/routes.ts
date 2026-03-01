@@ -64,6 +64,72 @@ function requirePermission(resource: string, action: string) {
   };
 }
 
+export function computeFyFromDate(dateVal: string | Date): string | null {
+  const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
+  if (Number.isNaN(d.getTime())) return null;
+  const m = d.getMonth();
+  const y = d.getFullYear();
+  const fyStart = m >= 6 ? y : y - 1;
+  return String(fyStart).slice(2) + "-" + String(fyStart + 1).slice(2);
+}
+
+export function normalizeWeeklyUtilRow(r: any): { employee_id: number; week_ending: string; employee_name: string; employee_role: string; total_hours: string; billable_hours: string; cost_value: string; sale_value: string } {
+  return {
+    employee_id: Number(r.employee_id),
+    week_ending: r.week_ending instanceof Date ? r.week_ending.toISOString().split("T")[0] : String(r.week_ending).split("T")[0],
+    employee_name: r.employee_name || "Unknown",
+    employee_role: r.employee_role || "",
+    total_hours: String(r.total_hours ?? 0),
+    billable_hours: String(r.billable_hours ?? 0),
+    cost_value: String(r.cost_value ?? 0),
+    sale_value: String(r.sale_value ?? 0),
+  };
+}
+
+export function buildFySetFromDates(weekEndings: Array<{ week_ending: string | Date }>): string[] {
+  const fySet = new Set<string>();
+  for (const r of weekEndings) {
+    const fy = computeFyFromDate(r.week_ending instanceof Date ? r.week_ending : r.week_ending);
+    if (fy) fySet.add(fy);
+  }
+  return Array.from(fySet).sort((a, b) => a.localeCompare(b));
+}
+
+export function computeUtilizationRatio(total: number, allocated: number): { totalPermanent: number; allocatedPermanent: number; utilization: number } {
+  return {
+    totalPermanent: total,
+    allocatedPermanent: allocated,
+    utilization: total > 0 ? allocated / total : 0,
+  };
+}
+
+export function isImportSkippableRow(projectName: string): boolean {
+  return !projectName || projectName.toLowerCase() === "project" || projectName.toLowerCase() === "project name" || projectName.toLowerCase() === "name";
+}
+
+export function formatImportError(rowIndex: number, offset: number, message: string): string {
+  return `Row ${rowIndex + offset}: ${message}`;
+}
+
+export function buildPermissionsMap(rows: Array<{ resource: string; action: string; allowed: boolean }>): Record<string, string[]> {
+  const perms: Record<string, string[]> = {};
+  for (const r of rows) {
+    if (r.allowed) {
+      if (!perms[r.resource]) perms[r.resource] = [];
+      perms[r.resource].push(r.action);
+    }
+  }
+  return perms;
+}
+
+export const PHASE_TO_CLASSIFICATION: Record<string, string> = {
+  "1.A - Activity": "A",
+  "2.Q - Qualified": "Q",
+  "3.DF - Submitted": "DF",
+  "4.DVF - Shortlisted": "DVF",
+  "5.S - Selected": "S",
+};
+
 export function getOppMonthlyRevenues(opp: any): (string | null)[] {
   return [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
     opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
@@ -73,7 +139,7 @@ export function sumRevenues(monthRevs: (string | null)[]): number {
   return monthRevs.reduce((s: number, v) => s + Number.parseFloat(v || "0"), 0);
 }
 
-function buildPipelineInsightPrompt(pipelineOpps: any[], projects: any[]): string {
+export function buildPipelineInsightPrompt(pipelineOpps: any[], projects: any[]): string {
   const classGroups: Record<string, number> = {};
   let totalWeighted = 0;
   const oppDetails: string[] = [];
@@ -116,7 +182,7 @@ Identify risks including:
 - Stale opportunities: large deals in low-probability stages (Q/A)`;
 }
 
-function buildProjectInsightPrompt(projects: any[], projectMonthly: any[]): string {
+export function buildProjectInsightPrompt(projects: any[], projectMonthly: any[]): string {
   const projectSummaries = projects.map((p: any) => {
     const monthly = projectMonthly.filter((m: any) => m.projectId === p.id);
     const totalRev = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
@@ -153,19 +219,21 @@ Identify risks including:
 - Forecast vs actual gaps: projects where forecasted revenue differs significantly from actual trajectory`;
 }
 
-function buildSpendingDataContext(projects: any[], projectMonthly: any[], pipelineOpps: any[], employees: any[], resourceCosts: any[]): string {
-  const activeProjects = projects.filter((p: any) => p.status === "active" || p.adStatus === "Active");
-  const permEmployees = employees.filter((e: any) => e.staffType === "Permanent");
+export function computeMonthlySpend(projectMonthly: any[]): Record<string, { revenue: number; cost: number; profit: number }> {
   const monthlySpend: Record<string, { revenue: number; cost: number; profit: number }> = {};
-  projectMonthly.forEach((m: any) => {
+  for (const m of projectMonthly) {
     const key = `${m.fyYear}-M${m.month}`;
     if (!monthlySpend[key]) monthlySpend[key] = { revenue: 0, cost: 0, profit: 0 };
     monthlySpend[key].revenue += Number.parseFloat(m.revenue || "0");
     monthlySpend[key].cost += Number.parseFloat(m.cost || "0");
     monthlySpend[key].profit += Number.parseFloat(m.revenue || "0") - Number.parseFloat(m.cost || "0");
-  });
+  }
+  return monthlySpend;
+}
+
+export function computeBillingBreakdown(projects: any[], projectMonthly: any[]): Record<string, { revenue: number; cost: number }> {
   const billingBreakdown: Record<string, { revenue: number; cost: number }> = {};
-  projects.forEach((p: any) => {
+  for (const p of projects) {
     const cat = p.billingCategory || "Other";
     const pm = projectMonthly.filter((m: any) => m.projectId === p.id);
     const rev = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
@@ -173,20 +241,37 @@ function buildSpendingDataContext(projects: any[], projectMonthly: any[], pipeli
     if (!billingBreakdown[cat]) billingBreakdown[cat] = { revenue: 0, cost: 0 };
     billingBreakdown[cat].revenue += rev;
     billingBreakdown[cat].cost += cost;
-  });
-  const topCostProjects = projects.map((p: any) => {
+  }
+  return billingBreakdown;
+}
+
+export function computeTopCostProjects(projects: any[], projectMonthly: any[], limit: number): { name: string; code: string; billing: string; totalCost: number; totalRev: number; margin: string; monthCosts: number[] }[] {
+  return projects.map((p: any) => {
     const pm = projectMonthly.filter((m: any) => m.projectId === p.id);
     const totalCost = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
     const totalRev = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
     const monthCosts = [...pm].sort((a: any, b: any) => (a.month ?? 0) - (b.month ?? 0)).map((m: any) => Number.parseFloat(m.cost || "0"));
     return { name: p.name, code: p.projectCode, billing: p.billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
-  }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
+  }).sort((a, b) => b.totalCost - a.totalCost).slice(0, limit);
+}
+
+export function computeStaffCostBreakdown(resourceCosts: any[]): { totalStaffCost: number; permCost: number; contractorCost: number } {
   const staffCostSummary = resourceCosts.map((rc: any) => ({
-    name: rc.employee_name, staffType: rc.staff_type, phase: rc.cost_phase, total: Number.parseFloat(rc.total_cost || "0"),
+    staffType: rc.staff_type, total: Number.parseFloat(rc.total_cost || "0"),
   }));
-  const totalStaffCost = staffCostSummary.reduce((s: number, r: any) => s + r.total, 0);
-  const permCost = staffCostSummary.filter((r: any) => r.staffType === "Permanent").reduce((s: number, r: any) => s + r.total, 0);
-  const contractorCost = staffCostSummary.filter((r: any) => r.staffType === "Contractor").reduce((s: number, r: any) => s + r.total, 0);
+  const totalStaffCost = staffCostSummary.reduce((s: number, r) => s + r.total, 0);
+  const permCost = staffCostSummary.filter(r => r.staffType === "Permanent").reduce((s: number, r) => s + r.total, 0);
+  const contractorCost = staffCostSummary.filter(r => r.staffType === "Contractor").reduce((s: number, r) => s + r.total, 0);
+  return { totalStaffCost, permCost, contractorCost };
+}
+
+export function buildSpendingDataContext(projects: any[], projectMonthly: any[], pipelineOpps: any[], employees: any[], resourceCosts: any[]): string {
+  const activeProjects = projects.filter((p: any) => p.status === "active" || p.adStatus === "Active");
+  const permEmployees = employees.filter((e: any) => e.staffType === "Permanent");
+  const monthlySpend = computeMonthlySpend(projectMonthly);
+  const billingBreakdown = computeBillingBreakdown(projects, projectMonthly);
+  const topCostProjects = computeTopCostProjects(projects, projectMonthly, 20);
+  const { totalStaffCost, permCost, contractorCost } = computeStaffCostBreakdown(resourceCosts);
   const monthlySpendStr = Object.entries(monthlySpend).sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Profit $${v.profit.toLocaleString()}`).join("\n");
   const billingStr = Object.entries(billingBreakdown)
@@ -211,20 +296,28 @@ Top 20 Projects by Cost:
 ${topProjectsStr}`;
 }
 
-function buildOverviewInsightPrompt(kpis: any[], projects: any[], pipelineOpps: any[], projectMonthly: any[]): string {
+export function computeKpiAverages(kpis: any[]): { totalRevenue: number; totalCost: number; avgMargin: string; avgUtil: string } {
   const totalRevenue = kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.revenue || "0"), 0);
   const totalCost = kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.grossCost || "0"), 0);
   const avgMargin = kpis.length > 0
     ? (kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1) : "0";
   const avgUtil = kpis.length > 0
     ? (kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1) : "0";
+  return { totalRevenue, totalCost, avgMargin, avgUtil };
+}
+
+export function computePipelineClassGroups(pipelineOpps: any[]): Record<string, number> {
   const classGroups: Record<string, number> = {};
-  pipelineOpps.forEach((opp: any) => {
+  for (const opp of pipelineOpps) {
     const cls = opp.classification || "Unknown";
     const total = sumRevenues(getOppMonthlyRevenues(opp));
     classGroups[cls] = (classGroups[cls] || 0) + total;
-  });
-  const projectRisks = projects.map((p: any) => {
+  }
+  return classGroups;
+}
+
+export function computeProjectRiskMetrics(projects: any[], projectMonthly: any[]): { name: string; margin: number; balance: number; totalRev: number; status: string }[] {
+  return projects.map((p: any) => {
     const monthly = projectMonthly.filter((m: any) => m.projectId === p.id);
     const totalRev = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
     const totalProjectCost = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
@@ -232,6 +325,12 @@ function buildOverviewInsightPrompt(kpis: any[], projects: any[], pipelineOpps: 
     const balance = Number.parseFloat(p.balanceAmount || "0");
     return { name: p.name, margin: Number.parseFloat(margin), balance, totalRev, status: p.status };
   });
+}
+
+export function buildOverviewInsightPrompt(kpis: any[], projects: any[], pipelineOpps: any[], projectMonthly: any[]): string {
+  const { totalRevenue, totalCost, avgMargin, avgUtil } = computeKpiAverages(kpis);
+  const classGroups = computePipelineClassGroups(pipelineOpps);
+  const projectRisks = computeProjectRiskMetrics(projects, projectMonthly);
   const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
   const negativeBalance = projectRisks.filter(p => p.balance < 0).map(p => `${p.name} ($${p.balance.toLocaleString()})`);
   const topRevProject = [...projectRisks].sort((a, b) => b.totalRev - a.totalRev)[0];
@@ -274,7 +373,7 @@ export function getSpendingSystemPrompt(type: string): string {
   return `You are a financial forecasting expert for an Australian professional services firm. Use historical spending data to predict future trends. Use Australian Financial Year (Jul-Jun). Be specific with projections and clearly state your confidence level and assumptions.`;
 }
 
-function getSpendingUserPrompt(type: string, dataContext: string): string {
+export function getSpendingUserPrompt(type: string, dataContext: string): string {
   if (type === "spending_patterns") {
     return `Analyze our spending patterns in detail. Identify trends, anomalies, and areas of concern.
 
@@ -319,6 +418,21 @@ Provide forecasts and predictions on:
 7. **Seasonal Adjustments**: Account for any seasonal patterns (e.g., Q4 slowdown, new FY ramp-up) in your forecasts.
 
 For each prediction, state your confidence level (High/Medium/Low) and the key assumptions. Include best-case and worst-case scenarios where appropriate.`;
+}
+
+export function buildPipelineSummaryText(pipelineOpps: any[]): string {
+  return pipelineOpps.map(o => {
+    const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
+      o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
+      .reduce((s: number, v: any) => s + Number.parseFloat(v || "0"), 0);
+    return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
+  }).join("\n");
+}
+
+export function buildRiskSummaryText(risks: any[]): string {
+  return risks.map(r =>
+    `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
+  ).join("\n");
 }
 
 async function streamAIResponse(openai: OpenAI, systemPrompt: string, userPrompt: string, res: any): Promise<void> {
@@ -699,16 +813,169 @@ export function buildPlannerBucketGroups(
   for (const pt of plannerTasks) {
     const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
     if (!bucketGroups[bName]) bucketGroups[bName] = [];
-    const pct = pt.percentComplete || 0;
-    let status = "Not Started";
-    if (pct === 100) status = "Completed";
-    else if (pct > 0) status = "In Progress";
     const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
-    const titleStatus = `${pt.title} [${status}]`;
-    const taskEntry = assignees ? `${titleStatus} (${assignees})` : titleStatus;
-    bucketGroups[bName].push(taskEntry);
+    bucketGroups[bName].push(formatPlannerTaskEntry(pt, assignees));
   }
   return bucketGroups;
+}
+
+export function formatPlannerTaskEntry(pt: any, assignees: string): string {
+  const pct = pt.percentComplete || 0;
+  let status = "Not Started";
+  if (pct === 100) status = "Completed";
+  else if (pct > 0) status = "In Progress";
+  const titleStatus = `${pt.title} [${status}]`;
+  return assignees ? `${titleStatus} (${assignees})` : titleStatus;
+}
+
+export function buildVatAiRiskSummary(userRisks: any[] | undefined, risks: any[]): string {
+  if (Array.isArray(userRisks) && userRisks.length > 0) {
+    return userRisks.map((r: any) =>
+      `- ${r.description} (Impact: ${r.impactRating || "N/A"}, Likelihood: ${r.likelihood || "N/A"}, Status: ${r.status || "Open"}, Owner: ${r.owner || "Unassigned"})`
+    ).join("\n");
+  }
+  return risks.map(r =>
+    `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Status: ${r.status || "Open"}, Owner: ${r.owner})`
+  ).join("\n");
+}
+
+export function buildVatAiActionSummaries(actionItems: any[]): { completedActionsSummary: string; openActionsSummary: string } {
+  const completedActions = actionItems.filter((a: any) => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
+  const openActions = actionItems.filter((a: any) => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
+  const completedActionsSummary = completedActions.map((a: any) =>
+    `- ${a.description} (Owner: ${a.owner || "N/A"}, Section: ${a.section || "General"})`
+  ).join("\n");
+  const openActionsSummary = openActions.map((a: any) =>
+    `- ${a.description} (Owner: ${a.owner || "N/A"}, Status: ${a.status || "Open"}, Due: ${a.dueDate || "N/A"})`
+  ).join("\n");
+  return { completedActionsSummary, openActionsSummary };
+}
+
+export function buildVatAiPlannerSummary(plannerTasks: any[]): string {
+  const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
+  const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
+  const plannerParts: string[] = [];
+  if (completedTasks.length > 0) {
+    const lines = completedTasks.map((t: any) => "  - " + t.taskName + " (Bucket: " + (t.bucketName || "N/A") + ")").join("\n");
+    plannerParts.push("Completed:\n" + lines);
+  }
+  if (inProgressTasks.length > 0) {
+    const lines = inProgressTasks.map((t: any) => "  - " + t.taskName + " (" + (t.progress || "N/A") + ", Due: " + (t.dueDate || "N/A") + ")").join("\n");
+    plannerParts.push("In Progress:\n" + lines);
+  }
+  return plannerParts.join("\n");
+}
+
+export function buildVatReportContextString(existingReport: any, label = "PREVIOUS REPORT CONTENT"): string {
+  if (!existingReport) return "";
+  return `${label}:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}`;
+}
+
+export function buildPlannerCompletedByName(pt: any, resolveUserName: (uid: string) => string): string {
+  if (pt.completedBy?.user?.id) {
+    return resolveUserName(pt.completedBy.user.id);
+  }
+  if (pt.completedBy?.user?.displayName) {
+    return pt.completedBy.user.displayName;
+  }
+  return "Unknown";
+}
+
+export function buildPlannerSyncResult(
+  pt: any,
+  rec: { taskName: string; bucketName: string; progress: string; dueDate: string; priority: string; assignedTo: string; extId: string },
+  existing: any,
+  resolveUserName: (uid: string) => string,
+): { wasCompleted: boolean; changes: string[]; needsUpdate: boolean; completedInfo?: { title: string; completedBy: string; completedDate: string } } {
+  const wasCompleted = existing.progress !== "Completed" && rec.progress === "Completed";
+  const changes = detectTaskChanges(existing, rec.taskName, rec.progress, rec.dueDate, rec.priority);
+  const needsBucketUpdate = existing.bucketName !== rec.bucketName && !!rec.bucketName;
+  const needsAssigneeUpdate = existing.assignedTo !== rec.assignedTo && !!rec.assignedTo;
+  const needsUpdate = changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate;
+  const result: any = { wasCompleted, changes, needsUpdate };
+  if (wasCompleted) {
+    const completedByName = buildPlannerCompletedByName(pt, resolveUserName);
+    const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
+    result.completedInfo = { title: rec.taskName, completedBy: completedByName, completedDate };
+  }
+  return result;
+}
+
+export function extractInitialUserCache(plannerTasks: any[]): Map<string, string> {
+  const cache = new Map<string, string>();
+  for (const pt of plannerTasks) {
+    if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
+      cache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
+    }
+  }
+  return cache;
+}
+
+export function buildVatAiSuggestFieldsPrompt(
+  vatName: string,
+  pipelineSummary: string,
+  riskSummary: string,
+  completedActionsSummary: string,
+  openActionsSummary: string,
+  plannerSummary: string,
+  reportContext: string,
+  userActionNotes: string | undefined,
+): string {
+  return `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
+
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+${riskSummary ? `CURRENT RISKS & ISSUES (reviewed by user):\n${riskSummary}` : "No risks currently recorded."}
+
+${completedActionsSummary ? `RECENTLY COMPLETED ACTIONS:\n${completedActionsSummary}` : "No completed action items."}
+
+${openActionsSummary ? `OPEN ACTION ITEMS:\n${openActionsSummary}` : ""}
+
+${plannerSummary ? `PLANNER TASK STATUS:\n${plannerSummary}` : ""}
+
+${reportContext}
+
+${userActionNotes ? `USER NOTES ON WHAT CHANGED:\n${userActionNotes}` : ""}
+
+IMPORTANT INSTRUCTIONS:
+- Reference SPECIFIC opportunity names, dollar values, risk descriptions, and completed actions from the data above.
+- Do NOT generate generic or templated content. Every bullet point must reference real data provided.
+- Highlight completed actions as achievements in the status summary.
+- Address open risks directly in relevant sections.
+- If no data is available for a field, say "No data available - please update manually" rather than making up content.
+
+Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun).
+
+Return this exact JSON structure:
+{
+  "statusSummary": "bullet points summarising overall VAT status including completed actions as achievements, key wins, pipeline health, and current risk posture",
+  "openOppsSummary": "bullet points about specific open opportunities from the pipeline data with their values and classification",
+  "bigPlays": "bullet points about the largest strategic opportunities being pursued with dollar values",
+  "approachToShortfall": "bullet points on strategies to address revenue gaps, referencing specific pipeline opportunities that could close",
+  "accountGoals": "bullet points on key account objectives based on pipeline and open actions",
+  "relationships": "bullet points on key stakeholder relationships referencing risk owners and action item owners",
+  "research": "bullet points on market positioning based on pipeline classifications and opportunity types",
+  "otherActivities": "bullet points on completed planner tasks, in-progress activities, and upcoming milestones"
+}`;
+}
+
+export function buildVatChatSystemPrompt(vatName: string, pipelineSummary: string, riskSummary: string, reportContext: string): string {
+  return `You are an AI assistant helping create and manage VAT (Virtual Account Team) Sales Committee reports for an Australian professional services firm. You have access to the ${vatName} VAT's pipeline and risk data.
+
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
+${reportContext}
+
+Your role:
+- Help draft report content (status summaries, open opps analysis, big plays, approach to shortfall)
+- Provide strategic suggestions based on the pipeline data
+- Answer questions about the VAT's pipeline performance
+- When asked to draft content, provide it in bullet point format ready to paste into the report
+- Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values
+- Be concise and actionable`;
 }
 
 export function parseStaffSOTRow(r: any[]): any {
@@ -2568,12 +2835,7 @@ Rules:
       const fourWeeksAgo = new Date();
       fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
-      const userIdCache = new Map<string, string>();
-      for (const pt of plannerTasks) {
-        if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
-          userIdCache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
-        }
-      }
+      const userIdCache = extractInitialUserCache(plannerTasks);
 
       try {
         const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
@@ -2666,27 +2928,16 @@ Rules:
         }
 
         if (existing) {
-          const wasCompleted = existing.progress !== "Completed" && rec.progress === "Completed";
-          const changes = detectTaskChanges(existing, rec.taskName, rec.progress, rec.dueDate, rec.priority);
-
-          if (wasCompleted) {
+          const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
+          if (syncResult.wasCompleted) {
             newlyCompletedCount++;
-            let completedByName = "Unknown";
-            if (pt.completedBy?.user?.id) {
-              completedByName = resolveUserName(pt.completedBy.user.id);
-            } else if (pt.completedBy?.user?.displayName) {
-              completedByName = pt.completedBy.user.displayName;
-            }
-            const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
-            newlyCompletedTasks.push({ title: rec.taskName, completedBy: completedByName, completedDate });
+            newlyCompletedTasks.push(syncResult.completedInfo!);
           }
-          const needsBucketUpdate = existing.bucketName !== rec.bucketName && rec.bucketName;
-          const needsAssigneeUpdate = existing.assignedTo !== rec.assignedTo && rec.assignedTo;
-          if (changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate) {
+          if (syncResult.needsUpdate) {
             await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
-            if (changes.length > 0) {
+            if (syncResult.changes.length > 0) {
               updatedCount++;
-              updatedTasks.push({ title: rec.taskName, changes });
+              updatedTasks.push({ title: rec.taskName, changes: syncResult.changes });
             }
           }
         } else {
@@ -2851,36 +3102,15 @@ Rules:
         risks = await storage.getVatRisks(reportId);
       }
 
-      const pipelineSummary = pipelineOpps.map(o => {
-        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
-          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
-      }).join("\n");
-
-      const riskSummary = risks.map(r =>
-        `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
-      ).join("\n");
+      const pipelineSummary = buildPipelineSummaryText(pipelineOpps);
+      const riskSummary = buildRiskSummaryText(risks);
+      const reportContext = buildVatReportContextString(existingReport, "CURRENT REPORT");
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
 
-      const systemPrompt = `You are an AI assistant helping create and manage VAT (Virtual Account Team) Sales Committee reports for an Australian professional services firm. You have access to the ${vatName} VAT's pipeline and risk data.
-
-PIPELINE DATA for ${vatName}:
-${pipelineSummary || "No pipeline data available"}
-
-${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
-${existingReport ? `CURRENT REPORT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
-
-Your role:
-- Help draft report content (status summaries, open opps analysis, big plays, approach to shortfall)
-- Provide strategic suggestions based on the pipeline data
-- Answer questions about the VAT's pipeline performance
-- When asked to draft content, provide it in bullet point format ready to paste into the report
-- Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values
-- Be concise and actionable`;
+      const systemPrompt = buildVatChatSystemPrompt(vatName, pipelineSummary, riskSummary, reportContext);
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -2889,7 +3119,7 @@ Your role:
       const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
         { role: "system", content: systemPrompt },
       ];
-      if (chatMessages && Array.isArray(chatMessages)) {
+      if (Array.isArray(chatMessages)) {
         for (const m of chatMessages) {
           apiMessages.push({ role: m.role, content: m.content });
         }
@@ -2940,84 +3170,21 @@ Your role:
         plannerTasks = await storage.getVatPlannerTasks(reportId);
       }
 
-      const pipelineSummary = pipelineOpps.map(o => {
-        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
-          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
-      }).join("\n");
-
-      const riskSummary = (userRisks && Array.isArray(userRisks) && userRisks.length > 0)
-        ? userRisks.map((r: any) =>
-            `- ${r.description} (Impact: ${r.impactRating || "N/A"}, Likelihood: ${r.likelihood || "N/A"}, Status: ${r.status || "Open"}, Owner: ${r.owner || "Unassigned"})`
-          ).join("\n")
-        : risks.map(r =>
-            `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Status: ${r.status || "Open"}, Owner: ${r.owner})`
-          ).join("\n");
-
-      const completedActions = actionItems.filter((a: any) => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
-      const openActions = actionItems.filter((a: any) => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
-      const completedActionsSummary = completedActions.map((a: any) =>
-        `- ${a.description} (Owner: ${a.owner || "N/A"}, Section: ${a.section || "General"})`
-      ).join("\n");
-      const openActionsSummary = openActions.map((a: any) =>
-        `- ${a.description} (Owner: ${a.owner || "N/A"}, Status: ${a.status || "Open"}, Due: ${a.dueDate || "N/A"})`
-      ).join("\n");
-
-      const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
-      const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
-      const plannerParts: string[] = [];
-      if (completedTasks.length > 0) {
-        const lines = completedTasks.map((t: any) => "  - " + t.taskName + " (Bucket: " + (t.bucketName || "N/A") + ")").join("\n");
-        plannerParts.push("Completed:\n" + lines);
-      }
-      if (inProgressTasks.length > 0) {
-        const lines = inProgressTasks.map((t: any) => "  - " + t.taskName + " (" + (t.progress || "N/A") + ", Due: " + (t.dueDate || "N/A") + ")").join("\n");
-        plannerParts.push("In Progress:\n" + lines);
-      }
-      const plannerSummary = plannerParts.join("\n");
+      const pipelineSummary = buildPipelineSummaryText(pipelineOpps);
+      const riskSummary = buildVatAiRiskSummary(userRisks, risks);
+      const { completedActionsSummary, openActionsSummary } = buildVatAiActionSummaries(actionItems);
+      const plannerSummary = buildVatAiPlannerSummary(plannerTasks);
+      const reportContext = buildVatReportContextString(existingReport);
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
 
-      const systemPrompt = `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
-
-PIPELINE DATA for ${vatName}:
-${pipelineSummary || "No pipeline data available"}
-
-${riskSummary ? `CURRENT RISKS & ISSUES (reviewed by user):\n${riskSummary}` : "No risks currently recorded."}
-
-${completedActionsSummary ? `RECENTLY COMPLETED ACTIONS:\n${completedActionsSummary}` : "No completed action items."}
-
-${openActionsSummary ? `OPEN ACTION ITEMS:\n${openActionsSummary}` : ""}
-
-${plannerSummary ? `PLANNER TASK STATUS:\n${plannerSummary}` : ""}
-
-${existingReport ? `PREVIOUS REPORT CONTENT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
-
-${userActionNotes ? `USER NOTES ON WHAT CHANGED:\n${userActionNotes}` : ""}
-
-IMPORTANT INSTRUCTIONS:
-- Reference SPECIFIC opportunity names, dollar values, risk descriptions, and completed actions from the data above.
-- Do NOT generate generic or templated content. Every bullet point must reference real data provided.
-- Highlight completed actions as achievements in the status summary.
-- Address open risks directly in relevant sections.
-- If no data is available for a field, say "No data available - please update manually" rather than making up content.
-
-Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun).
-
-Return this exact JSON structure:
-{
-  "statusSummary": "bullet points summarising overall VAT status including completed actions as achievements, key wins, pipeline health, and current risk posture",
-  "openOppsSummary": "bullet points about specific open opportunities from the pipeline data with their values and classification",
-  "bigPlays": "bullet points about the largest strategic opportunities being pursued with dollar values",
-  "approachToShortfall": "bullet points on strategies to address revenue gaps, referencing specific pipeline opportunities that could close",
-  "accountGoals": "bullet points on key account objectives based on pipeline and open actions",
-  "relationships": "bullet points on key stakeholder relationships referencing risk owners and action item owners",
-  "research": "bullet points on market positioning based on pipeline classifications and opportunity types",
-  "otherActivities": "bullet points on completed planner tasks, in-progress activities, and upcoming milestones"
-}`;
+      const systemPrompt = buildVatAiSuggestFieldsPrompt(
+        vatName, pipelineSummary, riskSummary,
+        completedActionsSummary, openActionsSummary,
+        plannerSummary, reportContext, userActionNotes,
+      );
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -3236,17 +3403,17 @@ async function dispatchSheetImport(sheetName: string, ws: XLSX.WorkSheet): Promi
   return { imported: 0, errors: ["Import not supported for this sheet"] };
 }
 
-function parseExcelNumericDate(val: number): string | null {
+export function parseExcelNumericDate(val: number): string | null {
   const d = XLSX.SSF.parse_date_code(val);
   if (!d?.y) return null;
   return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
 }
 
-function isValidYear(yr: number): boolean {
+export function isValidYear(yr: number): boolean {
   return yr >= 1900 && yr <= 2100;
 }
 
-function parseStringDate(s: string): string | null {
+export function parseStringDate(s: string): string | null {
   if (!s || s.toLowerCase() === "n/a" || s === "-") return null;
   const parsed = new Date(s);
   if (!Number.isNaN(parsed.getTime())) {
@@ -3257,7 +3424,7 @@ function parseStringDate(s: string): string | null {
   return parseISOOrAUDate(s);
 }
 
-function parseISOOrAUDate(s: string): string | null {
+export function parseISOOrAUDate(s: string): string | null {
   const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
   if (isoMatch) {
     const yr = Number.parseInt(isoMatch[1]);
@@ -3362,6 +3529,39 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
   return { imported, errors };
 }
 
+export function buildPipelineRevenueRecord(r: any[], name: string, classification: string, vat: string | null, fyYear: string, monthStart: number): any {
+  return {
+    name,
+    classification,
+    vat,
+    fyYear,
+    revenueM1: toNum(r[monthStart]),
+    revenueM2: toNum(r[monthStart + 1]),
+    revenueM3: toNum(r[monthStart + 2]),
+    revenueM4: toNum(r[monthStart + 3]),
+    revenueM5: toNum(r[monthStart + 4]),
+    revenueM6: toNum(r[monthStart + 5]),
+    revenueM7: toNum(r[monthStart + 6]),
+    revenueM8: toNum(r[monthStart + 7]),
+    revenueM9: toNum(r[monthStart + 8]),
+    revenueM10: toNum(r[monthStart + 9]),
+    revenueM11: toNum(r[monthStart + 10]),
+    revenueM12: toNum(r[monthStart + 11]),
+    grossProfitM1: "0",
+    grossProfitM2: "0",
+    grossProfitM3: "0",
+    grossProfitM4: "0",
+    grossProfitM5: "0",
+    grossProfitM6: "0",
+    grossProfitM7: "0",
+    grossProfitM8: "0",
+    grossProfitM9: "0",
+    grossProfitM10: "0",
+    grossProfitM11: "0",
+    grossProfitM12: "0",
+  };
+}
+
 async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetName: string): Promise<{ imported: number; errors: string[] }> {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
   let imported = 0;
@@ -3376,45 +3576,40 @@ async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetN
     try {
       const name = String(r[0]).trim();
       const classification = String(r[1] || "Q").trim();
-      const monthStart = 2;
       const vatCol = hasVat ? 14 : -1;
-
-      await storage.createPipelineOpportunity({
-        name,
-        classification,
-        vat: vatCol >= 0 && r[vatCol] ? String(r[vatCol]).trim() : null,
-        fyYear,
-        revenueM1: toNum(r[monthStart]),
-        revenueM2: toNum(r[monthStart + 1]),
-        revenueM3: toNum(r[monthStart + 2]),
-        revenueM4: toNum(r[monthStart + 3]),
-        revenueM5: toNum(r[monthStart + 4]),
-        revenueM6: toNum(r[monthStart + 5]),
-        revenueM7: toNum(r[monthStart + 6]),
-        revenueM8: toNum(r[monthStart + 7]),
-        revenueM9: toNum(r[monthStart + 8]),
-        revenueM10: toNum(r[monthStart + 9]),
-        revenueM11: toNum(r[monthStart + 10]),
-        revenueM12: toNum(r[monthStart + 11]),
-        grossProfitM1: "0",
-        grossProfitM2: "0",
-        grossProfitM3: "0",
-        grossProfitM4: "0",
-        grossProfitM5: "0",
-        grossProfitM6: "0",
-        grossProfitM7: "0",
-        grossProfitM8: "0",
-        grossProfitM9: "0",
-        grossProfitM10: "0",
-        grossProfitM11: "0",
-        grossProfitM12: "0",
-      });
+      const vat = vatCol >= 0 && r[vatCol] ? String(r[vatCol]).trim() : null;
+      const record = buildPipelineRevenueRecord(r, name, classification, vat, fyYear, 2);
+      await storage.createPipelineOpportunity(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
   }
   return { imported, errors };
+}
+
+export function buildGrossProfitRecord(r: any[], name: string, classification: string, vat: string | null): any {
+  return {
+    name: `${name} (GP)`,
+    classification,
+    vat,
+    fyYear: "23-24",
+    revenueM1: "0", revenueM2: "0", revenueM3: "0", revenueM4: "0",
+    revenueM5: "0", revenueM6: "0", revenueM7: "0", revenueM8: "0",
+    revenueM9: "0", revenueM10: "0", revenueM11: "0", revenueM12: "0",
+    grossProfitM1: toNum(r[3]),
+    grossProfitM2: toNum(r[4]),
+    grossProfitM3: toNum(r[5]),
+    grossProfitM4: toNum(r[6]),
+    grossProfitM5: toNum(r[7]),
+    grossProfitM6: toNum(r[8]),
+    grossProfitM7: toNum(r[9]),
+    grossProfitM8: toNum(r[10]),
+    grossProfitM9: toNum(r[11]),
+    grossProfitM10: toNum(r[12]),
+    grossProfitM11: toNum(r[13]),
+    grossProfitM12: toNum(r[14]),
+  };
 }
 
 async function importGrossProfit(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
@@ -3429,34 +3624,40 @@ async function importGrossProfit(ws: XLSX.WorkSheet): Promise<{ imported: number
       const name = String(r[0]).trim();
       const classification = String(r[1] || "Q").trim();
       const vat = r[2] ? String(r[2]).trim() : null;
-
-      await storage.createPipelineOpportunity({
-        name: `${name} (GP)`,
-        classification,
-        vat,
-        fyYear: "23-24",
-        revenueM1: "0", revenueM2: "0", revenueM3: "0", revenueM4: "0",
-        revenueM5: "0", revenueM6: "0", revenueM7: "0", revenueM8: "0",
-        revenueM9: "0", revenueM10: "0", revenueM11: "0", revenueM12: "0",
-        grossProfitM1: toNum(r[3]),
-        grossProfitM2: toNum(r[4]),
-        grossProfitM3: toNum(r[5]),
-        grossProfitM4: toNum(r[6]),
-        grossProfitM5: toNum(r[7]),
-        grossProfitM6: toNum(r[8]),
-        grossProfitM7: toNum(r[9]),
-        grossProfitM8: toNum(r[10]),
-        grossProfitM9: toNum(r[11]),
-        grossProfitM10: toNum(r[12]),
-        grossProfitM11: toNum(r[13]),
-        grossProfitM12: toNum(r[14]),
-      });
+      const record = buildGrossProfitRecord(r, name, classification, vat);
+      await storage.createPipelineOpportunity(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
   }
   return { imported, errors };
+}
+
+export function buildPersonalHoursTimesheetRecord(r: any[], employeeId: number, projectId: number, weekEnding: string): any {
+  return {
+    employeeId,
+    projectId,
+    weekEnding,
+    hoursWorked: toNum(r[1]),
+    saleValue: toNum(r[2]),
+    costValue: toNum(r[3]),
+    daysWorked: null,
+    billable: String(r[16] || "").toLowerCase() !== "leave",
+    activityType: r[16] ? String(r[16]).substring(0, 100) : null,
+    source: "excel-import",
+    status: "submitted",
+    fyMonth: r[13] ? Number(r[13]) : null,
+    fyYear: null,
+  };
+}
+
+export function parsePersonalHoursEmployeeFields(r: any[]): { firstName: string; lastName: string; role: string | null } | null {
+  const firstName = r[10] ? String(r[10]).trim().substring(0, 100) : "";
+  const lastName = r[11] ? String(r[11]).trim().substring(0, 100) : "";
+  if (!firstName && !lastName) return null;
+  const role = r[12] ? String(r[12]).substring(0, 100) : null;
+  return { firstName, lastName, role };
 }
 
 async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
@@ -3476,11 +3677,9 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
     const r = rows[i];
     if (!r?.[0]) continue;
     try {
-      const firstName = r[10] ? String(r[10]).trim().substring(0, 100) : "";
-      const lastName = r[11] ? String(r[11]).trim().substring(0, 100) : "";
-      if (!firstName && !lastName) continue;
-      const role = r[12] ? String(r[12]).substring(0, 100) : null;
-      const employeeId = await findOrCreateEmployeeForImport(empMap, empCodes, empCounter, firstName, lastName, role);
+      const empFields = parsePersonalHoursEmployeeFields(r);
+      if (!empFields) continue;
+      const employeeId = await findOrCreateEmployeeForImport(empMap, empCodes, empCounter, empFields.firstName, empFields.lastName, empFields.role);
 
       const weekEnding = excelDateToString(r[0]);
       if (!weekEnding) continue;
@@ -3492,27 +3691,37 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
       }
       if (!projectId) continue;
 
-      await storage.createTimesheet({
-        employeeId,
-        projectId,
-        weekEnding,
-        hoursWorked: toNum(r[1]),
-        saleValue: toNum(r[2]),
-        costValue: toNum(r[3]),
-        daysWorked: null,
-        billable: String(r[16] || "").toLowerCase() !== "leave",
-        activityType: r[16] ? String(r[16]).substring(0, 100) : null,
-        source: "excel-import",
-        status: "submitted",
-        fyMonth: r[13] ? Number(r[13]) : null,
-        fyYear: null,
-      });
+      const record = buildPersonalHoursTimesheetRecord(r, employeeId, projectId, weekEnding);
+      await storage.createTimesheet(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
   }
   return { imported, errors };
+}
+
+export function buildProjectHoursKpiRecord(r: any[], projectId: number): any {
+  const revenue = Number(r[1] || 0);
+  const cost = Number(r[2] || 0);
+  const margin = revenue - cost;
+  const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+  const utilization = r[0] ? (Number(r[0]) / 2080) * 100 : 0;
+  return {
+    projectId,
+    month: new Date().toISOString().slice(0, 10),
+    revenue: toNum(r[1]),
+    contractRate: null,
+    billedAmount: null,
+    unbilledAmount: null,
+    grossCost: toNum(r[2]),
+    resourceCost: toNum(r[2]),
+    rdCost: "0",
+    margin: toNum(margin),
+    marginPercent: r[1] !== undefined && revenue > 0 ? toNum(marginPct) : "0",
+    burnRate: toNum(r[2]),
+    utilization: toNum(utilization),
+  };
 }
 
 async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
@@ -3533,22 +3742,8 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       if (!projectId) {
         projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projectDesc);
       }
-
-      await storage.createKpi({
-        projectId,
-        month: new Date().toISOString().slice(0, 10),
-        revenue: toNum(r[1]),
-        contractRate: null,
-        billedAmount: null,
-        unbilledAmount: null,
-        grossCost: toNum(r[2]),
-        resourceCost: toNum(r[2]),
-        rdCost: "0",
-        margin: toNum(Number(r[1] || 0) - Number(r[2] || 0)),
-        marginPercent: r[1] && Number(r[1]) > 0 ? toNum(((Number(r[1]) - Number(r[2] || 0)) / Number(r[1])) * 100) : "0",
-        burnRate: toNum(r[2]),
-        utilization: r[0] ? toNum((Number(r[0]) / 2080) * 100) : "0",
-      });
+      const record = buildProjectHoursKpiRecord(r, projectId);
+      await storage.createKpi(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
@@ -3557,12 +3752,7 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   return { imported, errors };
 }
 
-async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-  let imported = 0;
-  const errors: string[] = [];
-
-  const allProjects = await storage.getProjects();
+export function buildCxProjectMaps(allProjects: any[]): { projByName: Map<string, number>; projByBaseCode: Map<string, number> } {
   const projByName = new Map<string, number>();
   const projByBaseCode = new Map<string, number>();
   for (const p of allProjects) {
@@ -3574,14 +3764,45 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       if (!projByBaseCode.has(baseCode)) projByBaseCode.set(baseCode, p.id);
     }
   }
+  return { projByName, projByBaseCode };
+}
 
-  const allEmployees = await storage.getEmployees();
+export function buildCxEmployeeMap(allEmployees: any[]): Map<string, number> {
   const empMap = new Map<string, number>();
   for (const e of allEmployees) {
     const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
     empMap.set(fullName, e.id);
     if (e.lastName) empMap.set(e.lastName.toLowerCase(), e.id);
   }
+  return empMap;
+}
+
+export function buildCxRatingRecord(r: any[], engagementName: string, projectId: number | null, employeeId: number | null, resourceName: string | null): any {
+  const checkPointDate = excelDateToString(r[1]);
+  const cxRating = r[2] !== null && r[2] !== undefined ? Number(r[2]) : null;
+  return {
+    projectId,
+    employeeId,
+    engagementName,
+    checkPointDate,
+    cxRating: cxRating === null || Number.isNaN(cxRating) ? null : cxRating,
+    resourceName,
+    isClientManager: String(r[4] || "").toUpperCase() === "Y",
+    isDeliveryManager: String(r[5] || "").toUpperCase() === "Y",
+    rationale: r[6] ? String(r[6]).trim() : null,
+  };
+}
+
+async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+  let imported = 0;
+  const errors: string[] = [];
+
+  const allProjects = await storage.getProjects();
+  const { projByName, projByBaseCode } = buildCxProjectMaps(allProjects);
+
+  const allEmployees = await storage.getEmployees();
+  const empMap = buildCxEmployeeMap(allEmployees);
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -3591,27 +3812,10 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       if (!engagementName || engagementName.toLowerCase() === "engagement name") continue;
 
       const projectId = fuzzyMatchProjectId(engagementName, projByName, projByBaseCode);
-
       const resourceName = r[3] ? String(r[3]).trim() : null;
-      let employeeId: number | null = null;
-      if (resourceName) {
-        employeeId = empMap.get(resourceName.toLowerCase()) || null;
-      }
-
-      const checkPointDate = excelDateToString(r[1]);
-      const cxRating = r[2] !== null && r[2] !== undefined ? Number(r[2]) : null;
-
-      await storage.createCxRating({
-        projectId,
-        employeeId,
-        engagementName,
-        checkPointDate,
-        cxRating: cxRating === null || Number.isNaN(cxRating) ? null : cxRating,
-        resourceName,
-        isClientManager: String(r[4] || "").toUpperCase() === "Y",
-        isDeliveryManager: String(r[5] || "").toUpperCase() === "Y",
-        rationale: r[6] ? String(r[6]).trim() : null,
-      });
+      const employeeId = resourceName ? (empMap.get(resourceName.toLowerCase()) || null) : null;
+      const record = buildCxRatingRecord(r, engagementName, projectId, employeeId, resourceName);
+      await storage.createCxRating(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
@@ -3620,17 +3824,46 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   return { imported, errors };
 }
 
+export function buildResourceCostRecord(
+  employeeId: number | null,
+  name: string,
+  staffType: string | null,
+  costPhase: string,
+  fyYear: string,
+  monthlyCosts: string[],
+  totalCost: string,
+  source: string,
+): any {
+  return {
+    employeeId,
+    employeeName: name,
+    staffType,
+    costPhase,
+    fyYear,
+    costM1: monthlyCosts[0], costM2: monthlyCosts[1], costM3: monthlyCosts[2], costM4: monthlyCosts[3],
+    costM5: monthlyCosts[4], costM6: monthlyCosts[5], costM7: monthlyCosts[6], costM8: monthlyCosts[7],
+    costM9: monthlyCosts[8], costM10: monthlyCosts[9], costM11: monthlyCosts[10], costM12: monthlyCosts[11],
+    totalCost,
+    source,
+  };
+}
+
+export function buildEmployeeNameMap(allEmployees: any[]): Map<string, number> {
+  const empMap = new Map<string, number>();
+  for (const e of allEmployees) {
+    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
+    empMap.set(fullName, e.id);
+  }
+  return empMap;
+}
+
 async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
   let imported = 0;
   const errors: string[] = [];
 
   const allEmployees = await storage.getEmployees();
-  const empMap = new Map<string, number>();
-  for (const e of allEmployees) {
-    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
-    empMap.set(fullName, e.id);
-  }
+  const empMap = buildEmployeeNameMap(allEmployees);
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -3640,27 +3873,9 @@ async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported
     try {
       const employeeId = empMap.get(name.toLowerCase()) || null;
       const staffType = r[1] ? String(r[1]).trim() : null;
-
-      let total = 0;
-      const monthlyCosts: string[] = [];
-      for (let ci = 2; ci <= 13; ci++) {
-        const v = Number(r[ci] || 0);
-        monthlyCosts.push(Number.isNaN(v) ? "0" : v.toFixed(2));
-        total += Number.isNaN(v) ? 0 : v;
-      }
-
-      await storage.createResourceCost({
-        employeeId,
-        employeeName: name,
-        staffType,
-        costPhase: "Total",
-        fyYear: "FY23-24",
-        costM1: monthlyCosts[0], costM2: monthlyCosts[1], costM3: monthlyCosts[2], costM4: monthlyCosts[3],
-        costM5: monthlyCosts[4], costM6: monthlyCosts[5], costM7: monthlyCosts[6], costM8: monthlyCosts[7],
-        costM9: monthlyCosts[8], costM10: monthlyCosts[9], costM11: monthlyCosts[10], costM12: monthlyCosts[11],
-        totalCost: total.toFixed(2),
-        source: "Project Resource Cost",
-      });
+      const { costs, total } = parseMonthlyCosts(r, 2, 13);
+      const record = buildResourceCostRecord(employeeId, name, staffType, "Total", "FY23-24", costs, total.toFixed(2), "Project Resource Cost");
+      await storage.createResourceCost(record);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
@@ -3675,11 +3890,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
   const errors: string[] = [];
 
   const allEmployees = await storage.getEmployees();
-  const empMap = new Map<string, number>();
-  for (const e of allEmployees) {
-    const fullName = `${e.firstName} ${e.lastName}`.toLowerCase().trim();
-    empMap.set(fullName, e.id);
-  }
+  const empMap = buildEmployeeNameMap(allEmployees);
 
   for (let i = 2; i < rows.length; i++) {
     const r = rows[i];
@@ -3689,61 +3900,29 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
     try {
       const employeeId = empMap.get(name.toLowerCase()) || null;
       const staffType = r[1] ? String(r[1]).trim() : null;
-
-      let totalC = 0;
-      const costC: string[] = [];
-      for (let ci = 2; ci <= 13; ci++) {
-        const v = Number(r[ci] || 0);
-        costC.push(Number.isNaN(v) ? "0" : v.toFixed(2));
-        totalC += Number.isNaN(v) ? 0 : v;
-      }
-
-      await storage.createResourceCost({
-        employeeId,
-        employeeName: name,
-        staffType,
-        costPhase: "Phase C",
-        fyYear: "FY23-24",
-        costM1: costC[0], costM2: costC[1], costM3: costC[2], costM4: costC[3],
-        costM5: costC[4], costM6: costC[5], costM7: costC[6], costM8: costC[7],
-        costM9: costC[8], costM10: costC[9], costM11: costC[10], costM12: costC[11],
-        totalCost: totalC.toFixed(2),
-        source: "Project Resource Cost A&F",
-      });
+      const { costs: costC, total: totalC } = parseMonthlyCosts(r, 2, 13);
+      const record = buildResourceCostRecord(employeeId, name, staffType, "Phase C", "FY23-24", costC, totalC.toFixed(2), "Project Resource Cost A&F");
+      await storage.createResourceCost(record);
       imported++;
 
-      const dvfNameCol = 17;
-      const dvfName = r[dvfNameCol] ? String(r[dvfNameCol]).trim() : null;
-      if (dvfName && dvfName.toLowerCase() !== "name") {
-        const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
-        const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
-        let totalDVF = 0;
-        const costDVF: string[] = [];
-        for (let ci = 19; ci <= 30; ci++) {
-          const v = Number(r[ci] || 0);
-          costDVF.push(Number.isNaN(v) ? "0" : v.toFixed(2));
-          totalDVF += Number.isNaN(v) ? 0 : v;
-        }
-
-        await storage.createResourceCost({
-          employeeId: dvfEmployeeId,
-          employeeName: dvfName,
-          staffType: dvfStaffType,
-          costPhase: "Phase DVF",
-          fyYear: "FY23-24",
-          costM1: costDVF[0], costM2: costDVF[1], costM3: costDVF[2], costM4: costDVF[3],
-          costM5: costDVF[4], costM6: costDVF[5], costM7: costDVF[6], costM8: costDVF[7],
-          costM9: costDVF[8], costM10: costDVF[9], costM11: costDVF[10], costM12: costDVF[11],
-          totalCost: totalDVF.toFixed(2),
-          source: "Project Resource Cost A&F",
-        });
-        imported++;
-      }
+      imported += await importDvfCostFromRow(r, empMap);
     } catch (err: any) {
       errors.push(`Row ${i + 1}: ${err.message}`);
     }
   }
   return { imported, errors };
+}
+
+async function importDvfCostFromRow(r: any[], empMap: Map<string, number>): Promise<number> {
+  const dvfNameCol = 17;
+  const dvfName = r[dvfNameCol] ? String(r[dvfNameCol]).trim() : null;
+  if (!dvfName || dvfName.toLowerCase() === "name") return 0;
+  const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
+  const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
+  const { costs: costDVF, total: totalDVF } = parseMonthlyCosts(r, 19, 30);
+  const record = buildResourceCostRecord(dvfEmployeeId, dvfName, dvfStaffType, "Phase DVF", "FY23-24", costDVF, totalDVF.toFixed(2), "Project Resource Cost A&F");
+  await storage.createResourceCost(record);
+  return 1;
 }
 
 export function excelDateToISOString(serial: any): string | null {

@@ -140,7 +140,22 @@ function VatReportStatusSection({ report, onUpdate }: Readonly<{ report: VatRepo
   };
 
   const overallStatus = (report.overallStatus || "").toUpperCase();
-  const reportData: Record<string, string | null | undefined> = report as Record<string, string | null | undefined>;
+  const reportData: Record<string, string | null | undefined> = {
+    overallStatus: report.overallStatus,
+    statusSummary: report.statusSummary,
+    openOppsSummary: report.openOppsSummary,
+    bigPlays: report.bigPlays,
+    accountGoals: report.accountGoals,
+    relationships: report.relationships,
+    research: report.research,
+    approachToShortfall: report.approachToShortfall,
+    otherActivities: report.otherActivities,
+    openOppsStatus: report.openOppsStatus,
+    bigPlaysStatus: report.bigPlaysStatus,
+    accountGoalsStatus: report.accountGoalsStatus,
+    relationshipsStatus: report.relationshipsStatus,
+    researchStatus: report.researchStatus,
+  };
 
   if (editing) {
     return (
@@ -170,7 +185,7 @@ function VatReportStatusSection({ report, onUpdate }: Readonly<{ report: VatRepo
             {CATEGORY_LABELS.map(({ key, label }) => (
               <div key={key}>
                 <label htmlFor={`edit-${key}`} className="text-xs font-bold mb-1 block">{label} Status</label>
-                <Select value={(form as Record<string, string>)[key] || ""} onValueChange={(v) => setForm({ ...form, [key]: v })}>
+                <Select value={form[key as keyof typeof form] || ""} onValueChange={(v) => setForm({ ...form, [key]: v })}>
                   <SelectTrigger id={`edit-${key}`} className="h-8 text-xs" data-testid={`select-${key}`}><SelectValue placeholder="Not set" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="GREEN"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-green-500" />Green</span></SelectItem>
@@ -537,7 +552,7 @@ function RisksTable({ reportId }: Readonly<{ reportId: number }>) {
     queryFn: async () => {
       const res = await fetch("/api/employees", { credentials: "include" });
       const data = await res.json();
-      return data.map((e: Record<string, string | number>) => ({ id: e.id as number, firstName: (e.firstName || e.first_name) as string, lastName: (e.lastName || e.last_name) as string }));
+      return data.map((e: Record<string, string | number>) => ({ id: Number(e.id), firstName: String(e.firstName || e.first_name || ""), lastName: String(e.lastName || e.last_name || "") }));
     },
   });
 
@@ -711,7 +726,9 @@ function groupTasksByBucket<T extends { bucketName: string | null }>(tasks: T[])
   const grouped = new Map<string, T[]>();
   for (const task of tasks) {
     const bucket = task.bucketName || "Uncategorised";
-    if (!grouped.has(bucket)) grouped.set(bucket, []);
+    if (!grouped.has(bucket)) {
+      grouped.set(bucket, []);
+    }
     grouped.get(bucket)!.push(task);
   }
   return grouped;
@@ -1393,6 +1410,35 @@ const EMPTY_DRAFT: ReportDraftFields = {
   openOppsStatus: "", bigPlaysStatus: "", accountGoalsStatus: "", relationshipsStatus: "", researchStatus: "",
 };
 
+function createTempRisk(reportId: number, desc: string, riskType: string, impact: string, likelihood: string, sortOrder: number): VatRisk {
+  return {
+    id: -(Date.now()),
+    vatReportId: reportId,
+    description: desc.trim(),
+    riskType,
+    impactRating: impact,
+    likelihood,
+    status: "Open",
+    owner: null,
+    raisedBy: null,
+    impact: null,
+    dateBecomesIssue: null,
+    mitigation: null,
+    comments: null,
+    riskRating: null,
+    sortOrder,
+  };
+}
+
+async function fetchReportSubData(reportId: number): Promise<{ risks: VatRisk[]; actions: VatActionItem[]; planner: VatPlannerTask[] }> {
+  const [risks, actions, planner] = await Promise.all([
+    fetch(`/api/vat-reports/${reportId}/risks`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+    fetch(`/api/vat-reports/${reportId}/actions`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+    fetch(`/api/vat-reports/${reportId}/planner`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+  ]);
+  return { risks, actions, planner };
+}
+
 function RiskReviewItem({ risk, index, onRemove, onStatusChange }: Readonly<{
   risk: VatRisk;
   index: number;
@@ -1442,6 +1488,14 @@ function RiskReviewItem({ risk, index, onRemove, onStatusChange }: Readonly<{
   );
 }
 
+function removeRiskAtIndex(idx: number, setRisks: (fn: (prev: VatRisk[]) => VatRisk[]) => void) {
+  setRisks(prev => prev.filter((_, j) => j !== idx));
+}
+
+function updateRiskStatusAtIndex(idx: number, status: string, setRisks: (fn: (prev: VatRisk[]) => VatRisk[]) => void) {
+  setRisks(prev => prev.map((r, j) => j === idx ? { ...r, status } : r));
+}
+
 function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }>) {
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -1462,15 +1516,15 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
   useEffect(() => {
     if (reportId) {
       setRisksLoading(true);
-      Promise.all([
-        fetch(`/api/vat-reports/${reportId}/risks`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
-        fetch(`/api/vat-reports/${reportId}/actions`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
-        fetch(`/api/vat-reports/${reportId}/planner`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
-      ]).then(([riskData, actionData, plannerData]) => {
+      fetchReportSubData(reportId).then(({ risks: riskData, actions: actionData, planner: plannerData }) => {
         setRisks(riskData);
         setActionItems(actionData);
         setPlannerTasks(plannerData);
-      }).catch((error: unknown) => { console.error("Failed to load report data:", error); }).finally(() => setRisksLoading(false));
+      }).catch((error: unknown) => {
+        console.error("Failed to load report data:", error);
+      }).finally(() => {
+        setRisksLoading(false);
+      });
     }
   }, [reportId]);
 
@@ -1526,10 +1580,10 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
 
   const stepIndicator = (
     <div className="flex items-center gap-1 mb-3">
-      {[1, 2, 3].map((s) => (
+      {([1, 2, 3] as const).map((s) => (
         <div key={s} className="flex items-center gap-1">
           <button
-            onClick={() => { if (s < 3 || suggestions) setStep(s as 1|2|3); }}
+            onClick={() => { if (s < 3 || suggestions) setStep(s); }}
             className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold transition-colors ${getStepIndicatorClass(step, s)}`}
             data-testid={`step-indicator-${s}`}
           >
@@ -1546,23 +1600,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
 
   const addNewRisk = () => {
     if (!newRiskDesc.trim()) return;
-    const tempRisk: VatRisk = {
-      id: -(Date.now()),
-      vatReportId: reportId || 0,
-      description: newRiskDesc.trim(),
-      riskType: newRiskType,
-      impactRating: newRiskImpact,
-      likelihood: newRiskLikelihood,
-      status: "Open",
-      owner: null,
-      raisedBy: null,
-      impact: null,
-      dateBecomesIssue: null,
-      mitigation: null,
-      comments: null,
-      riskRating: null,
-      sortOrder: risks.length,
-    };
+    const tempRisk = createTempRisk(reportId || 0, newRiskDesc, newRiskType, newRiskImpact, newRiskLikelihood, risks.length);
     setRisks(prev => [...prev, tempRisk]);
     setNewRiskDesc("");
     setNewRiskType("risk");
@@ -1642,8 +1680,8 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
                   key={risk.id}
                   risk={risk}
                   index={i}
-                  onRemove={(idx) => setRisks(prev => prev.filter((_, j) => j !== idx))}
-                  onStatusChange={(idx, v) => setRisks(prev => prev.map((r, j) => j === idx ? { ...r, status: v } : r))}
+                  onRemove={(idx) => removeRiskAtIndex(idx, setRisks)}
+                  onStatusChange={(idx, v) => updateRiskStatusAtIndex(idx, v, setRisks)}
                 />
               ))}
             </div>
@@ -1849,13 +1887,6 @@ function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteRepor
     },
   });
 
-  const formatReportDate = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr + "T00:00:00");
-      return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
-    } catch { return dateStr; }
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1948,6 +1979,13 @@ function VatReportView({ report, allReportsForVat, onSelectReport, onDeleteRepor
   );
 }
 
+function formatReportDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return dateStr; }
+}
+
 function findClosestReport(reports: VatReport[]): VatReport | undefined {
   if (reports.length === 0) return undefined;
   const today = new Date().toISOString().split("T")[0];
@@ -2018,7 +2056,9 @@ export default function VatReportsPage() {
 
   const reportsByVat: Record<string, VatReport[]> = {};
   for (const r of filteredReports) {
-    if (!reportsByVat[r.vatName]) reportsByVat[r.vatName] = [];
+    if (!reportsByVat[r.vatName]) {
+      reportsByVat[r.vatName] = [];
+    }
     reportsByVat[r.vatName].push(r);
   }
   for (const vat of Object.keys(reportsByVat)) {
@@ -2027,10 +2067,14 @@ export default function VatReportsPage() {
 
   const getActiveReport = (vat: string): VatReport | undefined => {
     const vatReports = reportsByVat[vat] || [];
-    if (vatReports.length === 0) return undefined;
+    if (vatReports.length === 0) {
+      return undefined;
+    }
     if (selectedReportIds[vat]) {
       const found = vatReports.find(r => r.id === selectedReportIds[vat]);
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
     return findClosestReport(vatReports);
   };
@@ -2202,9 +2246,11 @@ export default function VatReportsPage() {
             <DialogFooter className="shrink-0 pt-3 border-t">
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
               <Button onClick={() => {
-                const nonEmptyDraft: Partial<ReportDraftFields> = {};
+                const nonEmptyDraft: Record<string, string> = {};
                 for (const [k, v] of Object.entries(draftFields)) {
-                  if (v.trim()) (nonEmptyDraft as Record<string, string>)[k] = v.trim();
+                  if (v.trim()) {
+                    nonEmptyDraft[k] = v.trim();
+                  }
                 }
                 createMutation.mutate({ vatName: activeVat, reportDate: newReportDate, ...nonEmptyDraft });
               }} disabled={createMutation.isPending} data-testid="button-create-report">

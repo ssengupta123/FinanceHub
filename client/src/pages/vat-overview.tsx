@@ -22,6 +22,19 @@ import { TrendingUp, DollarSign, Percent, ChevronDown, ChevronUp, Lightbulb } fr
 
 type MetricType = "gm_contribution" | "revenue" | "gm_percent";
 
+type VatInfo = { name: string; displayName: string; order: number };
+
+type VatTargetEntry = {
+  id: number;
+  vatName: string;
+  fyYear: string;
+  metric: string;
+  targetOk: string | null;
+  targetGood: string | null;
+  targetGreat: string | null;
+  targetAmazing: string | null;
+};
+
 const QUARTER_LABELS = ["Q1 (Jul-Sep)", "Q2 (Oct-Dec)", "Q3 (Jan-Mar)", "Q4 (Apr-Jun)"];
 const TIER_COLORS = {
   ok: "#ef4444",
@@ -67,16 +80,7 @@ function getTierStatus(actual: number, targets: { ok: number; good: number; grea
 
 interface VatOverviewData {
   vatName: string;
-  targets: {
-    id: number;
-    vatName: string;
-    fyYear: string;
-    metric: string;
-    targetOk: string | null;
-    targetGood: string | null;
-    targetGreat: string | null;
-    targetAmazing: string | null;
-  }[];
+  targets: VatTargetEntry[];
   actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
 }
 
@@ -423,7 +427,7 @@ export default function VatOverview() {
   const elapsedMonths = getElapsedFyMonths(selectedFy);
   const currentQuarterIndex = Math.min(Math.floor((elapsedMonths - 1) / 3), 3);
 
-  const { data: vats } = useQuery<{ name: string; displayName: string; order: number }[]>({
+  const { data: vats } = useQuery<VatInfo[]>({
     queryKey: ["/api/vats"],
   });
 

@@ -83,18 +83,29 @@ export function toCamelCase(obj: Record<string, any>): Record<string, any> {
   return result;
 }
 
+const INTEGER_KEYS = new Set(["id", "month", "stepOrder", "recordsProcessed", "startMonthShift", "fyMonth"]);
+const DATE_PASSTHROUGH_KEYS = new Set(["createdAt", "completedAt", "lastSyncAt"]);
+
+export function shouldConvertToString(key: string, val: any): boolean {
+  if (typeof val !== "number" || Number.isInteger(val)) return false;
+  return !INTEGER_KEYS.has(key) && !key.endsWith("Id");
+}
+
+export function shouldConvertDate(key: string, val: any): boolean {
+  return val instanceof Date && !DATE_PASSTHROUGH_KEYS.has(key);
+}
+
+export function normalizeModelValue(key: string, val: any): any {
+  if (val === null || val === undefined) return val;
+  if (shouldConvertToString(key, val)) return val.toString();
+  if (shouldConvertDate(key, val)) return val.toISOString().split("T")[0];
+  return val;
+}
+
 export function rowToModel<T>(row: Record<string, any>): T {
   const camel = toCamelCase(row);
   for (const key of Object.keys(camel)) {
-    const val = camel[key];
-    if (val !== null && val !== undefined) {
-      if (typeof val === "number" && !Number.isInteger(val) && key !== "id" && !key.endsWith("Id") && key !== "month" && key !== "stepOrder" && key !== "recordsProcessed" && key !== "startMonthShift" && key !== "fyMonth") {
-        camel[key] = val.toString();
-      }
-      if (val instanceof Date && key !== "createdAt" && key !== "completedAt" && key !== "lastSyncAt") {
-        camel[key] = val.toISOString().split("T")[0];
-      }
-    }
+    camel[key] = normalizeModelValue(key, camel[key]);
   }
   return camel as T;
 }
@@ -161,6 +172,20 @@ export function sanitizeDateFields(data: Record<string, any>, table?: string): R
   return data;
 }
 
+export function formatMonthKey(month: any): string {
+  return month instanceof Date ? month.toISOString().split("T")[0] : String(month);
+}
+
+export function extractDateFieldsForLogging(snakeData: Record<string, any>): Record<string, any> {
+  const dateFields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(snakeData)) {
+    if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
+      dateFields[k] = { value: v, type: typeof v };
+    }
+  }
+  return dateFields;
+}
+
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
   const snakeData = sanitizeDateFields(toSnakeCase(data, table), table);
   delete snakeData.id;
@@ -169,13 +194,7 @@ async function insertReturning<T>(table: string, data: Record<string, any>): Pro
     return rowToModel<T>(row);
   } catch (err: any) {
     if (err.message?.includes("date")) {
-      const dateFields: Record<string, any> = {};
-      for (const [k, v] of Object.entries(snakeData)) {
-        if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
-          dateFields[k] = { value: v, type: typeof v };
-        }
-      }
-      console.error(`[insertReturning] ${table} date error. Fields:`, JSON.stringify(dateFields));
+      console.error(`[insertReturning] ${table} date error. Fields:`, JSON.stringify(extractDateFieldsForLogging(snakeData)));
     }
     throw err;
   }
@@ -865,12 +884,12 @@ export class DatabaseStorage implements IStorage {
     const monthMap = new Map<string, { revenue: number; cost: number }>();
 
     for (const row of revenueByMonth) {
-      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      const m = formatMonthKey(row.month);
       monthMap.set(m, { revenue: Number(row.revenue) || 0, cost: 0 });
     }
 
     for (const row of costByMonth) {
-      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      const m = formatMonthKey(row.month);
       const existing = monthMap.get(m) || { revenue: 0, cost: 0 };
       existing.cost = Number(row.cost) || 0;
       monthMap.set(m, existing);

@@ -12,6 +12,34 @@ import {
   appendContentFields,
   findFallbackOverallStatus,
   buildReportsSummary,
+  extractCellText,
+  extractRowCells,
+  extractTableRows,
+  extractRagFromRow,
+  appendStatusSummary,
+  processStatusRow,
+  parseRiskRow,
+  extractSectionContent,
+  classifyParagraph,
+  buildParagraphContent,
+  buildReportFromGroup,
+  extractOverallStatusFromTable,
+  parseRiskTable,
+  parsePlannerTable,
+  extractStatusSummary,
+  extractContentFromParagraphs,
+  extractReportDate,
+  isTitleSlide,
+  isPlannerSlide,
+  detectSectionFromParagraph,
+  extractParagraphs,
+  extractTables,
+  isCoverSlide,
+  isEmptySlide,
+  tryStartNewGroup,
+  assignSlideToGroup,
+  createEmptyReport,
+  collectPlannerTasks,
 } from "../server/pptx-parser";
 
 describe("decodeXmlEntities", () => {
@@ -264,5 +292,1024 @@ describe("buildReportsSummary", () => {
   it("handles empty reports", () => {
     const summary = buildReportsSummary([]);
     expect(summary).toBe("");
+  });
+});
+
+describe("extractCellText", () => {
+  it("extracts text from XML cell", () => {
+    const xml = '<a:txBody><a:p><a:r><a:t>Hello</a:t></a:r><a:r><a:t>World</a:t></a:r></a:p></a:txBody>';
+    expect(extractCellText(xml)).toBe("Hello World");
+  });
+
+  it("returns empty string for no text", () => {
+    expect(extractCellText("<a:tc></a:tc>")).toBe("");
+  });
+
+  it("decodes XML entities in cell text", () => {
+    const xml = '<a:t>A &amp; B</a:t>';
+    expect(extractCellText(xml)).toBe("A & B");
+  });
+});
+
+describe("extractRowCells", () => {
+  it("extracts cells from row XML", () => {
+    const xml = '<a:tc><a:txBody><a:p><a:r><a:t>Cell1</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Cell2</a:t></a:r></a:p></a:txBody></a:tc>';
+    const cells = extractRowCells(xml);
+    expect(cells.length).toBe(2);
+    expect(cells[0]).toBe("Cell1");
+    expect(cells[1]).toBe("Cell2");
+  });
+
+  it("returns empty array for no cells", () => {
+    expect(extractRowCells("")).toEqual([]);
+  });
+});
+
+describe("extractTableRows", () => {
+  it("extracts rows from table XML", () => {
+    const xml = '<a:tr h="123"><a:tc><a:txBody><a:p><a:r><a:t>R1C1</a:t></a:r></a:p></a:txBody></a:tc></a:tr><a:tr h="456"><a:tc><a:txBody><a:p><a:r><a:t>R2C1</a:t></a:r></a:p></a:txBody></a:tc></a:tr>';
+    const rows = extractTableRows(xml);
+    expect(rows.length).toBe(2);
+    expect(rows[0][0]).toBe("R1C1");
+  });
+
+  it("returns empty for no rows", () => {
+    expect(extractTableRows("")).toEqual([]);
+  });
+});
+
+describe("extractRagFromRow", () => {
+  it("finds GREEN in row", () => {
+    expect(extractRagFromRow(["", "GREEN", ""])).toBe("GREEN");
+  });
+
+  it("finds AMBER in row", () => {
+    expect(extractRagFromRow(["Something", "Status: AMBER", ""])).toBe("AMBER");
+  });
+
+  it("finds RED in row", () => {
+    expect(extractRagFromRow(["RED flag", "", ""])).toBe("RED");
+  });
+
+  it("returns null when no RAG found", () => {
+    expect(extractRagFromRow(["Hello", "World", ""])).toBeNull();
+  });
+
+  it("finds N/A in row", () => {
+    expect(extractRagFromRow(["N/A", "", ""])).toBe("N/A");
+  });
+});
+
+describe("appendStatusSummary", () => {
+  it("appends text with newline", () => {
+    expect(appendStatusSummary("Line 1", "Line 2")).toBe("Line 1\nLine 2");
+  });
+
+  it("returns text when existing is empty", () => {
+    expect(appendStatusSummary("", "New text")).toBe("New text");
+  });
+
+  it("returns existing when text is empty", () => {
+    expect(appendStatusSummary("Existing", "")).toBe("Existing");
+  });
+});
+
+describe("processStatusRow", () => {
+  it("sets statusSummary from col0 when col1 has STATUS OVERALL", () => {
+    const result: Record<string, string> = { statusSummary: "" };
+    processStatusRow(["Summary text", "STATUS OVERALL", ""], result);
+    expect(result.statusSummary).toBe("Summary text");
+  });
+
+  it("skips OVERALL STATUS row", () => {
+    const result: Record<string, string> = { statusSummary: "" };
+    processStatusRow(["OVERALL STATUS", "Something", ""], result);
+    expect(result.statusSummary).toBe("");
+  });
+
+  it("sets RAG for OPEN OPPS section", () => {
+    const result: Record<string, string> = {};
+    processStatusRow(["", "OPEN OPPS", "GREEN"], result);
+    expect(result.openOppsStatus).toBe("GREEN");
+  });
+
+  it("appends to statusSummary for unmatched rows", () => {
+    const result: Record<string, string> = { statusSummary: "Previous" };
+    processStatusRow(["New detail", "", ""], result);
+    expect(result.statusSummary).toContain("New detail");
+  });
+});
+
+describe("parseRiskRow", () => {
+  it("parses a risk row", () => {
+    const row = ["John", "Server down", "High", "2024-01-15", "Open", "Jane", "Critical", "High", "Backup plan", "Need review", "H"];
+    const result = parseRiskRow(row, "risk");
+    expect(result).not.toBeNull();
+    expect(result!.raisedBy).toBe("John");
+    expect(result!.description).toBe("Server down");
+    expect(result!.riskType).toBe("risk");
+  });
+
+  it("returns null for empty row", () => {
+    expect(parseRiskRow(["", "", "", "", "", "", "", "", "", "", ""], "risk")).toBeNull();
+  });
+
+  it("returns null for header row (people process)", () => {
+    expect(parseRiskRow(["", "People Process", "", "", "", "", "", "", "", "", ""], "risk")).toBeNull();
+  });
+
+  it("handles row with only description", () => {
+    const row = ["", "Important risk", "", "", "", "", "", "", "", "", ""];
+    const result = parseRiskRow(row, "issue");
+    expect(result!.description).toBe("Important risk");
+    expect(result!.riskType).toBe("issue");
+  });
+});
+
+describe("extractSectionContent", () => {
+  it("extracts content after colon", () => {
+    expect(extractSectionContent("Open Opps: Some detail here")).toBe("Some detail here");
+  });
+
+  it("returns null when only label before colon", () => {
+    expect(extractSectionContent("Open Opps:")).toBeNull();
+  });
+
+  it("returns full text when no colon", () => {
+    expect(extractSectionContent("Some text without colon")).toBe("Some text without colon");
+  });
+
+  it("returns null for empty text", () => {
+    expect(extractSectionContent("")).toBeNull();
+  });
+});
+
+describe("classifyParagraph", () => {
+  it("classifies skip paragraphs", () => {
+    expect(classifyParagraph("GREEN", "GREEN").type).toBe("skip");
+    expect(classifyParagraph("AMBER", "AMBER").type).toBe("skip");
+    expect(classifyParagraph("STATUS", "STATUS").type).toBe("skip");
+  });
+
+  it("classifies section labels like OPEN OPPS", () => {
+    const result1 = classifyParagraph("OPEN OPPS", "OPEN OPPS");
+    expect(result1.type === "section" || result1.type === "standalone").toBe(true);
+    const result2 = classifyParagraph("BIG PLAYS", "BIG PLAYS");
+    expect(result2.type === "section" || result2.type === "standalone").toBe(true);
+  });
+
+  it("classifies content paragraphs", () => {
+    const result = classifyParagraph("Some regular text", "SOME REGULAR TEXT");
+    expect(result.type).toBe("content");
+  });
+});
+
+describe("buildParagraphContent", () => {
+  it("joins section arrays", () => {
+    const sections = {
+      status: ["Line 1", "Line 2"],
+      openOpps: ["Opp detail"],
+      bigPlays: [],
+      accountGoals: [],
+      relationships: [],
+      research: [],
+      approach: ["Approach text"],
+      other: [],
+    } as any;
+    const result = buildParagraphContent(sections);
+    expect(result.statusSummary).toBe("Line 1\nLine 2");
+    expect(result.openOppsSummary).toBe("Opp detail");
+    expect(result.bigPlays).toBe("");
+    expect(result.approachToShortfall).toBe("Approach text");
+  });
+});
+
+describe("buildReportFromGroup", () => {
+  it("builds report with default fields", () => {
+    const group = {
+      vatName: "DAFF",
+      titleSlide: { index: 1, paragraphs: [], tables: [], size: 100 },
+      contentSlides: [],
+      plannerSlides: [],
+    };
+    const result = buildReportFromGroup(group, "2024-01-15");
+    expect(result.vatName).toBe("DAFF");
+    expect(result.reportDate).toBe("2024-01-15");
+    expect(result.overallStatus).toBe("");
+    expect(result.risks).toEqual([]);
+    expect(result.plannerTasks).toEqual([]);
+  });
+});
+
+describe("extractOverallStatusFromTable", () => {
+  it("extracts GREEN status", () => {
+    expect(extractOverallStatusFromTable([["GREEN - All good"]])).toBe("GREEN");
+  });
+
+  it("extracts AMBER status", () => {
+    expect(extractOverallStatusFromTable([["Overall AMBER"]])).toBe("AMBER");
+  });
+
+  it("extracts RED status", () => {
+    expect(extractOverallStatusFromTable([["RED alert"]])).toBe("RED");
+  });
+
+  it("returns empty for no match", () => {
+    expect(extractOverallStatusFromTable([["No status"]])).toBe("");
+  });
+
+  it("returns empty for empty table", () => {
+    expect(extractOverallStatusFromTable([])).toBe("");
+  });
+
+  it("extracts N/A status", () => {
+    expect(extractOverallStatusFromTable([["Status: N/A"]])).toBe("N/A");
+  });
+});
+
+describe("parseRiskTable", () => {
+  it("returns empty for table with less than 2 rows", () => {
+    expect(parseRiskTable([["header"]])).toEqual([]);
+  });
+
+  it("parses risk table with valid data", () => {
+    const table = [
+      ["Raised By", "Description", "Impact", "Date", "Status", "Owner", "Impact Rating", "Likelihood", "Mitigation", "Comments", "Risk Rating"],
+      ["John", "Risk 1", "High", "2024-01-01", "Open", "Jane", "5", "3", "Plan A", "Notes", "15"],
+    ];
+    const result = parseRiskTable(table);
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe("Risk 1");
+    expect(result[0].riskType).toBe("risk");
+  });
+
+  it("detects issue type from header", () => {
+    const table = [
+      ["Raised By", "Description", "Impact", "Date", "Status", "Owner", "Issue Rating", "Likelihood", "Mitigation", "Comments", "Risk Rating"],
+      ["John", "Issue 1", "High", "", "Open", "Jane", "5", "3", "", "", ""],
+    ];
+    const result = parseRiskTable(table);
+    expect(result).toHaveLength(1);
+    expect(result[0].riskType).toBe("issue");
+  });
+
+  it("skips empty rows", () => {
+    const table = [
+      ["header1", "header2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"],
+      ["", "", "", "", "", "", "", "", "", "", ""],
+      ["John", "Real Risk", "High", "", "Open", "Jane", "5", "3", "", "", ""],
+    ];
+    const result = parseRiskTable(table);
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe("Real Risk");
+  });
+});
+
+describe("parsePlannerTable", () => {
+  it("returns empty for table with less than 2 rows", () => {
+    expect(parsePlannerTable([["header"]])).toEqual([]);
+  });
+
+  it("parses planner tasks with bucket inheritance", () => {
+    const table = [
+      ["Bucket", "Task", "Progress", "Due", "Priority", "Assigned", "Labels"],
+      ["Sprint 1", "Task A", "50%", "2024-01-15", "High", "John", "Dev"],
+      ["", "Task B", "0%", "2024-01-20", "Low", "Jane", ""],
+      ["Sprint 2", "Task C", "100%", "2024-01-10", "Med", "Bob", "QA"],
+    ];
+    const result = parsePlannerTable(table);
+    expect(result).toHaveLength(3);
+    expect(result[0].bucketName).toBe("Sprint 1");
+    expect(result[0].taskName).toBe("Task A");
+    expect(result[1].bucketName).toBe("Sprint 1");
+    expect(result[1].taskName).toBe("Task B");
+    expect(result[2].bucketName).toBe("Sprint 2");
+  });
+
+  it("skips rows without task name", () => {
+    const table = [
+      ["Bucket", "Task", "Progress", "Due", "Priority", "Assigned", "Labels"],
+      ["Sprint 1", "", "50%", "", "", "", ""],
+    ];
+    const result = parsePlannerTable(table);
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips empty rows", () => {
+    const table = [
+      ["h1", "h2", "h3", "h4", "h5", "h6", "h7"],
+      ["", "", "", "", "", "", ""],
+      ["Bucket", "Task A", "Done", "", "", "", ""],
+    ];
+    const result = parsePlannerTable(table);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("extractStatusSummary", () => {
+  it("extracts status from 3-column table", () => {
+    const table = [
+      ["Summary text here", "STATUS OVERALL", "GREEN"],
+    ];
+    const result = extractStatusSummary(table);
+    expect(result.statusSummary).toBe("Summary text here");
+  });
+
+  it("extracts RAG statuses for sections", () => {
+    const table = [
+      ["", "OPEN OPPS", "GREEN"],
+      ["", "BIG PLAYS", "AMBER"],
+      ["", "ACCOUNT GOALS", "RED"],
+      ["", "RELATIONSHIPS", "GREEN"],
+      ["", "RESEARCH", "N/A"],
+    ];
+    const result = extractStatusSummary(table);
+    expect(result.openOppsStatus).toBe("GREEN");
+    expect(result.bigPlaysStatus).toBe("AMBER");
+    expect(result.accountGoalsStatus).toBe("RED");
+    expect(result.relationshipsStatus).toBe("GREEN");
+    expect(result.researchStatus).toBe("N/A");
+  });
+
+  it("skips OVERALL STATUS row", () => {
+    const table = [
+      ["OVERALL STATUS", "GREEN", ""],
+      ["Some summary", "STATUS OVERALL", ""],
+    ];
+    const result = extractStatusSummary(table);
+    expect(result.statusSummary).toBe("Some summary");
+  });
+
+  it("appends multiple status lines", () => {
+    const table = [
+      ["Line 1", "", ""],
+      ["Line 2", "", ""],
+    ];
+    const result = extractStatusSummary(table);
+    expect(result.statusSummary).toContain("Line 1");
+    expect(result.statusSummary).toContain("Line 2");
+  });
+});
+
+describe("extractContentFromParagraphs", () => {
+  it("parses paragraphs into sections", () => {
+    const paragraphs = [
+      "Some status text",
+      "OPEN OPPS",
+      "Opportunity 1",
+      "Opportunity 2",
+      "BIG PLAYS",
+      "Play 1",
+      "ACCOUNT GOALS",
+      "Goal 1",
+    ];
+    const result = extractContentFromParagraphs(paragraphs);
+    expect(result.statusSummary).toContain("Some status text");
+    expect(result.openOppsSummary).toContain("Opportunity 1");
+    expect(result.openOppsSummary).toContain("Opportunity 2");
+    expect(result.bigPlays).toContain("Play 1");
+    expect(result.accountGoals).toContain("Goal 1");
+  });
+
+  it("skips header paragraphs", () => {
+    const paragraphs = [
+      "VAT REPORT",
+      "OVERALL STATUS",
+      "Actual status text",
+    ];
+    const result = extractContentFromParagraphs(paragraphs);
+    expect(result.statusSummary).toContain("Actual status text");
+  });
+
+  it("handles approach to shortfall section", () => {
+    const paragraphs = [
+      "Approach to Shortfall: Focus on new sales",
+    ];
+    const result = extractContentFromParagraphs(paragraphs);
+    expect(result.approachToShortfall).toContain("Focus on new sales");
+  });
+
+  it("returns empty fields for no content", () => {
+    const result = extractContentFromParagraphs([]);
+    expect(result.statusSummary).toBe("");
+    expect(result.openOppsSummary).toBe("");
+    expect(result.bigPlays).toBe("");
+  });
+
+  it("handles other activities section", () => {
+    const paragraphs = [
+      "OTHER ACTIVITIES",
+      "Activity 1",
+    ];
+    const result = extractContentFromParagraphs(paragraphs);
+    expect(result.otherActivities).toContain("Activity 1");
+  });
+});
+
+describe("extractReportDate", () => {
+  it("extracts text date from paragraphs", () => {
+    const result = extractReportDate(["15 January, 2024"], []);
+    expect(result).toBe("2024-01-15");
+  });
+
+  it("extracts slash date from title slide", () => {
+    const result = extractReportDate([], ["15/01/2024"]);
+    expect(result).toBe("2024-01-15");
+  });
+
+  it("returns today for no date found", () => {
+    const result = extractReportDate(["No date here"], ["Nothing"]);
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("prefers paragraph date over title slide", () => {
+    const result = extractReportDate(["20 March 2024"], ["01/01/2024"]);
+    expect(result).toBe("2024-03-20");
+  });
+});
+
+describe("isTitleSlide", () => {
+  it("identifies title slide", () => {
+    expect(isTitleSlide({ index: 1, paragraphs: ["DAFF"], tables: [], size: 500 })).toBe(true);
+  });
+
+  it("rejects slide with tables", () => {
+    expect(isTitleSlide({ index: 1, paragraphs: ["DAFF"], tables: [[["data"]]], size: 500 })).toBe(false);
+  });
+
+  it("rejects slide with many paragraphs", () => {
+    expect(isTitleSlide({ index: 1, paragraphs: ["a", "b", "c"], tables: [], size: 500 })).toBe(false);
+  });
+
+  it("rejects large slides", () => {
+    expect(isTitleSlide({ index: 1, paragraphs: ["DAFF"], tables: [], size: 5000 })).toBe(false);
+  });
+
+  it("accepts slide with 2 paragraphs", () => {
+    expect(isTitleSlide({ index: 1, paragraphs: ["Title", "Subtitle"], tables: [], size: 1000 })).toBe(true);
+  });
+});
+
+describe("isPlannerSlide", () => {
+  it("detects planner status update", () => {
+    expect(isPlannerSlide({ index: 1, paragraphs: ["PLANNER STATUS UPDATE"], tables: [], size: 100 })).toBe(true);
+  });
+
+  it("detects planner status", () => {
+    expect(isPlannerSlide({ index: 1, paragraphs: ["Planner Status"], tables: [], size: 100 })).toBe(true);
+  });
+
+  it("rejects non-planner slide", () => {
+    expect(isPlannerSlide({ index: 1, paragraphs: ["Some other content"], tables: [], size: 100 })).toBe(false);
+  });
+
+  it("handles empty paragraphs", () => {
+    expect(isPlannerSlide({ index: 1, paragraphs: [], tables: [], size: 100 })).toBe(false);
+  });
+});
+
+describe("detectSectionFromParagraph", () => {
+  it("detects OPEN OPP section", () => {
+    const result = detectSectionFromParagraph("OPEN OPPS: some text");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("openOpps");
+  });
+
+  it("detects BIG PLAYS section", () => {
+    const result = detectSectionFromParagraph("BIG PLAYS");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("bigPlays");
+  });
+
+  it("detects ACCOUNT GOALS section", () => {
+    const result = detectSectionFromParagraph("ACCOUNT GOALS:");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("accountGoals");
+  });
+
+  it("detects RELATIONSHIPS section", () => {
+    const result = detectSectionFromParagraph("RELATIONSHIPS");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("relationships");
+  });
+
+  it("detects RESEARCH section", () => {
+    const result = detectSectionFromParagraph("RESEARCH");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("research");
+  });
+
+  it("detects APPROACH TO SHORTFALL section", () => {
+    const result = detectSectionFromParagraph("APPROACH TO SHORTFALL");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("approach");
+  });
+
+  it("detects APPROACH TO TARGET section", () => {
+    const result = detectSectionFromParagraph("APPROACH TO TARGET");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("approach");
+  });
+
+  it("detects OTHER ACTIVITIES section", () => {
+    const result = detectSectionFromParagraph("OTHER ACTIVITIES");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("other");
+  });
+
+  it("detects OTHER VAT section", () => {
+    const result = detectSectionFromParagraph("OTHER VAT ACTIVITIES");
+    expect(result).not.toBeNull();
+    expect(result!.section).toBe("other");
+  });
+
+  it("returns null for non-section text", () => {
+    expect(detectSectionFromParagraph("JUST SOME TEXT")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(detectSectionFromParagraph("")).toBeNull();
+  });
+});
+
+describe("buildReportFromGroup - extended", () => {
+  it("processes content slides with tables", () => {
+    const group = {
+      vatName: "SAU",
+      titleSlide: { index: 1, paragraphs: ["SAU"], tables: [], size: 100 },
+      contentSlides: [
+        {
+          index: 2,
+          paragraphs: ["Status text"],
+          tables: [
+            [["OVERALL STATUS GREEN", "", ""]],
+          ],
+          size: 500,
+        },
+      ],
+      plannerSlides: [],
+    };
+    const result = buildReportFromGroup(group, "2024-01-15");
+    expect(result.vatName).toBe("SAU");
+  });
+
+  it("processes planner slides", () => {
+    const group = {
+      vatName: "DAFF",
+      titleSlide: { index: 1, paragraphs: [], tables: [], size: 100 },
+      contentSlides: [],
+      plannerSlides: [
+        {
+          index: 5,
+          paragraphs: ["PLANNER STATUS UPDATE"],
+          tables: [
+            [
+              ["Bucket", "Task", "Progress", "Due", "Priority", "Assigned", "Labels"],
+              ["Sprint 1", "Do thing", "50%", "2024-01-15", "High", "John", "Dev"],
+            ],
+          ],
+          size: 500,
+        },
+      ],
+    };
+    const result = buildReportFromGroup(group, "2024-01-15");
+    expect(result.plannerTasks).toHaveLength(1);
+    expect(result.plannerTasks[0].taskName).toBe("Do thing");
+  });
+});
+
+describe("groupSlidesByVat - extended", () => {
+  it("groups content slides under VAT", () => {
+    const slides = [
+      { index: 1, paragraphs: ["VAT REPORT SALES COMMITTEE"], tables: [], size: 200 },
+      { index: 2, paragraphs: ["DAFF"], tables: [], size: 100 },
+      { index: 3, paragraphs: ["Detailed content", "More content", "Even more"], tables: [[["data"]]], size: 5000 },
+    ];
+    const result = groupSlidesByVat(slides);
+    expect(result).toHaveLength(1);
+    expect(result[0].vatName).toBe("DAFF");
+    expect(result[0].contentSlides).toHaveLength(1);
+  });
+
+  it("handles planner slides", () => {
+    const slides = [
+      { index: 2, paragraphs: ["SAU"], tables: [], size: 100 },
+      { index: 3, paragraphs: ["Content"], tables: [[["t"]]], size: 5000 },
+      { index: 4, paragraphs: ["PLANNER STATUS UPDATE"], tables: [[["t"]]], size: 5000 },
+    ];
+    const result = groupSlidesByVat(slides);
+    expect(result).toHaveLength(1);
+    expect(result[0].plannerSlides).toHaveLength(1);
+  });
+
+  it("handles multiple VATs", () => {
+    const slides = [
+      { index: 2, paragraphs: ["DAFF"], tables: [], size: 100 },
+      { index: 3, paragraphs: ["Content 1"], tables: [[["t"]]], size: 5000 },
+      { index: 4, paragraphs: ["SAU"], tables: [], size: 100 },
+      { index: 5, paragraphs: ["Content 2"], tables: [[["t"]]], size: 5000 },
+    ];
+    const result = groupSlidesByVat(slides);
+    expect(result).toHaveLength(2);
+    expect(result[0].vatName).toBe("DAFF");
+    expect(result[1].vatName).toBe("SAU");
+  });
+
+  it("skips empty slides", () => {
+    const slides = [
+      { index: 2, paragraphs: ["DAFF"], tables: [], size: 100 },
+      { index: 3, paragraphs: [], tables: [], size: 0 },
+      { index: 4, paragraphs: ["Content"], tables: [[["t"]]], size: 5000 },
+    ];
+    const result = groupSlidesByVat(slides);
+    expect(result).toHaveLength(1);
+    expect(result[0].contentSlides).toHaveLength(1);
+  });
+});
+
+describe("tryParseTextDate - extended", () => {
+  it("parses date without comma", () => {
+    expect(tryParseTextDate("Report 15 March 2024")).toBe("2024-03-15");
+  });
+
+  it("returns null for no date", () => {
+    expect(tryParseTextDate("No date here")).toBeNull();
+  });
+});
+
+describe("tryParseSlashDate - extended", () => {
+  it("parses DD/MM/YYYY format", () => {
+    expect(tryParseSlashDate("Date: 25/12/2024")).toBe("2024-12-25");
+  });
+
+  it("returns null for no slash date", () => {
+    expect(tryParseSlashDate("No date")).toBeNull();
+  });
+});
+
+describe("computeHeaderSkipCount - extended", () => {
+  it("skips VAT REPORT headers", () => {
+    expect(computeHeaderSkipCount(["VAT REPORT Q1", "OVERALL STATUS", "Content"])).toBe(2);
+  });
+
+  it("skips year-only lines", () => {
+    expect(computeHeaderSkipCount(["2024", "Content"])).toBe(1);
+  });
+
+  it("returns 0 for no header", () => {
+    expect(computeHeaderSkipCount(["Just content"])).toBe(0);
+  });
+});
+
+describe("processTableForReport - extended", () => {
+  it("processes 3-column status table", () => {
+    const report: any = {
+      overallStatus: "", statusSummary: "", risks: [], plannerTasks: [],
+      openOppsStatus: "", bigPlaysStatus: "", accountGoalsStatus: "",
+      relationshipsStatus: "", researchStatus: "",
+    };
+    const table = [
+      ["OVERALL STATUS GREEN", "", ""],
+      ["Summary line 1", "STATUS OVERALL", ""],
+      ["", "OPEN OPPS", "GREEN"],
+      ["", "BIG PLAYS", "AMBER"],
+      ["", "ACCOUNT GOALS", "RED"],
+      ["", "RELATIONSHIPS", "GREEN"],
+    ];
+    processTableForReport(table, report);
+    expect(report.overallStatus).toBe("GREEN");
+    expect(report.statusSummary).toBe("Summary line 1");
+    expect(report.openOppsStatus).toBe("GREEN");
+    expect(report.bigPlaysStatus).toBe("AMBER");
+  });
+
+  it("processes 11-column risk table", () => {
+    const report: any = { risks: [], plannerTasks: [] };
+    const table = [
+      ["Raised By", "Description", "Impact", "Date", "Status", "Owner", "Impact Rating", "Likelihood", "Mitigation", "Comments", "Risk Rating"],
+      ["John", "Server downtime risk", "High", "2024-01", "Open", "Jane", "5", "3", "Monitor", "Check daily", "15"],
+    ];
+    processTableForReport(table, report);
+    expect(report.risks).toHaveLength(1);
+    expect(report.risks[0].description).toBe("Server downtime risk");
+  });
+
+  it("processes 7-column planner table", () => {
+    const report: any = { risks: [], plannerTasks: [] };
+    const table = [
+      ["Bucket", "Task Name", "Progress", "Due Date", "Priority", "Assigned To", "Labels"],
+      ["Sprint 1", "Build feature", "50%", "2024-02-15", "High", "Bob", "Dev"],
+    ];
+    processTableForReport(table, report);
+    expect(report.plannerTasks).toHaveLength(1);
+    expect(report.plannerTasks[0].taskName).toBe("Build feature");
+  });
+
+  it("skips unrecognized table formats", () => {
+    const report: any = { risks: [], plannerTasks: [] };
+    const table = [
+      ["Col1", "Col2", "Col3", "Col4", "Col5"],
+      ["data1", "data2", "data3", "data4", "data5"],
+    ];
+    processTableForReport(table, report);
+    expect(report.risks).toHaveLength(0);
+    expect(report.plannerTasks).toHaveLength(0);
+  });
+
+  it("handles empty table", () => {
+    const report: any = { risks: [], plannerTasks: [] };
+    processTableForReport([], report);
+    expect(report.risks).toHaveLength(0);
+  });
+});
+
+describe("appendContentFields - extended", () => {
+  it("appends multiple content fields", () => {
+    const report: any = {
+      statusSummary: "", openOppsSummary: "", bigPlays: "",
+      accountGoals: "", relationships: "", research: "",
+      approachToShortfall: "", otherActivities: "",
+    };
+    const content = {
+      statusSummary: "Status text",
+      openOppsSummary: "Opps text",
+      bigPlays: "Plays text",
+      accountGoals: "Goals text",
+      relationships: "Relations text",
+      research: "Research text",
+      approachToShortfall: "Approach text",
+      otherActivities: "Other text",
+    };
+    appendContentFields(report, content);
+    expect(report.statusSummary).toBe("Status text");
+    expect(report.openOppsSummary).toBe("Opps text");
+    expect(report.bigPlays).toBe("Plays text");
+    expect(report.accountGoals).toBe("Goals text");
+  });
+
+  it("appends to existing content", () => {
+    const report: any = {
+      statusSummary: "Existing", openOppsSummary: "Existing opps",
+      bigPlays: "", accountGoals: "", relationships: "",
+      research: "", approachToShortfall: "", otherActivities: "",
+    };
+    const content = {
+      statusSummary: "New status",
+      openOppsSummary: "New opps",
+      bigPlays: "New plays",
+      accountGoals: "",
+      relationships: "",
+      research: "",
+      approachToShortfall: "",
+      otherActivities: "",
+    };
+    appendContentFields(report, content);
+    expect(report.statusSummary).toBe("Existing");
+    expect(report.openOppsSummary).toContain("Existing opps");
+    expect(report.openOppsSummary).toContain("New opps");
+    expect(report.bigPlays).toBe("New plays");
+  });
+});
+
+describe("findFallbackOverallStatus - extended", () => {
+  it("finds GREEN from slide paragraphs", () => {
+    const slides = [{ index: 1, paragraphs: ["Some text GREEN here"], tables: [], size: 100 }];
+    expect(findFallbackOverallStatus(slides)).toBe("GREEN");
+  });
+
+  it("finds AMBER from second slide", () => {
+    const slides = [
+      { index: 1, paragraphs: ["No status"], tables: [], size: 100 },
+      { index: 2, paragraphs: ["AMBER warning"], tables: [], size: 100 },
+    ];
+    expect(findFallbackOverallStatus(slides)).toBe("AMBER");
+  });
+
+  it("returns empty for no status", () => {
+    const slides = [{ index: 1, paragraphs: ["No status info"], tables: [], size: 100 }];
+    expect(findFallbackOverallStatus(slides)).toBe("");
+  });
+
+  it("returns empty for no slides", () => {
+    expect(findFallbackOverallStatus([])).toBe("");
+  });
+});
+
+describe("shouldSkipParagraph - extended", () => {
+  it("skips RAISED BY", () => {
+    expect(shouldSkipParagraph("RAISED BY")).toBe(true);
+  });
+
+  it("skips DESCRIPTION", () => {
+    expect(shouldSkipParagraph("DESCRIPTION")).toBe(true);
+  });
+
+  it("skips WEEK ENDING prefix", () => {
+    expect(shouldSkipParagraph("WEEK ENDING 15/01/2024")).toBe(true);
+  });
+
+  it("does not skip normal text", () => {
+    expect(shouldSkipParagraph("NORMAL PARAGRAPH TEXT")).toBe(false);
+  });
+});
+
+describe("extractSectionContent - extended", () => {
+  it("extracts content after colon", () => {
+    expect(extractSectionContent("Open Opps: Good progress")).toBe("Good progress");
+  });
+
+  it("returns null for colon-only", () => {
+    expect(extractSectionContent("Open Opps:")).toBeNull();
+  });
+
+  it("returns full text without colon", () => {
+    expect(extractSectionContent("Full text content")).toBe("Full text content");
+  });
+
+  it("returns null for empty text", () => {
+    expect(extractSectionContent("")).toBeNull();
+  });
+});
+
+describe("extractParagraphs", () => {
+  it("extracts text from XML paragraphs", () => {
+    const xml = `<a:p><a:r><a:t>Hello</a:t></a:r></a:p><a:p><a:r><a:t>World</a:t></a:r></a:p>`;
+    const result = extractParagraphs(xml);
+    expect(result).toEqual(["Hello", "World"]);
+  });
+
+  it("joins multiple text runs in one paragraph", () => {
+    const xml = `<a:p><a:r><a:t>Hello </a:t></a:r><a:r><a:t>World</a:t></a:r></a:p>`;
+    const result = extractParagraphs(xml);
+    expect(result).toEqual(["Hello World"]);
+  });
+
+  it("skips empty paragraphs", () => {
+    const xml = `<a:p><a:r><a:t>Hello</a:t></a:r></a:p><a:p></a:p><a:p><a:r><a:t>  </a:t></a:r></a:p>`;
+    const result = extractParagraphs(xml);
+    expect(result).toEqual(["Hello"]);
+  });
+
+  it("decodes XML entities", () => {
+    const xml = `<a:p><a:r><a:t>A &amp; B</a:t></a:r></a:p>`;
+    const result = extractParagraphs(xml);
+    expect(result).toEqual(["A & B"]);
+  });
+
+  it("returns empty array for no paragraphs", () => {
+    expect(extractParagraphs("<root></root>")).toEqual([]);
+  });
+
+  it("handles paragraph with attributes", () => {
+    const xml = `<a:p algn="ctr"><a:r><a:t>Centered</a:t></a:r></a:p>`;
+    const result = extractParagraphs(xml);
+    expect(result).toEqual(["Centered"]);
+  });
+});
+
+describe("extractTables", () => {
+  it("extracts tables from XML", () => {
+    const xml = `<a:tbl><a:tr><a:tc><a:p><a:r><a:t>Cell1</a:t></a:r></a:p></a:tc><a:tc><a:p><a:r><a:t>Cell2</a:t></a:r></a:p></a:tc></a:tr></a:tbl>`;
+    const result = extractTables(xml);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toHaveLength(1);
+    expect(result[0][0]).toEqual(["Cell1", "Cell2"]);
+  });
+
+  it("extracts multiple tables", () => {
+    const xml = `<a:tbl><a:tr><a:tc><a:p><a:r><a:t>T1</a:t></a:r></a:p></a:tc></a:tr></a:tbl><a:tbl><a:tr><a:tc><a:p><a:r><a:t>T2</a:t></a:r></a:p></a:tc></a:tr></a:tbl>`;
+    const result = extractTables(xml);
+    expect(result).toHaveLength(2);
+  });
+
+  it("returns empty for no tables", () => {
+    expect(extractTables("<root></root>")).toEqual([]);
+  });
+
+  it("extracts multi-row table", () => {
+    const xml = `<a:tbl><a:tr><a:tc><a:p><a:r><a:t>R1</a:t></a:r></a:p></a:tc></a:tr><a:tr><a:tc><a:p><a:r><a:t>R2</a:t></a:r></a:p></a:tc></a:tr></a:tbl>`;
+    const result = extractTables(xml);
+    expect(result[0]).toHaveLength(2);
+    expect(result[0][0]).toEqual(["R1"]);
+    expect(result[0][1]).toEqual(["R2"]);
+  });
+});
+
+describe("isCoverSlide", () => {
+  it("detects cover slide at index 1 with VAT REPORT and SALES COMMITTEE", () => {
+    expect(isCoverSlide({ paragraphs: ["VAT REPORT - SALES COMMITTEE"], tables: [], index: 1, xml: "" })).toBe(true);
+  });
+
+  it("rejects slide not at index 1", () => {
+    expect(isCoverSlide({ paragraphs: ["VAT REPORT - SALES COMMITTEE"], tables: [], index: 2, xml: "" })).toBe(false);
+  });
+
+  it("rejects slide without VAT REPORT keywords", () => {
+    expect(isCoverSlide({ paragraphs: ["Title"], tables: [], index: 1, xml: "" })).toBe(false);
+  });
+});
+
+describe("isEmptySlide", () => {
+  it("detects slide with no paragraphs and no tables", () => {
+    expect(isEmptySlide({ paragraphs: [], tables: [], index: 1, xml: "" })).toBe(true);
+  });
+
+  it("rejects slide with paragraphs", () => {
+    expect(isEmptySlide({ paragraphs: ["Hello"], tables: [], index: 1, xml: "" })).toBe(false);
+  });
+
+  it("rejects slide with tables", () => {
+    expect(isEmptySlide({ paragraphs: [], tables: [[["data"]]], index: 1, xml: "" })).toBe(false);
+  });
+});
+
+describe("tryStartNewGroup", () => {
+  it("starts group when title slide has VAT name", () => {
+    const slide = { paragraphs: ["DAFF"], tables: [], index: 1, xml: "", size: 500 };
+    const group = tryStartNewGroup(slide);
+    expect(group).not.toBeNull();
+    expect(group!.vatName).toBe("DAFF");
+  });
+
+  it("returns null for non-title slide (too many paragraphs)", () => {
+    const slide = { paragraphs: ["Random content", "more", "and more", "data", "rows"], tables: [[["a"]]], index: 1, xml: "", size: 500 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+
+  it("returns null when no VAT name in title slide", () => {
+    const slide = { paragraphs: ["Overview"], tables: [], index: 1, xml: "", size: 500 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+
+  it("returns null when slide size is too large", () => {
+    const slide = { paragraphs: ["DAFF"], tables: [], index: 1, xml: "", size: 5000 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+});
+
+describe("assignSlideToGroup", () => {
+  it("adds planner slide to plannerSlides", () => {
+    const slide = { paragraphs: ["Planner Status Update"], tables: [[["Task1", "Bucket"]]], index: 2, xml: "", size: 1000 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.plannerSlides).toHaveLength(1);
+  });
+
+  it("adds content slide to contentSlides", () => {
+    const slide = { paragraphs: ["Some content", "More content", "Details here"], tables: [[["col1", "col2"]]], index: 3, xml: "", size: 2000 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.contentSlides).toHaveLength(1);
+  });
+
+  it("skips planner-labeled slide without tables", () => {
+    const slide = { paragraphs: ["Planner Status Update"], tables: [], index: 2, xml: "", size: 500 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.contentSlides).toHaveLength(0);
+    expect(group.plannerSlides).toHaveLength(0);
+  });
+});
+
+describe("createEmptyReport", () => {
+  it("creates report with correct vatName and date", () => {
+    const report = createEmptyReport("DAFF", "2024-01-15");
+    expect(report.vatName).toBe("DAFF");
+    expect(report.reportDate).toBe("2024-01-15");
+    expect(report.overallStatus).toBe("");
+    expect(report.risks).toEqual([]);
+    expect(report.plannerTasks).toEqual([]);
+  });
+
+  it("creates report with empty fields", () => {
+    const report = createEmptyReport("SAU", "2024-06-30");
+    expect(report.statusSummary).toBe("");
+    expect(report.openOppsSummary).toBe("");
+    expect(report.bigPlays).toBe("");
+  });
+});
+
+describe("collectPlannerTasks", () => {
+  it("collects tasks from planner slides with parsePlannerTable", () => {
+    const slides = [{
+      paragraphs: [],
+      tables: [[
+        ["Task Name", "Bucket", "Progress", "Priority", "Assigned To", "Due Date", "Notes"],
+        ["Task A", "Bucket1", "50%", "High", "Alice", "2024-01-15", "Note1"],
+      ]],
+      index: 1,
+      xml: "",
+    }];
+    const tasks = collectPlannerTasks(slides);
+    expect(tasks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns empty array for no slides", () => {
+    expect(collectPlannerTasks([])).toEqual([]);
+  });
+
+  it("returns empty for slides with no tables", () => {
+    const slides = [{ paragraphs: ["test"], tables: [], index: 1, xml: "" }];
+    expect(collectPlannerTasks(slides)).toEqual([]);
   });
 });

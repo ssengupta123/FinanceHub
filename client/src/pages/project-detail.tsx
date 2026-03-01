@@ -37,6 +37,51 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
   }
 }
 
+function KpisTabContent({ kpis, isLoading }: Readonly<{ kpis: Kpi[] | undefined; isLoading: boolean }>) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="p-6 space-y-3">
+            {[1, 2, 3].map(n => <Skeleton key={`kpi-skeleton-${n}`} className="h-10 w-full" />)}
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Revenue</TableHead>
+                <TableHead className="text-right">Billed</TableHead>
+                <TableHead className="text-right">Unbilled</TableHead>
+                <TableHead className="text-right">Gross Cost</TableHead>
+                <TableHead className="text-right">Margin</TableHead>
+                <TableHead className="text-right">Utilisation</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {kpis && kpis.length > 0 ? kpis.map(kpi => (
+                <TableRow key={kpi.id} data-testid={`row-kpi-${kpi.id}`}>
+                  <TableCell className="font-medium">{kpi.month}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(kpi.revenue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(kpi.billedAmount)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(kpi.unbilledAmount)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(kpi.grossCost)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(kpi.margin)}</TableCell>
+                  <TableCell className="text-right">{formatPercent(kpi.utilization)}</TableCell>
+                </TableRow>
+              )) : (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No KPI data available.</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
   return (
     <Card>
@@ -174,46 +219,7 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="kpis">
-          <Card>
-            <CardContent className="p-0">
-              {loadingKpis ? (
-                <div className="p-6 space-y-3">
-                  {[1, 2, 3].map(n => <Skeleton key={`kpi-skeleton-${n}`} className="h-10 w-full" />)}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Month</TableHead>
-                      <TableHead className="text-right">Revenue</TableHead>
-                      <TableHead className="text-right">Billed</TableHead>
-                      <TableHead className="text-right">Unbilled</TableHead>
-                      <TableHead className="text-right">Gross Cost</TableHead>
-                      <TableHead className="text-right">Margin</TableHead>
-                      <TableHead className="text-right">Utilisation</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {kpis && kpis.length > 0 ? kpis.map(kpi => (
-                      <TableRow key={kpi.id} data-testid={`row-kpi-${kpi.id}`}>
-                        <TableCell className="font-medium">{kpi.month}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(kpi.revenue)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(kpi.billedAmount)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(kpi.unbilledAmount)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(kpi.grossCost)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(kpi.margin)}</TableCell>
-                        <TableCell className="text-right">{formatPercent(kpi.utilization)}</TableCell>
-                      </TableRow>
-                    )) : (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No KPI data available.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <KpisTabContent kpis={kpis} isLoading={loadingKpis} />
         </TabsContent>
 
         <TabsContent value="costs">

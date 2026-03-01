@@ -339,14 +339,16 @@ export async function runMigrations() {
   console.log("Database tables created successfully");
 }
 
-export async function migrateColumnAdditions() {
+async function migratePipelineBillingType() {
   const hasBillingType = await db.schema.hasColumn("pipeline_opportunities", "billing_type");
   if (!hasBillingType) {
     await db.schema.alterTable("pipeline_opportunities", (t) => {
       t.text("billing_type");
     });
   }
+}
 
+async function migrateMilestoneColumns() {
   const hasMilestoneType = await db.schema.hasColumn("milestones", "milestone_type");
   if (!hasMilestoneType) {
     await db.schema.alterTable("milestones", (t) => {
@@ -354,7 +356,9 @@ export async function migrateColumnAdditions() {
       t.text("invoice_status");
     });
   }
+}
 
+async function migrateUserRoleColumns() {
   const hasUserRole = await db.schema.hasColumn("users", "role");
   if (!hasUserRole) {
     await db.schema.alterTable("users", (t) => {
@@ -363,7 +367,9 @@ export async function migrateColumnAdditions() {
       t.text("display_name");
     });
   }
+}
 
+async function migrateReferenceDataTable() {
   const hasRefData = await db.schema.hasTable("reference_data");
   if (!hasRefData) {
     await db.schema.createTable("reference_data", (t) => {
@@ -375,7 +381,9 @@ export async function migrateColumnAdditions() {
       t.boolean("active").defaultTo(true);
     });
   }
+}
 
+async function migrateReferenceDataFyYear() {
   const hasRefFyYear = await db.schema.hasColumn("reference_data", "fy_year");
   if (!hasRefFyYear) {
     await db.schema.alterTable("reference_data", (t) => {
@@ -383,7 +391,9 @@ export async function migrateColumnAdditions() {
     });
     console.log("Added fy_year column to reference_data");
   }
+}
 
+async function migratePipelineValueColumns() {
   const hasPipelineValue = await db.schema.hasColumn("pipeline_opportunities", "value");
   if (!hasPipelineValue) {
     await db.schema.alterTable("pipeline_opportunities", (t) => {
@@ -404,6 +414,15 @@ export async function migrateColumnAdditions() {
     });
     console.log("Added new pipeline_opportunities columns");
   }
+}
+
+export async function migrateColumnAdditions() {
+  await migratePipelineBillingType();
+  await migrateMilestoneColumns();
+  await migrateUserRoleColumns();
+  await migrateReferenceDataTable();
+  await migrateReferenceDataFyYear();
+  await migratePipelineValueColumns();
 }
 
 export async function migrateResourceAndCxTables() {
@@ -457,7 +476,7 @@ export async function migrateResourceAndCxTables() {
   }
 }
 
-export async function migrateVatTables() {
+async function ensureVatReportsTable() {
   const hasVatReports = await db.schema.hasTable("vat_reports");
   if (!hasVatReports) {
     await db.schema.createTable("vat_reports", (t) => {
@@ -492,7 +511,9 @@ export async function migrateVatTables() {
     });
     console.log("Added category status columns to vat_reports");
   }
+}
 
+async function ensureVatRisksTable() {
   const hasVatRisks = await db.schema.hasTable("vat_risks");
   if (!hasVatRisks) {
     await db.schema.createTable("vat_risks", (t) => {
@@ -514,7 +535,9 @@ export async function migrateVatTables() {
     });
     console.log("Created vat_risks table");
   }
+}
 
+async function ensureVatActionItemsTable() {
   const hasVatActionItems = await db.schema.hasTable("vat_action_items");
   if (!hasVatActionItems) {
     await db.schema.createTable("vat_action_items", (t) => {
@@ -530,7 +553,9 @@ export async function migrateVatTables() {
     });
     console.log("Created vat_action_items table");
   }
+}
 
+async function ensureVatPlannerTasksTable() {
   const hasVatPlannerTasks = await db.schema.hasTable("vat_planner_tasks");
   if (!hasVatPlannerTasks) {
     await db.schema.createTable("vat_planner_tasks", (t) => {
@@ -555,7 +580,9 @@ export async function migrateVatTables() {
     });
     console.log("Added external_id column to vat_planner_tasks");
   }
+}
 
+async function ensureVatChangeLogsTable() {
   const hasVatChangeLogs = await db.schema.hasTable("vat_change_logs");
   if (hasVatChangeLogs) {
     try {
@@ -588,7 +615,9 @@ export async function migrateVatTables() {
     });
     console.log("Created vat_change_logs table");
   }
+}
 
+async function ensureVatTargetsTable() {
   const hasVatTargets = await db.schema.hasTable("vat_targets");
   if (!hasVatTargets) {
     await db.schema.createTable("vat_targets", (t) => {
@@ -607,6 +636,15 @@ export async function migrateVatTables() {
     });
     console.log("Created vat_targets table");
   }
+}
+
+export async function migrateVatTables() {
+  await ensureVatReportsTable();
+  await ensureVatRisksTable();
+  await ensureVatActionItemsTable();
+  await ensureVatPlannerTasksTable();
+  await ensureVatChangeLogsTable();
+  await ensureVatTargetsTable();
 }
 
 export async function seedVatData() {
