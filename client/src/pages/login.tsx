@@ -11,7 +11,6 @@ import { apiRequest } from "@/lib/queryClient";
 export default function LoginPage() {
   const { loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
-  const [showManualLogin, setShowManualLogin] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -36,7 +35,6 @@ export default function LoginPage() {
         variant: "destructive",
       });
       globalThis.window.history.replaceState({}, "", "/");
-      setShowManualLogin(true);
       return;
     }
 

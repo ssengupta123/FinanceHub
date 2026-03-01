@@ -205,7 +205,7 @@ httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
 
 }
 
-startServer().catch((err) => {
+startServer().catch((err) => { // NOSONAR - CJS build format does not support top-level await
   console.error("Failed to start server:", err);
   process.exit(1);
 });
