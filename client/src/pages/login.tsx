@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 export default function LoginPage() {
   const { loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
-  const [_showManualLogin, setShowManualLogin] = useState(false);
+  const [, setShowManualLogin] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

@@ -313,7 +313,7 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
 
-          <Card className={isLoading ? "" : totalGP > 0 ? "border-green-500/50" : "border-red-500/50"}>
+          <Card className={(() => { if (isLoading) return ""; return totalGP > 0 ? "border-green-500/50" : "border-red-500/50"; })()}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -563,15 +563,20 @@ export default function FinanceDashboard() {
             </DropdownMenu>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              Array.from({ length: 5 }, (_, i) => (
-                <Skeleton key={`skel-client-${String(i)}`} className="h-10 w-full mb-2" />
-              ))
-            ) : clientRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground" data-testid="text-no-data">
-                No project data available
-              </p>
-            ) : (
+            {(() => {
+              if (isLoading) {
+                return [1, 2, 3, 4, 5].map(n => (
+                  <Skeleton key={`skel-client-${n}`} className="h-10 w-full mb-2" />
+                ));
+              }
+              if (clientRows.length === 0) {
+                return (
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-data">
+                    No project data available
+                  </p>
+                );
+              }
+              return (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -742,7 +747,8 @@ export default function FinanceDashboard() {
                   </TableFooter>
                 </Table>
               </div>
-            )}
+            );
+            })()}
           </CardContent>
         </Card>
 

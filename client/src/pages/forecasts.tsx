@@ -425,7 +425,7 @@ export default function Forecasts() {
           <CardContent>
             {(() => {
               if (isLoading) {
-                return Array.from({ length: 4 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-10 w-full mb-2" />);
+                return [1, 2, 3, 4].map(n => <Skeleton key={`skeleton-${n}`} className="h-10 w-full mb-2" />);
               }
               if (!forecasts || forecasts.length === 0) {
                 return <p className="text-sm text-muted-foreground">No forecasts available</p>;

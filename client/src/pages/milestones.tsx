@@ -82,7 +82,7 @@ interface MilestoneTableProps {
   showDaysLabel?: boolean;
 }
 
-function MilestoneTable({ milestones, projectMap, timesheetsByProject, showHours, updateStatusMutation, showDaysLabel }: MilestoneTableProps) {
+function MilestoneTable({ milestones, projectMap, timesheetsByProject, showHours, updateStatusMutation, showDaysLabel }: Readonly<MilestoneTableProps>) {
   return (
     <Table>
       <TableHeader>
@@ -472,8 +472,8 @@ export default function Milestones() {
           return (
             <Card>
               <CardContent className="p-4 space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={`skeleton-${i}`} className="h-10 w-full" />
+                {[1, 2, 3, 4, 5].map(n => (
+                  <Skeleton key={`skeleton-${n}`} className="h-10 w-full" />
                 ))}
               </CardContent>
             </Card>

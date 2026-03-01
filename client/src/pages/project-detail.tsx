@@ -37,6 +37,56 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
   }
 }
 
+function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Project Information</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Name</p>
+              <p className="text-sm font-medium" data-testid="text-detail-name">{project.name}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Client</p>
+              <p className="text-sm font-medium" data-testid="text-detail-client">{project.client || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Contract Type</p>
+              <p className="text-sm font-medium" data-testid="text-detail-contract">{project.contractType || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Description</p>
+              <p className="text-sm font-medium" data-testid="text-detail-description">{project.description || "—"}</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Start Date</p>
+              <p className="text-sm font-medium" data-testid="text-detail-start">{project.startDate || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">End Date</p>
+              <p className="text-sm font-medium" data-testid="text-detail-end">{project.endDate || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Budget</p>
+              <p className="text-sm font-medium" data-testid="text-detail-budget">{formatCurrency(project.budgetAmount)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Contract Value</p>
+              <p className="text-sm font-medium" data-testid="text-detail-contract-value">{formatCurrency(project.contractValue)}</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProjectDetail() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -112,51 +162,7 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Project Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Name</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-name">{project.name}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Client</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-client">{project.client || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Contract Type</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-contract">{project.contractType || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Description</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-description">{project.description || "—"}</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Start Date</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-start">{project.startDate || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">End Date</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-end">{project.endDate || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Budget</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-budget">{formatCurrency(project.budgetAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Contract Value</p>
-                    <p className="text-sm font-medium" data-testid="text-detail-contract-value">{formatCurrency(project.contractValue)}</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ProjectOverviewTab project={project} />
         </TabsContent>
 
         <TabsContent value="kpis">
@@ -164,7 +170,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingKpis ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`kpi-skeleton-${i}`} className="h-10 w-full" />)}
+                  {[1, 2, 3].map(n => <Skeleton key={`kpi-skeleton-${n}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -207,7 +213,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingCosts ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`cost-skeleton-${i}`} className="h-10 w-full" />)}
+                  {[1, 2, 3].map(n => <Skeleton key={`cost-skeleton-${n}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -248,7 +254,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingMilestones ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`ms-skeleton-${i}`} className="h-10 w-full" />)}
+                  {[1, 2, 3].map(n => <Skeleton key={`ms-skeleton-${n}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -289,7 +295,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingResources ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`rp-skeleton-${i}`} className="h-10 w-full" />)}
+                  {[1, 2, 3].map(n => <Skeleton key={`rp-skeleton-${n}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>

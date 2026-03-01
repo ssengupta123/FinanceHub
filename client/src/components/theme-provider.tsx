@@ -13,14 +13,14 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 function getInitialTheme(): Theme {
-  if (typeof globalThis.window !== "undefined") {
+  if (globalThis.window !== undefined) {
     const stored = globalThis.localStorage.getItem("theme");
     if (stored === "dark" || stored === "light") return stored;
   }
   return "light";
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {

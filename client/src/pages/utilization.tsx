@@ -214,11 +214,11 @@ function RollingViewRow({ row, weekColumns, expandedRows, setExpandedRows, allAc
       >
         <TableCell className="font-medium sticky left-0 bg-background z-10">
           <div className="flex items-center gap-2">
-            {hasProjects ? (
-              isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />
-            )}
+            {(() => {
+              if (!hasProjects) return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />;
+              if (isExpanded) return <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
+              return <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
+            })()}
             {row.name}
             {hasProjects && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{uniqueProjectIds.size}p</Badge>}
           </div>
@@ -599,13 +599,13 @@ export default function UtilizationDashboard() {
           </p>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> Good (80-100%)
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /><span>Good (80-100%)</span>
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" /> Fair (50-79%)
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" /><span>Fair (50-79%)</span>
             </span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> Risk (&lt;50% or &gt;100%)
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /><span>Risk (&lt;50% or &gt;100%)</span>
             </span>
           </div>
         </div>

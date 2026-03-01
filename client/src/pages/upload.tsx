@@ -377,7 +377,7 @@ export default function UploadPage() {
                             )}
                           </>
                         )}
-                        {isImportable ? null : (
+                        {!isImportable && (
                           <Badge variant="secondary">Preview only</Badge>
                         )}
                       </div>
@@ -396,7 +396,10 @@ export default function UploadPage() {
                     disabled={importing || selectedSheets.size === 0}
                     data-testid="button-import"
                   >
-                    {importing ? "Importing..." : `Import ${selectedSheets.size} Sheet${selectedSheets.size !== 1 ? "s" : ""}`}
+                    {(() => {
+                      if (importing) return "Importing...";
+                      return `Import ${selectedSheets.size} Sheet${selectedSheets.size === 1 ? "" : "s"}`;
+                    })()}
                   </Button>
                 )}
               </div>
@@ -687,7 +690,7 @@ function VatPptxUpload() {
       const data = await res.json();
       toast({
         title: "VAT Reports Deleted",
-        description: `${data.deleted} VAT report${data.deleted !== 1 ? "s" : ""} and all associated data have been removed.`,
+        description: `${data.deleted} VAT report${data.deleted === 1 ? "" : "s"} and all associated data have been removed.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports/latest"] });
@@ -750,7 +753,7 @@ function VatPptxUpload() {
       const totalImported = Object.values(data.results as Record<string, VatImportResult>).filter(r => r.imported).length;
       toast({
         title: "Import Complete",
-        description: `${totalImported} VAT report${totalImported !== 1 ? "s" : ""} imported successfully`,
+        description: `${totalImported} VAT report${totalImported === 1 ? "" : "s"} imported successfully`,
       });
 
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
@@ -952,16 +955,16 @@ function VatPptxUpload() {
                     <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                       <Badge variant="secondary">{report.risksCount} risks</Badge>
                       <Badge variant="secondary">{report.plannerTasksCount} tasks</Badge>
-                      {result && result.imported && (
+                      {result?.imported && (
                         <Badge variant="default">
                           <CheckCircle className="h-3 w-3 mr-1" />
                           Imported
                         </Badge>
                       )}
-                      {result && result.errors.length > 0 && (
+                      {(result?.errors?.length ?? 0) > 0 && (
                         <Badge variant="destructive">
                           <AlertCircle className="h-3 w-3 mr-1" />
-                          {result.errors.length} errors
+                          {result?.errors.length} errors
                         </Badge>
                       )}
                     </div>
@@ -980,7 +983,10 @@ function VatPptxUpload() {
                   disabled={importing || selectedVats.size === 0}
                   data-testid="button-import-pptx"
                 >
-                  {importing ? "Importing..." : `Import ${selectedVats.size} VAT Report${selectedVats.size !== 1 ? "s" : ""}`}
+                  {(() => {
+                    if (importing) return "Importing...";
+                    return `Import ${selectedVats.size} VAT Report${selectedVats.size === 1 ? "" : "s"}`;
+                  })()}
                 </Button>
               )}
             </div>

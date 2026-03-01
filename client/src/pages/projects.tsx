@@ -55,7 +55,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
-function formatCurrency(val: string | number | null | undefined): string {
+type NumericValue = string | number | null | undefined;
+
+function formatCurrency(val: NumericValue): string {
   if (val === null || val === undefined) return "$0";
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0";
@@ -64,13 +66,13 @@ function formatCurrency(val: string | number | null | undefined): string {
   return `$${n.toFixed(0)}`;
 }
 
-function parseNum(val: string | number | null | undefined): number {
+function parseNum(val: NumericValue): number {
   if (val === null || val === undefined) return 0;
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return Number.isNaN(n) ? 0 : n;
 }
 
-function formatPercent(val: string | number | null | undefined): string {
+function formatPercent(val: NumericValue): string {
   if (val === null || val === undefined) return "0%";
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "0%";
@@ -199,7 +201,7 @@ function MonthlyDetail({ projectId }: Readonly<{ projectId: number }>) {
                     const val = m ? parseNum(m[type]) : 0;
                     total += val;
                     return (
-                      <TableCell key={i} className="text-right text-sm" data-testid={`monthly-${type}-m${i + 1}-${projectId}`}>
+                      <TableCell key={`month-${type}-${i + 1}`} className="text-right text-sm" data-testid={`monthly-${type}-m${i + 1}-${projectId}`}>
                         {formatCurrency(val)}
                       </TableCell>
                     );
@@ -238,7 +240,7 @@ export default function ProjectsList() {
   const { data: projects, isLoading } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: projectMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
   const { data: targets } = useQuery<{ revenue_target: number; margin_target: number; utilisation_target: number }>({ queryKey: ["/api/financial-targets", selectedFY], queryFn: () => fetch(`/api/financial-targets/${selectedFY}`).then(r => r.json()) });
-  const MARGIN_TARGET = targets?.margin_target ?? 0.20;
+  const MARGIN_TARGET = targets?.margin_target ?? 0.2;
 
   const availableFYs = useMemo(() => {
     if (!projectMonthly) return [getCurrentFy()];
@@ -593,7 +595,7 @@ export default function ProjectsList() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-12 w-full" />)}
+              {[1, 2, 3, 4, 5].map(n => <Skeleton key={`skeleton-${n}`} className="h-12 w-full" />)}
             </div>
           ) : (
             <div className="overflow-x-auto">

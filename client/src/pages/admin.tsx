@@ -255,7 +255,7 @@ function VatFinancialTargetsEditor() {
   const setFieldValue = (metric: string, tier: string, value: string) => {
     setEditValues(prev => ({
       ...prev,
-      [metric]: { ...(prev[metric] || {}), [tier]: value },
+      [metric]: { ...prev[metric], [tier]: value },
     }));
   };
 
@@ -277,6 +277,11 @@ function VatFinancialTargetsEditor() {
     },
   });
 
+  const parseVal = (v: string) => {
+    const n = Number.parseFloat(v);
+    return Number.isNaN(n) ? null : n;
+  };
+
   const handleSaveAll = async () => {
     if (!selectedVat) {
       toast({ title: "Please select a VAT first", variant: "destructive" });
@@ -291,11 +296,6 @@ function VatFinancialTargetsEditor() {
       const amazing = getFieldValue(m.key, "targetAmazing");
 
       if (!ok && !good && !great && !amazing) continue;
-
-      const parseVal = (v: string) => {
-        const n = Number.parseFloat(v);
-        return Number.isNaN(n) ? null : n;
-      };
 
       await saveMutation.mutateAsync({
         vatName: selectedVat,
@@ -505,12 +505,12 @@ function PermissionsManager() {
     const key = `${role}:${resource}:${action}`;
     const current = permSet.has(key);
     const changeVal = changes[key];
-    if (changeVal !== undefined) {
+    if (changeVal === undefined) {
+      setChanges(prev => ({ ...prev, [key]: !current }));
+    } else {
       const newChanges = { ...changes };
       delete newChanges[key];
       setChanges(newChanges);
-    } else {
-      setChanges(prev => ({ ...prev, [key]: !current }));
     }
   }, [permSet, changes]);
 

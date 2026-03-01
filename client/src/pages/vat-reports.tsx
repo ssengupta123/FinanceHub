@@ -132,7 +132,7 @@ function VatReportStatusSection({ report, onUpdate }: Readonly<{ report: VatRepo
   };
 
   const overallStatus = (report.overallStatus || "").toUpperCase();
-  const reportData: Record<string, string | null | undefined> = report as any;
+  const reportData: Record<string, string | null | undefined> = report as Record<string, string | null | undefined>;
 
   if (editing) {
     return (
@@ -393,7 +393,7 @@ function RiskEditDialog({ risk, isNew, employees, onSave, onCancel, isPending }:
   onCancel: () => void;
   isPending: boolean;
 }>) {
-  const riskId = isNew ? "new" : (risk as Partial<VatRisk> & { id?: number })?.id;
+  const riskId = isNew ? "new" : risk.id;
   const [form, setForm] = useState<Partial<VatRisk>>({ ...risk });
   const [trackedId, setTrackedId] = useState(riskId);
   if (trackedId !== riskId) {
@@ -1481,7 +1481,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
             {s}
           </button>
           <span className={`text-[10px] ${step === s ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-            {s === 1 ? "Risks" : (s === 2 ? "Planner Actions" : "Generate")}
+            {(() => { if (s === 1) return "Risks"; if (s === 2) return "Planner Actions"; return "Generate"; })()}
           </span>
           {s < 3 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />}
         </div>

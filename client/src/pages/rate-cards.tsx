@@ -101,7 +101,7 @@ export default function RateCards() {
   const [sortAsc, setSortAsc] = useState(false);
   const [filterText, setFilterText] = useState("");
 
-  const { data: rateCards, isLoading: loadingManual } = useQuery<RateCard[]>({ queryKey: ["/api/rate-cards"] });
+  const { data: rateCards } = useQuery<RateCard[]>({ queryKey: ["/api/rate-cards"] });
   const { data: derivedRates, isLoading: loadingDerived } = useQuery<DerivedRate[]>({ queryKey: ["/api/rate-cards/derived"] });
 
   const createMutation = useMutation({
@@ -378,8 +378,8 @@ export default function RateCards() {
               </TableHeader>
               <TableBody>
                 {loadingDerived && (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
+                  [1, 2, 3, 4, 5].map(n => (
+                    <TableRow key={`skeleton-row-${n}`}>{[1, 2, 3, 4, 5, 6, 7].map(c => (<TableCell key={`skeleton-cell-${n}-${c}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
                   ))
                 )}
                 {!loadingDerived && filteredDerived.length === 0 && (

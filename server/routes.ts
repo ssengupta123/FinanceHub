@@ -64,6 +64,376 @@ function requirePermission(resource: string, action: string) {
   };
 }
 
+function getOppMonthlyRevenues(opp: any): (string | null)[] {
+  return [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
+    opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
+}
+
+function sumRevenues(monthRevs: (string | null)[]): number {
+  return monthRevs.reduce((s: number, v) => s + Number.parseFloat(v || "0"), 0);
+}
+
+function buildPipelineInsightPrompt(pipelineOpps: any[], projects: any[]): string {
+  const classGroups: Record<string, number> = {};
+  let totalWeighted = 0;
+  const oppDetails: string[] = [];
+  const winRate: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
+  pipelineOpps.forEach(opp => {
+    const cls = opp.classification || "Unknown";
+    const monthRevs = getOppMonthlyRevenues(opp);
+    const total = sumRevenues(monthRevs);
+    classGroups[cls] = (classGroups[cls] || 0) + total;
+    totalWeighted += total * (winRate[cls] || 0);
+    const zeroMonths = monthRevs.filter(v => Number.parseFloat(v || "0") === 0).length;
+    const h1 = sumRevenues(monthRevs.slice(0, 6));
+    const h2 = sumRevenues(monthRevs.slice(6));
+    oppDetails.push(`  - "${opp.name}" [${cls}] VAT:${opp.vat || "?"} Total:$${total.toLocaleString()} H1:$${h1.toLocaleString()} H2:$${h2.toLocaleString()} ZeroMonths:${zeroMonths}/12`);
+  });
+  const totalPipeline = Object.values(classGroups).reduce((s, v) => s + v, 0);
+  const committedPct = totalPipeline > 0 ? ((classGroups["C"] || 0) / totalPipeline * 100).toFixed(1) : "0";
+  const earlyPct = totalPipeline > 0 ? (((classGroups["Q"] || 0) + (classGroups["A"] || 0)) / totalPipeline * 100).toFixed(1) : "0";
+  const classBreakdown = Object.entries(classGroups).map(([k, v]) => { const pct = totalPipeline > 0 ? (v / totalPipeline * 100).toFixed(1) : "0"; return `- ${k}: $${v.toLocaleString()} (${pct}%)`; }).join("\n");
+  return `Identify ALL risks in our sales pipeline. Be specific - name each opportunity that has problems.
+
+Pipeline Data (${pipelineOpps.length} opportunities, Total: $${totalPipeline.toLocaleString()}, Weighted: $${totalWeighted.toLocaleString()}):
+Classification breakdown:
+${classBreakdown}
+
+Committed (C) as % of total: ${committedPct}%
+Early-stage (Q+A) as % of total: ${earlyPct}%
+Active projects that could absorb pipeline: ${projects.filter((p: any) => p.status === "active").length}
+
+Individual Opportunities:
+${oppDetails.join("\n")}
+
+Identify risks including:
+- Concentration risk: too much revenue dependent on few opportunities or one classification
+- Conversion risk: opportunities stuck in early stages with large values
+- Revenue gap risk: months with zero or very low revenue across opportunities
+- Client/VAT concentration: over-reliance on specific VAT categories
+- H1 vs H2 imbalance: is revenue front-loaded or back-loaded?
+- Pipeline coverage ratio: is weighted pipeline sufficient vs target revenue?
+- Stale opportunities: large deals in low-probability stages (Q/A)`;
+}
+
+function buildProjectInsightPrompt(projects: any[], projectMonthly: any[]): string {
+  const projectSummaries = projects.map((p: any) => {
+    const monthly = projectMonthly.filter((m: any) => m.projectId === p.id);
+    const totalRev = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
+    const totalCost = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
+    const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
+    const monthlyMargins = monthly.map((m: any) => {
+      const r = Number.parseFloat(m.revenue || "0");
+      const c = Number.parseFloat(m.cost || "0");
+      return r > 0 ? ((r - c) / r * 100).toFixed(0) : "N/A";
+    });
+    const costTrend = monthly.slice(-3).map((m: any) => `$${Number.parseFloat(m.cost || "0").toLocaleString()}`).join(" -> ");
+    const wo = Number.parseFloat(p.workOrderAmount || "0");
+    const actual = Number.parseFloat(p.actualAmount || "0");
+    const balance = Number.parseFloat(p.balanceAmount || "0");
+    const burnPct = wo > 0 ? ((actual / wo) * 100).toFixed(0) : "N/A";
+    return `  - "${p.name}" [${p.billingCategory || "?"}] VAT:${p.vat || "?"} Status:${p.status} AD:${p.adStatus || "?"}
+    Revenue:$${totalRev.toLocaleString()} Cost:$${totalCost.toLocaleString()} Margin:${margin}%
+    WorkOrder:$${wo.toLocaleString()} Actual:$${actual.toLocaleString()} Balance:$${balance.toLocaleString()} BurnRate:${burnPct}%
+    MonthlyMargins:[${monthlyMargins.join(", ")}] RecentCostTrend:${costTrend}`;
+  }).join("\n");
+  return `Identify ALL risks across our project portfolio. Name each project that has issues.
+
+Project Data (${projects.length} total):
+${projectSummaries}
+
+Identify risks including:
+- Margin erosion: projects where margin is below 20% or trending downward month-over-month
+- Budget overrun: projects where actual spend exceeds work order amount or balance is negative
+- Cost blowout: projects where costs are increasing month-over-month without matching revenue growth
+- Fixed-price risk: Fixed projects with low margins (cost overruns can't be recovered)
+- Stalled projects: projects with "pending" or unusual AD status
+- Revenue concentration: too much revenue from one or two projects
+- T&M leakage: T&M projects where billable rates may not cover costs
+- Forecast vs actual gaps: projects where forecasted revenue differs significantly from actual trajectory`;
+}
+
+function buildSpendingDataContext(projects: any[], projectMonthly: any[], pipelineOpps: any[], employees: any[], resourceCosts: any[]): string {
+  const activeProjects = projects.filter((p: any) => p.status === "active" || p.adStatus === "Active");
+  const permEmployees = employees.filter((e: any) => e.staffType === "Permanent");
+  const monthlySpend: Record<string, { revenue: number; cost: number; profit: number }> = {};
+  projectMonthly.forEach((m: any) => {
+    const key = `${m.fyYear}-M${m.month}`;
+    if (!monthlySpend[key]) monthlySpend[key] = { revenue: 0, cost: 0, profit: 0 };
+    monthlySpend[key].revenue += Number.parseFloat(m.revenue || "0");
+    monthlySpend[key].cost += Number.parseFloat(m.cost || "0");
+    monthlySpend[key].profit += Number.parseFloat(m.revenue || "0") - Number.parseFloat(m.cost || "0");
+  });
+  const billingBreakdown: Record<string, { revenue: number; cost: number }> = {};
+  projects.forEach((p: any) => {
+    const cat = p.billingCategory || "Other";
+    const pm = projectMonthly.filter((m: any) => m.projectId === p.id);
+    const rev = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
+    const cost = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
+    if (!billingBreakdown[cat]) billingBreakdown[cat] = { revenue: 0, cost: 0 };
+    billingBreakdown[cat].revenue += rev;
+    billingBreakdown[cat].cost += cost;
+  });
+  const topCostProjects = projects.map((p: any) => {
+    const pm = projectMonthly.filter((m: any) => m.projectId === p.id);
+    const totalCost = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
+    const totalRev = pm.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
+    const monthCosts = [...pm].sort((a: any, b: any) => (a.month ?? 0) - (b.month ?? 0)).map((m: any) => Number.parseFloat(m.cost || "0"));
+    return { name: p.name, code: p.projectCode, billing: p.billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
+  }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
+  const staffCostSummary = resourceCosts.map((rc: any) => ({
+    name: rc.employee_name, staffType: rc.staff_type, phase: rc.cost_phase, total: Number.parseFloat(rc.total_cost || "0"),
+  }));
+  const totalStaffCost = staffCostSummary.reduce((s: number, r: any) => s + r.total, 0);
+  const permCost = staffCostSummary.filter((r: any) => r.staffType === "Permanent").reduce((s: number, r: any) => s + r.total, 0);
+  const contractorCost = staffCostSummary.filter((r: any) => r.staffType === "Contractor").reduce((s: number, r: any) => s + r.total, 0);
+  const monthlySpendStr = Object.entries(monthlySpend).sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Profit $${v.profit.toLocaleString()}`).join("\n");
+  const billingStr = Object.entries(billingBreakdown)
+    .map(([k, v]) => { const marginPct = v.revenue > 0 ? ((v.revenue - v.cost) / v.revenue * 100).toFixed(1) : "0"; return `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Margin ${marginPct}%`; }).join("\n");
+  const topProjectsStr = topCostProjects.map(p => {
+    const trendStr = p.monthCosts.map(c => `$${c.toLocaleString()}`).join(",");
+    return `  "${p.name}" [${p.billing || "?"}]: Cost $${p.totalCost.toLocaleString()} Rev $${p.totalRev.toLocaleString()} Margin:${p.margin}% Trend:[${trendStr}]`;
+  }).join("\n");
+  return `Organization Financial Data:
+- Active Projects: ${activeProjects.length} / ${projects.length} total
+- Permanent Employees: ${permEmployees.length} / ${employees.length} total
+- Total Staff Cost (resource_costs): $${totalStaffCost.toLocaleString()} (Permanent: $${permCost.toLocaleString()}, Contractor: $${contractorCost.toLocaleString()})
+- Pipeline Opportunities: ${pipelineOpps.length}
+
+Monthly Spend Pattern (by FY-Month):
+${monthlySpendStr}
+
+Billing Category Breakdown:
+${billingStr}
+
+Top 20 Projects by Cost:
+${topProjectsStr}`;
+}
+
+function buildOverviewInsightPrompt(kpis: any[], projects: any[], pipelineOpps: any[], projectMonthly: any[]): string {
+  const totalRevenue = kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.revenue || "0"), 0);
+  const totalCost = kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.grossCost || "0"), 0);
+  const avgMargin = kpis.length > 0
+    ? (kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1) : "0";
+  const avgUtil = kpis.length > 0
+    ? (kpis.reduce((s: number, k: any) => s + Number.parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1) : "0";
+  const classGroups: Record<string, number> = {};
+  pipelineOpps.forEach((opp: any) => {
+    const cls = opp.classification || "Unknown";
+    const total = sumRevenues(getOppMonthlyRevenues(opp));
+    classGroups[cls] = (classGroups[cls] || 0) + total;
+  });
+  const projectRisks = projects.map((p: any) => {
+    const monthly = projectMonthly.filter((m: any) => m.projectId === p.id);
+    const totalRev = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.revenue || "0"), 0);
+    const totalProjectCost = monthly.reduce((s: number, m: any) => s + Number.parseFloat(m.cost || "0"), 0);
+    const margin = totalRev > 0 ? ((totalRev - totalProjectCost) / totalRev * 100).toFixed(1) : "0";
+    const balance = Number.parseFloat(p.balanceAmount || "0");
+    return { name: p.name, margin: Number.parseFloat(margin), balance, totalRev, status: p.status };
+  });
+  const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
+  const negativeBalance = projectRisks.filter(p => p.balance < 0).map(p => `${p.name} ($${p.balance.toLocaleString()})`);
+  const topRevProject = [...projectRisks].sort((a, b) => b.totalRev - a.totalRev)[0];
+  const revConcentration = topRevProject && totalRevenue > 0 ? (topRevProject.totalRev / totalRevenue * 100).toFixed(1) : "0";
+  const grossMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue * 100).toFixed(1) : "0";
+  return `Identify the top risks facing this organization RIGHT NOW. Be specific and blunt.
+
+Financial Position:
+- Total Revenue: $${totalRevenue.toLocaleString()}
+- Total Cost: $${totalCost.toLocaleString()}
+- Gross Margin: ${grossMargin}%
+- Average Project Margin: ${avgMargin}%
+- Average Utilization: ${avgUtil}%
+- Active Projects: ${projects.filter((p: any) => p.status === "active").length} / ${projects.length} total
+
+Pipeline Coverage:
+${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()}`).join("\n")}
+
+Red Flag Data:
+- Projects with margin below 20%: ${lowMarginProjects.length > 0 ? lowMarginProjects.join(", ") : "None"}
+- Projects with negative balance: ${negativeBalance.length > 0 ? negativeBalance.join(", ") : "None"}
+- Largest project is ${revConcentration}% of total revenue (${topRevProject?.name || "N/A"})
+- Pipeline opportunities: ${pipelineOpps.length}
+
+Produce a RISK REGISTER with:
+1. Each risk rated CRITICAL / HIGH / MEDIUM / LOW
+2. The specific data point that triggered the risk
+3. What happens if we do nothing (impact)
+4. Recommended immediate action
+Focus on risks that could materially hurt revenue, margin, or cash flow in the next 6 months.`;
+}
+
+function getSpendingSystemPrompt(type: string): string {
+  if (type === "spending_patterns") {
+    return `You are a senior financial analyst specializing in spending pattern analysis for an Australian professional services firm. Use Australian Financial Year (Jul-Jun). Provide data-driven analysis with specific numbers.`;
+  }
+  if (type === "financial_advice") {
+    return `You are a strategic financial advisor for an Australian professional services firm. Provide actionable, specific financial advice based on real data. Use Australian Financial Year (Jul-Jun). Be direct and practical — this is for senior leadership decision-making.`;
+  }
+  return `You are a financial forecasting expert for an Australian professional services firm. Use historical spending data to predict future trends. Use Australian Financial Year (Jul-Jun). Be specific with projections and clearly state your confidence level and assumptions.`;
+}
+
+function getSpendingUserPrompt(type: string, dataContext: string): string {
+  if (type === "spending_patterns") {
+    return `Analyze our spending patterns in detail. Identify trends, anomalies, and areas of concern.
+
+${dataContext}
+
+Provide analysis on:
+1. **Monthly Spending Trends**: Are costs increasing, stable, or decreasing? Identify any spikes or dips and what might be driving them.
+2. **Cost Concentration**: Which projects consume the most resources? Is there unhealthy concentration?
+3. **Billing Type Economics**: How do Fixed vs T&M projects compare on cost efficiency and margins?
+4. **Staff Cost Structure**: What's the permanent vs contractor cost mix? Is it optimal?
+5. **Seasonal Patterns**: Are there predictable quarterly or monthly patterns in spend?
+6. **Cost Anomalies**: Flag any unusual cost movements that warrant investigation.
+
+Use specific project names and dollar amounts. Include month-over-month or quarter-over-quarter comparisons where relevant.`;
+  }
+  if (type === "financial_advice") {
+    return `Based on our financial data, provide strategic financial advice and actionable recommendations.
+
+${dataContext}
+
+Provide advice across these areas:
+1. **Margin Improvement**: Which projects or billing categories have the most margin improvement potential? What specific actions should we take?
+2. **Cost Optimization**: Where can we reduce costs without impacting delivery? Are there projects where costs are out of proportion to revenue?
+3. **Revenue Growth Opportunities**: Based on current project performance, where should we invest more? Which clients or work types are most profitable?
+4. **Workforce Strategy**: Is our permanent/contractor mix optimal? Should we convert contractors to permanent or vice versa based on cost data?
+5. **Cash Flow Management**: Based on spending patterns, are there cash flow risks we should plan for?
+6. **Portfolio Rebalancing**: Should we shift focus between Fixed and T&M work based on margin performance?
+
+For each recommendation, provide: the specific opportunity, estimated financial impact, and suggested timeline.`;
+  }
+  return `Based on our historical spending data, predict future spending trends and financial trajectory.
+
+${dataContext}
+
+Provide forecasts and predictions on:
+1. **Revenue Trajectory**: Based on monthly trends, project the next 3-6 months of revenue. Are we on track to meet targets?
+2. **Cost Trajectory**: Where are costs heading? Project next quarter costs based on recent trends.
+3. **Margin Forecast**: Will margins improve or deteriorate? Which factors will drive this?
+4. **Resource Cost Projections**: Based on staff cost data, what's the expected cost base going forward?
+5. **Project Completion Risk**: Based on burn rates and remaining budgets, which projects are at risk of cost overrun in the coming months?
+6. **Pipeline Revenue Timing**: When will current pipeline opportunities likely convert to revenue? What's the expected revenue ramp?
+7. **Seasonal Adjustments**: Account for any seasonal patterns (e.g., Q4 slowdown, new FY ramp-up) in your forecasts.
+
+For each prediction, state your confidence level (High/Medium/Low) and the key assumptions. Include best-case and worst-case scenarios where appropriate.`;
+}
+
+async function streamAIResponse(openai: OpenAI, systemPrompt: string, userPrompt: string, res: any): Promise<void> {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  const stream = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    stream: true,
+    max_tokens: 2048,
+  });
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content || "";
+    if (content) {
+      res.write(`data: ${JSON.stringify({ content })}\n\n`);
+    }
+  }
+  res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+  res.end();
+}
+
+async function findOrCreateEmployeeForImport(
+  empMap: Map<string, number>, empCodes: Set<string>, counterRef: { value: number },
+  firstName: string, lastName: string, role: string | null,
+): Promise<number> {
+  const fullName = `${firstName} ${lastName}`.toLowerCase();
+  const existing = empMap.get(fullName);
+  if (existing) return existing;
+  let empCode = `E${counterRef.value++}`;
+  while (empCodes.has(empCode)) empCode = `E${counterRef.value++}`;
+  empCodes.add(empCode);
+  const newEmp = await storage.createEmployee({
+    employeeCode: empCode, firstName, lastName,
+    email: null, role: role || "Staff",
+    costBandLevel: null, staffType: null, grade: null, location: null,
+    costCenter: null, securityClearance: null, payrollTax: false, payrollTaxRate: null,
+    baseCost: "0", grossCost: "0", baseSalary: null,
+    status: "active", startDate: null, endDate: null,
+    scheduleStart: null, scheduleEnd: null, resourceGroup: null,
+    team: null, jid: null, onboardingStatus: "completed",
+  });
+  empMap.set(fullName, newEmp.id);
+  return newEmp.id;
+}
+
+async function findOrCreateProjectForImport(
+  projMap: Map<string, number>, projCodes: Set<string>, counterRef: { value: number },
+  origName: string,
+): Promise<number> {
+  const projName = origName.trim().toLowerCase();
+  const existing = projMap.get(projName);
+  if (existing) return existing;
+  const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
+  const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(origName);
+  let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${counterRef.value++}`;
+  while (projCodes.has(pCode)) pCode = `INT${counterRef.value++}`;
+  projCodes.add(pCode);
+  let clientName = "Unknown";
+  if (codeParts) {
+    clientName = codeParts[1].replaceAll(/[\d-]/g, '');
+  } else if (isInternal) {
+    clientName = "Internal";
+  }
+  const newProj = await storage.createProject({
+    projectCode: pCode, name: origName.substring(0, 200), client: clientName,
+    clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
+    contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
+    recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
+    startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
+    balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
+    varianceAtCompletion: "0", variancePercent: "0", varianceToContractPercent: "0", writeOff: "0",
+    opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
+    gpAtCompletion: "0", forecastGmPercent: "0", description: null,
+  });
+  projMap.set(projName, newProj.id);
+  return newProj.id;
+}
+
+function fuzzyMatchProjectId(
+  engagementName: string,
+  projByName: Map<string, number>,
+  projByBaseCode: Map<string, number>,
+): number | null {
+  const exactMatch = projByName.get(engagementName.toLowerCase());
+  if (exactMatch) return exactMatch;
+  const codePart = /^([A-Z]{2,6}\d{2,4})/i.exec(engagementName);
+  if (codePart) {
+    const baseMatch = projByBaseCode.get(codePart[1].toLowerCase());
+    if (baseMatch) return baseMatch;
+  }
+  const entries = Array.from(projByName.entries());
+  for (const [key, id] of entries) {
+    if (engagementName.toLowerCase().includes(key) || key.includes(engagementName.toLowerCase())) {
+      return id;
+    }
+  }
+  return null;
+}
+
+function mapPlannerProgress(percentComplete: number): string {
+  if (percentComplete === 100) return "Completed";
+  if (percentComplete > 0) return "In progress";
+  return "Not started";
+}
+
+function mapPlannerPriority(priority: number | undefined): string {
+  if (priority === 1) return "Important";
+  if (priority === 5) return "Low";
+  return "Medium";
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1449,7 +1819,7 @@ Rules:
 
 Pipeline Data (${pipelineOpps.length} opportunities, Total: $${totalPipeline.toLocaleString()}, Weighted: $${totalWeighted.toLocaleString()}):
 Classification breakdown:
-${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()} (${totalPipeline > 0 ? (v / totalPipeline * 100).toFixed(1) : 0}%)`).join("\n")}
+${Object.entries(classGroups).map(([k, v]) => { const pct = totalPipeline > 0 ? (v / totalPipeline * 100).toFixed(1) : "0"; return `- ${k}: $${v.toLocaleString()} (${pct}%)`; }).join("\n")}
 
 Committed (C) as % of total: ${committedPct}%
 Early-stage (Q+A) as % of total: ${earlyPct}%
@@ -1913,7 +2283,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
     for (const [key, value] of Object.entries(req.body)) {
       const oldVal = (existing as any)[key];
       if (oldVal !== value) {
-        changes.push({ field: key, old: oldVal ?? null, new_: (value as string) ?? null });
+        changes.push({ field: key, old: oldVal ?? null, new_: (value ?? null) as string | null });
       }
     }
     const updated = await storage.updateVatReport(id, req.body);
@@ -2094,7 +2464,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
           try {
             const client = await getMsalClient();
             if (client) {
-              const accounts = await (client as any).getTokenCache().getAllAccounts();
+              const accounts = await client.getTokenCache().getAllAccounts();
               const account = accounts.find((a: any) => a.homeAccountId === accountKey);
               if (account) {
                 const silentResult = await client.acquireTokenSilent({
@@ -2389,7 +2759,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             if (pct === 100) status = "Completed";
             else if (pct > 0) status = "In Progress";
             const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
-            const taskEntry = assignees ? `${pt.title} [${status}] (${assignees})` : `${pt.title} [${status}]`;
+            const titleStatus = `${pt.title} [${status}]`;
+            const taskEntry = assignees ? `${titleStatus} (${assignees})` : titleStatus;
             bucketGroups[bName].push(taskEntry);
           }
 
@@ -2934,7 +3305,7 @@ async function dispatchSheetImport(sheetName: string, ws: XLSX.WorkSheet): Promi
 
 function parseExcelNumericDate(val: number): string | null {
   const d = XLSX.SSF.parse_date_code(val);
-  if (!d || !d.y) return null;
+  if (!d?.y) return null;
   return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
 }
 
@@ -3504,7 +3875,7 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
         employeeId,
         engagementName,
         checkPointDate,
-        cxRating: Number.isNaN(cxRating as number) ? null : cxRating,
+        cxRating: cxRating === null || Number.isNaN(cxRating) ? null : cxRating,
         resourceName,
         isClientManager: String(r[4] || "").toUpperCase() === "Y",
         isDeliveryManager: String(r[5] || "").toUpperCase() === "Y",
@@ -3612,7 +3983,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
 
       const dvfNameCol = 17;
       const dvfName = r[dvfNameCol] ? String(r[dvfNameCol]).trim() : null;
-      if (dvfName?.toLowerCase() !== "name" && dvfName) {
+      if (dvfName && dvfName.toLowerCase() !== "name") {
         const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
         const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
         let totalDVF = 0;

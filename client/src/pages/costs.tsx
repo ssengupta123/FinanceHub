@@ -351,8 +351,8 @@ export default function Costs() {
               <TableBody>
                 {(() => {
                   if (isLoading) {
-                    return Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 8 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
+                    return [1, 2, 3, 4, 5].map(n => (
+                      <TableRow key={`skeleton-row-${n}`}>{[1, 2, 3, 4, 5, 6, 7, 8].map(c => (<TableCell key={`skeleton-cell-${n}-${c}`}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
                     ));
                   }
                   if (filteredSummary.length === 0) {

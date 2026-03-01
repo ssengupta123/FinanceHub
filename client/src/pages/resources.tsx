@@ -184,7 +184,7 @@ export default function Resources() {
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
   const { data: timesheets } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets" + (selectedFY !== "all" ? "?fy=" + selectedFY : "")],
+    queryKey: ["/api/timesheets" + (selectedFY === "all" ? "" : "?fy=" + selectedFY)],
   });
   const { data: allUsers } = useQuery<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>>({ queryKey: ["/api/users"] });
 
@@ -708,7 +708,7 @@ export default function Resources() {
                               <PopoverContent className="w-72 p-3" align="start">
                                 <div className="space-y-3">
                                   <p className="text-sm font-medium">Assign User Account</p>
-                                  {allUsers && allUsers.some(u => !linkedUserIds.has(u.id)) && (
+                                  {allUsers?.some(u => !linkedUserIds.has(u.id)) && (
                                     <div className="space-y-1">
                                       <Label className="text-xs">Link Existing User</Label>
                                       <Select

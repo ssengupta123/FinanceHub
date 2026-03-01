@@ -10,7 +10,6 @@ import { CheckCircle2, Circle, UserPlus, Users } from "lucide-react";
 import type { Employee, OnboardingStep } from "@shared/schema";
 
 export default function Onboarding() {
-  const { toast } = useToast();
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
 
   const onboardingEmployees = employees?.filter(e => e.onboardingStatus !== "completed" && e.status !== "inactive") || [];
@@ -64,26 +63,30 @@ export default function Onboarding() {
       </div>
 
       <div className="space-y-4">
-        {loadingEmployees ? (
-          Array.from({ length: 2 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-40 w-full" />)
-        ) : onboardingEmployees.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <Users className="h-10 w-10 text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">No employees currently being onboarded</p>
-            </CardContent>
-          </Card>
-        ) : (
-          onboardingEmployees.map(emp => (
+        {(() => {
+          if (loadingEmployees) {
+            return ["onboard-skel-1", "onboard-skel-2"].map(id => <Skeleton key={id} className="h-40 w-full" />);
+          }
+          if (onboardingEmployees.length === 0) {
+            return (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <Users className="h-10 w-10 text-muted-foreground mb-3" />
+                  <p className="text-sm text-muted-foreground">No employees currently being onboarded</p>
+                </CardContent>
+              </Card>
+            );
+          }
+          return onboardingEmployees.map(emp => (
             <OnboardingCard key={emp.id} employee={emp} />
-          ))
-        )}
+          ));
+        })()}
       </div>
     </div>
   );
 }
 
-function OnboardingCard({ employee }: { employee: Employee }) {
+function OnboardingCard({ employee }: Readonly<{ employee: Employee }>) {
   const { toast } = useToast();
   const { data: steps, isLoading } = useQuery<OnboardingStep[]>({
     queryKey: ["/api/employees", employee.id, "onboarding"],

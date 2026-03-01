@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { GitBranch, Filter, Settings2, AlertTriangle, Search, ArrowUpDown } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
 import { useState, useMemo } from "react";
 import type { PipelineOpportunity } from "@shared/schema";
 
@@ -107,6 +106,15 @@ type SortField = "name" | "value" | "margin" | "classification" | "status" | "du
 type SortDir = "asc" | "desc";
 
 const defaultVisible = new Set<PipelineColumnKey>(["name", "classification", "vat", "workType", "value", "margin", "weightedValue", "status", "dueDate", "casLead", "clientCode"]);
+
+function SortButton({ field, onToggle, children }: Readonly<{ field: SortField; onToggle: (field: SortField) => void; children: React.ReactNode }>) {
+  return (
+    <button onClick={() => onToggle(field)} className="inline-flex items-center gap-1 hover:text-foreground transition-colors" data-testid={`sort-${field}`}>
+      {children}
+      <ArrowUpDown className="h-3 w-3" />
+    </button>
+  );
+}
 
 export default function Pipeline() {
   const [classFilter, setClassFilter] = useState("all");
@@ -281,13 +289,6 @@ export default function Pipeline() {
   const totalWeightedValue = summaryByClass.reduce((s, c) => s + c.weightedValue, 0);
   const totalGP = summaryByClass.reduce((s, c) => s + c.totalGP, 0);
   const totalWeightedGP = summaryByClass.reduce((s, c) => s + c.weightedGP, 0);
-
-  const SortButton = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <button onClick={() => toggleSort(field)} className="inline-flex items-center gap-1 hover:text-foreground transition-colors" data-testid={`sort-${field}`}>
-      {children}
-      <ArrowUpDown className="h-3 w-3" />
-    </button>
-  );
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -538,15 +539,15 @@ export default function Pipeline() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {isCol("name") && <TableHead className="min-w-[250px]"><SortButton field="name">Opportunity</SortButton></TableHead>}
-                    {isCol("classification") && <TableHead><SortButton field="classification">Phase</SortButton></TableHead>}
+                    {isCol("name") && <TableHead className="min-w-[250px]"><SortButton field="name" onToggle={toggleSort}>Opportunity</SortButton></TableHead>}
+                    {isCol("classification") && <TableHead><SortButton field="classification" onToggle={toggleSort}>Phase</SortButton></TableHead>}
                     {isCol("vat") && <TableHead>VAT</TableHead>}
                     {isCol("workType") && <TableHead>Work Type</TableHead>}
-                    {isCol("value") && <TableHead className="text-right"><SortButton field="value">Value ($)</SortButton></TableHead>}
-                    {isCol("margin") && <TableHead className="text-right"><SortButton field="margin">Margin %</SortButton></TableHead>}
+                    {isCol("value") && <TableHead className="text-right"><SortButton field="value" onToggle={toggleSort}>Value ($)</SortButton></TableHead>}
+                    {isCol("margin") && <TableHead className="text-right"><SortButton field="margin" onToggle={toggleSort}>Margin %</SortButton></TableHead>}
                     {isCol("weightedValue") && <TableHead className="text-right">Weighted $</TableHead>}
-                    {isCol("status") && <TableHead><SortButton field="status">RAG</SortButton></TableHead>}
-                    {isCol("dueDate") && <TableHead><SortButton field="dueDate">Due Date</SortButton></TableHead>}
+                    {isCol("status") && <TableHead><SortButton field="status" onToggle={toggleSort}>RAG</SortButton></TableHead>}
+                    {isCol("dueDate") && <TableHead><SortButton field="dueDate" onToggle={toggleSort}>Due Date</SortButton></TableHead>}
                     {isCol("casLead") && <TableHead>CAS Lead</TableHead>}
                     {isCol("csdLead") && <TableHead>CSD Lead</TableHead>}
                     {isCol("category") && <TableHead>Category</TableHead>}
@@ -558,7 +559,6 @@ export default function Pipeline() {
                   {filtered.map(opp => {
                     const val = getOppValue(opp);
                     const margin = getOppMargin(opp);
-                    const gp = val * margin;
                     const weighted = val * (WIN_RATES[opp.classification] || 0);
                     const ragColor = STATUS_COLORS[opp.status || ""] || "";
                     return (
