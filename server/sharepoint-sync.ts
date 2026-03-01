@@ -149,29 +149,21 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   }
 }
 
-export async function syncSharePointOpenOpps(): Promise<{
-  imported: number;
-  errors: string[];
-  message: string;
-}> {
-  const errors: string[] = [];
-  let imported = 0;
+export function getSharePointConfig(): { domain: string; sitePath: string; listName: string } {
+  const domain = process.env.SHAREPOINT_DOMAIN;
+  const sitePath = process.env.SHAREPOINT_SITE_PATH;
+  const listName = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
 
-  const sharePointDomain = process.env.SHAREPOINT_DOMAIN;
-  const sharePointSite = process.env.SHAREPOINT_SITE_PATH;
-  const sharePointList = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
-
-  if (!sharePointDomain || !sharePointSite) {
+  if (!domain || !sitePath) {
     throw new Error(
       "Missing SharePoint config. Set SHAREPOINT_DOMAIN (e.g. yourcompany.sharepoint.com) and SHAREPOINT_SITE_PATH (e.g. /sites/Finance)."
     );
   }
 
-  const token = await getGraphToken();
+  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName };
+}
 
-  const siteHost = sharePointDomain;
-  const sitePath = sharePointSite.startsWith("/") ? sharePointSite : `/${sharePointSite}`;
-
+async function lookupSharePointSite(token: SharePointToken, siteHost: string, sitePath: string): Promise<string> {
   const siteUrl = `https://graph.microsoft.com/v1.0/sites/${siteHost}:${sitePath}`;
   console.log(`[SharePoint] Looking up site: ${siteUrl}`);
   const siteResp = await fetch(siteUrl, {
@@ -183,9 +175,11 @@ export async function syncSharePointOpenOpps(): Promise<{
     throw new Error(`SharePoint site not found (HTTP ${siteResp.status}). Check SHAREPOINT_DOMAIN and SHAREPOINT_SITE_PATH.`);
   }
   const siteData = await siteResp.json();
-  const siteId = siteData.id;
-  console.log(`[SharePoint] Found site ID: ${siteId}`);
+  console.log(`[SharePoint] Found site ID: ${siteData.id}`);
+  return siteData.id;
+}
 
+async function findSharePointList(token: SharePointToken, siteId: string, listName: string): Promise<string> {
   const listsUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`;
   const listsResp = await fetch(listsUrl, {
     headers: { Authorization: `Bearer ${token.access_token}` },
@@ -197,15 +191,17 @@ export async function syncSharePointOpenOpps(): Promise<{
   }
   const listsData = await listsResp.json();
   const targetList = (listsData.value || []).find((l: any) =>
-    l.displayName === sharePointList || l.name === sharePointList
+    l.displayName === listName || l.name === listName
   );
   if (!targetList) {
     const available = (listsData.value || []).map((l: any) => l.displayName).join(", ");
-    throw new Error(`SharePoint list "${sharePointList}" not found. Available lists: ${available}`);
+    throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
   }
-  const listId = targetList.id;
-  console.log(`[SharePoint] Found list "${sharePointList}" with ID: ${listId}`);
+  console.log(`[SharePoint] Found list "${listName}" with ID: ${targetList.id}`);
+  return targetList.id;
+}
 
+async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
   let nextUrl: string | null =
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
@@ -229,8 +225,12 @@ export async function syncSharePointOpenOpps(): Promise<{
     nextUrl = data["@odata.nextLink"] || null;
   }
   console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
+  return allItems;
+}
 
+export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
   const staged: any[] = [];
+  const errors: string[] = [];
   for (const item of allItems) {
     const result = transformSharePointItem(item);
     if (result.error) {
@@ -239,7 +239,22 @@ export async function syncSharePointOpenOpps(): Promise<{
       staged.push(result.record);
     }
   }
+  return { staged, errors };
+}
 
+export async function syncSharePointOpenOpps(): Promise<{
+  imported: number;
+  errors: string[];
+  message: string;
+}> {
+  const config = getSharePointConfig();
+  const token = await getGraphToken();
+  const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
+  const listId = await findSharePointList(token, siteId, config.listName);
+  const allItems = await fetchAllSharePointItems(token, siteId, listId);
+  const { staged, errors } = stageSharePointItems(allItems);
+
+  let imported = 0;
   await db.transaction(async (trx) => {
     await trx("pipeline_opportunities").where("fy_year", "open_opps").del();
     for (const record of staged) {

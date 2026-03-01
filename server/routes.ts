@@ -813,16 +813,169 @@ export function buildPlannerBucketGroups(
   for (const pt of plannerTasks) {
     const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
     if (!bucketGroups[bName]) bucketGroups[bName] = [];
-    const pct = pt.percentComplete || 0;
-    let status = "Not Started";
-    if (pct === 100) status = "Completed";
-    else if (pct > 0) status = "In Progress";
     const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
-    const titleStatus = `${pt.title} [${status}]`;
-    const taskEntry = assignees ? `${titleStatus} (${assignees})` : titleStatus;
-    bucketGroups[bName].push(taskEntry);
+    bucketGroups[bName].push(formatPlannerTaskEntry(pt, assignees));
   }
   return bucketGroups;
+}
+
+export function formatPlannerTaskEntry(pt: any, assignees: string): string {
+  const pct = pt.percentComplete || 0;
+  let status = "Not Started";
+  if (pct === 100) status = "Completed";
+  else if (pct > 0) status = "In Progress";
+  const titleStatus = `${pt.title} [${status}]`;
+  return assignees ? `${titleStatus} (${assignees})` : titleStatus;
+}
+
+export function buildVatAiRiskSummary(userRisks: any[] | undefined, risks: any[]): string {
+  if (Array.isArray(userRisks) && userRisks.length > 0) {
+    return userRisks.map((r: any) =>
+      `- ${r.description} (Impact: ${r.impactRating || "N/A"}, Likelihood: ${r.likelihood || "N/A"}, Status: ${r.status || "Open"}, Owner: ${r.owner || "Unassigned"})`
+    ).join("\n");
+  }
+  return risks.map(r =>
+    `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Status: ${r.status || "Open"}, Owner: ${r.owner})`
+  ).join("\n");
+}
+
+export function buildVatAiActionSummaries(actionItems: any[]): { completedActionsSummary: string; openActionsSummary: string } {
+  const completedActions = actionItems.filter((a: any) => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
+  const openActions = actionItems.filter((a: any) => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
+  const completedActionsSummary = completedActions.map((a: any) =>
+    `- ${a.description} (Owner: ${a.owner || "N/A"}, Section: ${a.section || "General"})`
+  ).join("\n");
+  const openActionsSummary = openActions.map((a: any) =>
+    `- ${a.description} (Owner: ${a.owner || "N/A"}, Status: ${a.status || "Open"}, Due: ${a.dueDate || "N/A"})`
+  ).join("\n");
+  return { completedActionsSummary, openActionsSummary };
+}
+
+export function buildVatAiPlannerSummary(plannerTasks: any[]): string {
+  const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
+  const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
+  const plannerParts: string[] = [];
+  if (completedTasks.length > 0) {
+    const lines = completedTasks.map((t: any) => "  - " + t.taskName + " (Bucket: " + (t.bucketName || "N/A") + ")").join("\n");
+    plannerParts.push("Completed:\n" + lines);
+  }
+  if (inProgressTasks.length > 0) {
+    const lines = inProgressTasks.map((t: any) => "  - " + t.taskName + " (" + (t.progress || "N/A") + ", Due: " + (t.dueDate || "N/A") + ")").join("\n");
+    plannerParts.push("In Progress:\n" + lines);
+  }
+  return plannerParts.join("\n");
+}
+
+export function buildVatReportContextString(existingReport: any, label = "PREVIOUS REPORT CONTENT"): string {
+  if (!existingReport) return "";
+  return `${label}:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}`;
+}
+
+export function buildPlannerCompletedByName(pt: any, resolveUserName: (uid: string) => string): string {
+  if (pt.completedBy?.user?.id) {
+    return resolveUserName(pt.completedBy.user.id);
+  }
+  if (pt.completedBy?.user?.displayName) {
+    return pt.completedBy.user.displayName;
+  }
+  return "Unknown";
+}
+
+export function buildPlannerSyncResult(
+  pt: any,
+  rec: { taskName: string; bucketName: string; progress: string; dueDate: string; priority: string; assignedTo: string; extId: string },
+  existing: any,
+  resolveUserName: (uid: string) => string,
+): { wasCompleted: boolean; changes: string[]; needsUpdate: boolean; completedInfo?: { title: string; completedBy: string; completedDate: string } } {
+  const wasCompleted = existing.progress !== "Completed" && rec.progress === "Completed";
+  const changes = detectTaskChanges(existing, rec.taskName, rec.progress, rec.dueDate, rec.priority);
+  const needsBucketUpdate = existing.bucketName !== rec.bucketName && !!rec.bucketName;
+  const needsAssigneeUpdate = existing.assignedTo !== rec.assignedTo && !!rec.assignedTo;
+  const needsUpdate = changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate;
+  const result: any = { wasCompleted, changes, needsUpdate };
+  if (wasCompleted) {
+    const completedByName = buildPlannerCompletedByName(pt, resolveUserName);
+    const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
+    result.completedInfo = { title: rec.taskName, completedBy: completedByName, completedDate };
+  }
+  return result;
+}
+
+export function extractInitialUserCache(plannerTasks: any[]): Map<string, string> {
+  const cache = new Map<string, string>();
+  for (const pt of plannerTasks) {
+    if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
+      cache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
+    }
+  }
+  return cache;
+}
+
+export function buildVatAiSuggestFieldsPrompt(
+  vatName: string,
+  pipelineSummary: string,
+  riskSummary: string,
+  completedActionsSummary: string,
+  openActionsSummary: string,
+  plannerSummary: string,
+  reportContext: string,
+  userActionNotes: string | undefined,
+): string {
+  return `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
+
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+${riskSummary ? `CURRENT RISKS & ISSUES (reviewed by user):\n${riskSummary}` : "No risks currently recorded."}
+
+${completedActionsSummary ? `RECENTLY COMPLETED ACTIONS:\n${completedActionsSummary}` : "No completed action items."}
+
+${openActionsSummary ? `OPEN ACTION ITEMS:\n${openActionsSummary}` : ""}
+
+${plannerSummary ? `PLANNER TASK STATUS:\n${plannerSummary}` : ""}
+
+${reportContext}
+
+${userActionNotes ? `USER NOTES ON WHAT CHANGED:\n${userActionNotes}` : ""}
+
+IMPORTANT INSTRUCTIONS:
+- Reference SPECIFIC opportunity names, dollar values, risk descriptions, and completed actions from the data above.
+- Do NOT generate generic or templated content. Every bullet point must reference real data provided.
+- Highlight completed actions as achievements in the status summary.
+- Address open risks directly in relevant sections.
+- If no data is available for a field, say "No data available - please update manually" rather than making up content.
+
+Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun).
+
+Return this exact JSON structure:
+{
+  "statusSummary": "bullet points summarising overall VAT status including completed actions as achievements, key wins, pipeline health, and current risk posture",
+  "openOppsSummary": "bullet points about specific open opportunities from the pipeline data with their values and classification",
+  "bigPlays": "bullet points about the largest strategic opportunities being pursued with dollar values",
+  "approachToShortfall": "bullet points on strategies to address revenue gaps, referencing specific pipeline opportunities that could close",
+  "accountGoals": "bullet points on key account objectives based on pipeline and open actions",
+  "relationships": "bullet points on key stakeholder relationships referencing risk owners and action item owners",
+  "research": "bullet points on market positioning based on pipeline classifications and opportunity types",
+  "otherActivities": "bullet points on completed planner tasks, in-progress activities, and upcoming milestones"
+}`;
+}
+
+export function buildVatChatSystemPrompt(vatName: string, pipelineSummary: string, riskSummary: string, reportContext: string): string {
+  return `You are an AI assistant helping create and manage VAT (Virtual Account Team) Sales Committee reports for an Australian professional services firm. You have access to the ${vatName} VAT's pipeline and risk data.
+
+PIPELINE DATA for ${vatName}:
+${pipelineSummary || "No pipeline data available"}
+
+${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
+${reportContext}
+
+Your role:
+- Help draft report content (status summaries, open opps analysis, big plays, approach to shortfall)
+- Provide strategic suggestions based on the pipeline data
+- Answer questions about the VAT's pipeline performance
+- When asked to draft content, provide it in bullet point format ready to paste into the report
+- Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values
+- Be concise and actionable`;
 }
 
 export function parseStaffSOTRow(r: any[]): any {
@@ -2682,12 +2835,7 @@ Rules:
       const fourWeeksAgo = new Date();
       fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
 
-      const userIdCache = new Map<string, string>();
-      for (const pt of plannerTasks) {
-        if (pt.completedBy?.user?.id && pt.completedBy?.user?.displayName) {
-          userIdCache.set(pt.completedBy.user.id, pt.completedBy.user.displayName);
-        }
-      }
+      const userIdCache = extractInitialUserCache(plannerTasks);
 
       try {
         const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
@@ -2780,27 +2928,16 @@ Rules:
         }
 
         if (existing) {
-          const wasCompleted = existing.progress !== "Completed" && rec.progress === "Completed";
-          const changes = detectTaskChanges(existing, rec.taskName, rec.progress, rec.dueDate, rec.priority);
-
-          if (wasCompleted) {
+          const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
+          if (syncResult.wasCompleted) {
             newlyCompletedCount++;
-            let completedByName = "Unknown";
-            if (pt.completedBy?.user?.id) {
-              completedByName = resolveUserName(pt.completedBy.user.id);
-            } else if (pt.completedBy?.user?.displayName) {
-              completedByName = pt.completedBy.user.displayName;
-            }
-            const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
-            newlyCompletedTasks.push({ title: rec.taskName, completedBy: completedByName, completedDate });
+            newlyCompletedTasks.push(syncResult.completedInfo!);
           }
-          const needsBucketUpdate = existing.bucketName !== rec.bucketName && rec.bucketName;
-          const needsAssigneeUpdate = existing.assignedTo !== rec.assignedTo && rec.assignedTo;
-          if (changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate) {
+          if (syncResult.needsUpdate) {
             await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
-            if (changes.length > 0) {
+            if (syncResult.changes.length > 0) {
               updatedCount++;
-              updatedTasks.push({ title: rec.taskName, changes });
+              updatedTasks.push({ title: rec.taskName, changes: syncResult.changes });
             }
           }
         } else {
@@ -2965,36 +3102,15 @@ Rules:
         risks = await storage.getVatRisks(reportId);
       }
 
-      const pipelineSummary = pipelineOpps.map(o => {
-        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
-          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
-      }).join("\n");
-
-      const riskSummary = risks.map(r =>
-        `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Owner: ${r.owner})`
-      ).join("\n");
+      const pipelineSummary = buildPipelineSummaryText(pipelineOpps);
+      const riskSummary = buildRiskSummaryText(risks);
+      const reportContext = buildVatReportContextString(existingReport, "CURRENT REPORT");
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
 
-      const systemPrompt = `You are an AI assistant helping create and manage VAT (Virtual Account Team) Sales Committee reports for an Australian professional services firm. You have access to the ${vatName} VAT's pipeline and risk data.
-
-PIPELINE DATA for ${vatName}:
-${pipelineSummary || "No pipeline data available"}
-
-${riskSummary ? `CURRENT RISKS:\n${riskSummary}` : ""}
-${existingReport ? `CURRENT REPORT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
-
-Your role:
-- Help draft report content (status summaries, open opps analysis, big plays, approach to shortfall)
-- Provide strategic suggestions based on the pipeline data
-- Answer questions about the VAT's pipeline performance
-- When asked to draft content, provide it in bullet point format ready to paste into the report
-- Use Australian Financial Year (Jul-Jun) and reference actual opportunity names and dollar values
-- Be concise and actionable`;
+      const systemPrompt = buildVatChatSystemPrompt(vatName, pipelineSummary, riskSummary, reportContext);
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -3003,7 +3119,7 @@ Your role:
       const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
         { role: "system", content: systemPrompt },
       ];
-      if (chatMessages && Array.isArray(chatMessages)) {
+      if (Array.isArray(chatMessages)) {
         for (const m of chatMessages) {
           apiMessages.push({ role: m.role, content: m.content });
         }
@@ -3054,84 +3170,21 @@ Your role:
         plannerTasks = await storage.getVatPlannerTasks(reportId);
       }
 
-      const pipelineSummary = pipelineOpps.map(o => {
-        const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
-          o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-        return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
-      }).join("\n");
-
-      const riskSummary = (userRisks && Array.isArray(userRisks) && userRisks.length > 0)
-        ? userRisks.map((r: any) =>
-            `- ${r.description} (Impact: ${r.impactRating || "N/A"}, Likelihood: ${r.likelihood || "N/A"}, Status: ${r.status || "Open"}, Owner: ${r.owner || "Unassigned"})`
-          ).join("\n")
-        : risks.map(r =>
-            `- ${r.description} (Impact: ${r.impactRating}, Likelihood: ${r.likelihood}, Status: ${r.status || "Open"}, Owner: ${r.owner})`
-          ).join("\n");
-
-      const completedActions = actionItems.filter((a: any) => a.status === "Completed" || a.status === "Done" || a.status === "Closed");
-      const openActions = actionItems.filter((a: any) => a.status !== "Completed" && a.status !== "Done" && a.status !== "Closed");
-      const completedActionsSummary = completedActions.map((a: any) =>
-        `- ${a.description} (Owner: ${a.owner || "N/A"}, Section: ${a.section || "General"})`
-      ).join("\n");
-      const openActionsSummary = openActions.map((a: any) =>
-        `- ${a.description} (Owner: ${a.owner || "N/A"}, Status: ${a.status || "Open"}, Due: ${a.dueDate || "N/A"})`
-      ).join("\n");
-
-      const completedTasks = plannerTasks.filter((t: any) => t.progress === "100%" || t.progress === "Complete" || t.progress === "Done");
-      const inProgressTasks = plannerTasks.filter((t: any) => t.progress !== "100%" && t.progress !== "Complete" && t.progress !== "Done" && t.progress !== "0%" && t.progress !== "Not Started");
-      const plannerParts: string[] = [];
-      if (completedTasks.length > 0) {
-        const lines = completedTasks.map((t: any) => "  - " + t.taskName + " (Bucket: " + (t.bucketName || "N/A") + ")").join("\n");
-        plannerParts.push("Completed:\n" + lines);
-      }
-      if (inProgressTasks.length > 0) {
-        const lines = inProgressTasks.map((t: any) => "  - " + t.taskName + " (" + (t.progress || "N/A") + ", Due: " + (t.dueDate || "N/A") + ")").join("\n");
-        plannerParts.push("In Progress:\n" + lines);
-      }
-      const plannerSummary = plannerParts.join("\n");
+      const pipelineSummary = buildPipelineSummaryText(pipelineOpps);
+      const riskSummary = buildVatAiRiskSummary(userRisks, risks);
+      const { completedActionsSummary, openActionsSummary } = buildVatAiActionSummaries(actionItems);
+      const plannerSummary = buildVatAiPlannerSummary(plannerTasks);
+      const reportContext = buildVatReportContextString(existingReport);
 
       if (!openai) {
         return res.status(503).json({ message: "AI assistant not available. Configure OPENAI_API_KEY." });
       }
 
-      const systemPrompt = `You are an AI assistant generating structured report content for a VAT (Virtual Account Team) Sales Committee report for an Australian professional services firm.
-
-PIPELINE DATA for ${vatName}:
-${pipelineSummary || "No pipeline data available"}
-
-${riskSummary ? `CURRENT RISKS & ISSUES (reviewed by user):\n${riskSummary}` : "No risks currently recorded."}
-
-${completedActionsSummary ? `RECENTLY COMPLETED ACTIONS:\n${completedActionsSummary}` : "No completed action items."}
-
-${openActionsSummary ? `OPEN ACTION ITEMS:\n${openActionsSummary}` : ""}
-
-${plannerSummary ? `PLANNER TASK STATUS:\n${plannerSummary}` : ""}
-
-${existingReport ? `PREVIOUS REPORT CONTENT:\n- Status: ${existingReport.overallStatus || "Not set"}\n- Summary: ${existingReport.statusSummary || "Empty"}\n- Open Opps: ${existingReport.openOppsSummary || "Empty"}\n- Big Plays: ${existingReport.bigPlays || "Empty"}\n- Approach to Shortfall: ${existingReport.approachToShortfall || "Empty"}` : ""}
-
-${userActionNotes ? `USER NOTES ON WHAT CHANGED:\n${userActionNotes}` : ""}
-
-IMPORTANT INSTRUCTIONS:
-- Reference SPECIFIC opportunity names, dollar values, risk descriptions, and completed actions from the data above.
-- Do NOT generate generic or templated content. Every bullet point must reference real data provided.
-- Highlight completed actions as achievements in the status summary.
-- Address open risks directly in relevant sections.
-- If no data is available for a field, say "No data available - please update manually" rather than making up content.
-
-Generate content for EACH of the following report fields. Return ONLY valid JSON with no markdown formatting. Each field should contain bullet-point content (one bullet per line using "- " prefix). Use Australian Financial Year (Jul-Jun).
-
-Return this exact JSON structure:
-{
-  "statusSummary": "bullet points summarising overall VAT status including completed actions as achievements, key wins, pipeline health, and current risk posture",
-  "openOppsSummary": "bullet points about specific open opportunities from the pipeline data with their values and classification",
-  "bigPlays": "bullet points about the largest strategic opportunities being pursued with dollar values",
-  "approachToShortfall": "bullet points on strategies to address revenue gaps, referencing specific pipeline opportunities that could close",
-  "accountGoals": "bullet points on key account objectives based on pipeline and open actions",
-  "relationships": "bullet points on key stakeholder relationships referencing risk owners and action item owners",
-  "research": "bullet points on market positioning based on pipeline classifications and opportunity types",
-  "otherActivities": "bullet points on completed planner tasks, in-progress activities, and upcoming milestones"
-}`;
+      const systemPrompt = buildVatAiSuggestFieldsPrompt(
+        vatName, pipelineSummary, riskSummary,
+        completedActionsSummary, openActionsSummary,
+        plannerSummary, reportContext, userActionNotes,
+      );
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -3665,7 +3718,7 @@ export function buildProjectHoursKpiRecord(r: any[], projectId: number): any {
     resourceCost: toNum(r[2]),
     rdCost: "0",
     margin: toNum(margin),
-    marginPercent: r[1] && revenue > 0 ? toNum(marginPct) : "0",
+    marginPercent: r[1] !== undefined && revenue > 0 ? toNum(marginPct) : "0",
     burnRate: toNum(r[2]),
     utilization: toNum(utilization),
   };

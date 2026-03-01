@@ -172,6 +172,20 @@ export function sanitizeDateFields(data: Record<string, any>, table?: string): R
   return data;
 }
 
+export function formatMonthKey(month: any): string {
+  return month instanceof Date ? month.toISOString().split("T")[0] : String(month);
+}
+
+export function extractDateFieldsForLogging(snakeData: Record<string, any>): Record<string, any> {
+  const dateFields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(snakeData)) {
+    if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
+      dateFields[k] = { value: v, type: typeof v };
+    }
+  }
+  return dateFields;
+}
+
 async function insertReturning<T>(table: string, data: Record<string, any>): Promise<T> {
   const snakeData = sanitizeDateFields(toSnakeCase(data, table), table);
   delete snakeData.id;
@@ -180,13 +194,7 @@ async function insertReturning<T>(table: string, data: Record<string, any>): Pro
     return rowToModel<T>(row);
   } catch (err: any) {
     if (err.message?.includes("date")) {
-      const dateFields: Record<string, any> = {};
-      for (const [k, v] of Object.entries(snakeData)) {
-        if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
-          dateFields[k] = { value: v, type: typeof v };
-        }
-      }
-      console.error(`[insertReturning] ${table} date error. Fields:`, JSON.stringify(dateFields));
+      console.error(`[insertReturning] ${table} date error. Fields:`, JSON.stringify(extractDateFieldsForLogging(snakeData)));
     }
     throw err;
   }
@@ -876,12 +884,12 @@ export class DatabaseStorage implements IStorage {
     const monthMap = new Map<string, { revenue: number; cost: number }>();
 
     for (const row of revenueByMonth) {
-      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      const m = formatMonthKey(row.month);
       monthMap.set(m, { revenue: Number(row.revenue) || 0, cost: 0 });
     }
 
     for (const row of costByMonth) {
-      const m = row.month instanceof Date ? row.month.toISOString().split("T")[0] : String(row.month);
+      const m = formatMonthKey(row.month);
       const existing = monthMap.get(m) || { revenue: 0, cost: 0 };
       existing.cost = Number(row.cost) || 0;
       monthMap.set(m, existing);

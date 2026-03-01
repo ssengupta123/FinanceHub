@@ -11,6 +11,8 @@ import {
   shouldConvertToString,
   shouldConvertDate,
   normalizeModelValue,
+  formatMonthKey,
+  extractDateFieldsForLogging,
 } from "../server/storage";
 
 describe("toSnakeCase", () => {
@@ -456,5 +458,54 @@ describe("buildVatNameList - extended", () => {
     const result = buildVatNameList(refVats, targets);
     expect(result[0]).toBe("DAFF");
     expect(result[1]).toBe("SAU");
+  });
+});
+
+describe("formatMonthKey", () => {
+  it("stringifies number", () => {
+    expect(formatMonthKey(3)).toBe("3");
+  });
+
+  it("stringifies larger number", () => {
+    expect(formatMonthKey(12)).toBe("12");
+  });
+
+  it("stringifies string input", () => {
+    expect(formatMonthKey("7")).toBe("7");
+  });
+
+  it("converts Date to ISO date string", () => {
+    const d = new Date("2024-03-15T00:00:00Z");
+    expect(formatMonthKey(d)).toBe("2024-03-15");
+  });
+});
+
+describe("extractDateFieldsForLogging", () => {
+  it("extracts string and date-column fields", () => {
+    const data = {
+      start_date: "2024-01-15",
+      name: "Project X",
+      amount: 100,
+    };
+    const result = extractDateFieldsForLogging(data);
+    expect(result.start_date).toBeDefined();
+    expect(result.name).toBeDefined();
+    expect(result.amount).toBeUndefined();
+  });
+
+  it("returns empty object when only numeric fields", () => {
+    const data = { count: 42, total: 100 };
+    const result = extractDateFieldsForLogging(data);
+    expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  it("handles empty object", () => {
+    expect(extractDateFieldsForLogging({})).toEqual({});
+  });
+
+  it("skips null and undefined values", () => {
+    const data = { start_date: null, end_date: undefined };
+    const result = extractDateFieldsForLogging(data);
+    expect(Object.keys(result)).toHaveLength(0);
   });
 });

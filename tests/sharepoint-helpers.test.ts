@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat } from "../server/sharepoint-sync";
+import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems } from "../server/sharepoint-sync";
 
 describe("transformSharePointItem", () => {
   it("transforms a valid SharePoint item", () => {
@@ -240,5 +240,41 @@ describe("cleanVat", () => {
 
   it("preserves normal VAT values", () => {
     expect(cleanVat("SAU")).toBe("SAU");
+  });
+});
+
+describe("stageSharePointItems", () => {
+  it("stages valid items", () => {
+    const items = [{
+      Title: "Opp 1",
+      Phase: "S",
+      Value: 100000,
+      VAT: "DAFF",
+    }];
+    const result = stageSharePointItems(items);
+    expect(result.staged.length).toBe(1);
+    expect(result.errors.length).toBe(0);
+  });
+
+  it("skips items without title (no error, no record)", () => {
+    const items = [{}];
+    const result = stageSharePointItems(items);
+    expect(result.staged.length).toBe(0);
+    expect(result.errors.length).toBe(0);
+  });
+
+  it("handles empty array", () => {
+    const result = stageSharePointItems([]);
+    expect(result.staged).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("handles mix of valid and skipped items", () => {
+    const items = [
+      { Title: "Good Opp", Phase: "S", Value: 50000, VAT: "SAU" },
+      { Title: "Bad Phase", Phase: "UNKNOWN" },
+    ];
+    const result = stageSharePointItems(items);
+    expect(result.staged.length).toBe(1);
   });
 });

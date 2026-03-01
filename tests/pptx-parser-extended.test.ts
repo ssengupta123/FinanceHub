@@ -34,6 +34,12 @@ import {
   detectSectionFromParagraph,
   extractParagraphs,
   extractTables,
+  isCoverSlide,
+  isEmptySlide,
+  tryStartNewGroup,
+  assignSlideToGroup,
+  createEmptyReport,
+  collectPlannerTasks,
 } from "../server/pptx-parser";
 
 describe("decodeXmlEntities", () => {
@@ -1186,5 +1192,124 @@ describe("extractTables", () => {
     expect(result[0]).toHaveLength(2);
     expect(result[0][0]).toEqual(["R1"]);
     expect(result[0][1]).toEqual(["R2"]);
+  });
+});
+
+describe("isCoverSlide", () => {
+  it("detects cover slide at index 1 with VAT REPORT and SALES COMMITTEE", () => {
+    expect(isCoverSlide({ paragraphs: ["VAT REPORT - SALES COMMITTEE"], tables: [], index: 1, xml: "" })).toBe(true);
+  });
+
+  it("rejects slide not at index 1", () => {
+    expect(isCoverSlide({ paragraphs: ["VAT REPORT - SALES COMMITTEE"], tables: [], index: 2, xml: "" })).toBe(false);
+  });
+
+  it("rejects slide without VAT REPORT keywords", () => {
+    expect(isCoverSlide({ paragraphs: ["Title"], tables: [], index: 1, xml: "" })).toBe(false);
+  });
+});
+
+describe("isEmptySlide", () => {
+  it("detects slide with no paragraphs and no tables", () => {
+    expect(isEmptySlide({ paragraphs: [], tables: [], index: 1, xml: "" })).toBe(true);
+  });
+
+  it("rejects slide with paragraphs", () => {
+    expect(isEmptySlide({ paragraphs: ["Hello"], tables: [], index: 1, xml: "" })).toBe(false);
+  });
+
+  it("rejects slide with tables", () => {
+    expect(isEmptySlide({ paragraphs: [], tables: [[["data"]]], index: 1, xml: "" })).toBe(false);
+  });
+});
+
+describe("tryStartNewGroup", () => {
+  it("starts group when title slide has VAT name", () => {
+    const slide = { paragraphs: ["DAFF"], tables: [], index: 1, xml: "", size: 500 };
+    const group = tryStartNewGroup(slide);
+    expect(group).not.toBeNull();
+    expect(group!.vatName).toBe("DAFF");
+  });
+
+  it("returns null for non-title slide (too many paragraphs)", () => {
+    const slide = { paragraphs: ["Random content", "more", "and more", "data", "rows"], tables: [[["a"]]], index: 1, xml: "", size: 500 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+
+  it("returns null when no VAT name in title slide", () => {
+    const slide = { paragraphs: ["Overview"], tables: [], index: 1, xml: "", size: 500 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+
+  it("returns null when slide size is too large", () => {
+    const slide = { paragraphs: ["DAFF"], tables: [], index: 1, xml: "", size: 5000 };
+    expect(tryStartNewGroup(slide)).toBeNull();
+  });
+});
+
+describe("assignSlideToGroup", () => {
+  it("adds planner slide to plannerSlides", () => {
+    const slide = { paragraphs: ["Planner Status Update"], tables: [[["Task1", "Bucket"]]], index: 2, xml: "", size: 1000 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.plannerSlides).toHaveLength(1);
+  });
+
+  it("adds content slide to contentSlides", () => {
+    const slide = { paragraphs: ["Some content", "More content", "Details here"], tables: [[["col1", "col2"]]], index: 3, xml: "", size: 2000 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.contentSlides).toHaveLength(1);
+  });
+
+  it("skips planner-labeled slide without tables", () => {
+    const slide = { paragraphs: ["Planner Status Update"], tables: [], index: 2, xml: "", size: 500 };
+    const group = { vatName: "DAFF", titleSlide: { paragraphs: [], tables: [], index: 1, xml: "", size: 100 }, contentSlides: [], plannerSlides: [] };
+    assignSlideToGroup(slide, group);
+    expect(group.contentSlides).toHaveLength(0);
+    expect(group.plannerSlides).toHaveLength(0);
+  });
+});
+
+describe("createEmptyReport", () => {
+  it("creates report with correct vatName and date", () => {
+    const report = createEmptyReport("DAFF", "2024-01-15");
+    expect(report.vatName).toBe("DAFF");
+    expect(report.reportDate).toBe("2024-01-15");
+    expect(report.overallStatus).toBe("");
+    expect(report.risks).toEqual([]);
+    expect(report.plannerTasks).toEqual([]);
+  });
+
+  it("creates report with empty fields", () => {
+    const report = createEmptyReport("SAU", "2024-06-30");
+    expect(report.statusSummary).toBe("");
+    expect(report.openOppsSummary).toBe("");
+    expect(report.bigPlays).toBe("");
+  });
+});
+
+describe("collectPlannerTasks", () => {
+  it("collects tasks from planner slides with parsePlannerTable", () => {
+    const slides = [{
+      paragraphs: [],
+      tables: [[
+        ["Task Name", "Bucket", "Progress", "Priority", "Assigned To", "Due Date", "Notes"],
+        ["Task A", "Bucket1", "50%", "High", "Alice", "2024-01-15", "Note1"],
+      ]],
+      index: 1,
+      xml: "",
+    }];
+    const tasks = collectPlannerTasks(slides);
+    expect(tasks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns empty array for no slides", () => {
+    expect(collectPlannerTasks([])).toEqual([]);
+  });
+
+  it("returns empty for slides with no tables", () => {
+    const slides = [{ paragraphs: ["test"], tables: [], index: 1, xml: "" }];
+    expect(collectPlannerTasks(slides)).toEqual([]);
   });
 });

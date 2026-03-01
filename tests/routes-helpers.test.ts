@@ -63,6 +63,16 @@ import {
   isImportSkippableRow,
   formatImportError,
   buildPermissionsMap,
+  formatPlannerTaskEntry,
+  buildVatAiRiskSummary,
+  buildVatAiActionSummaries,
+  buildVatAiPlannerSummary,
+  buildVatReportContextString,
+  buildPlannerCompletedByName,
+  buildPlannerSyncResult,
+  extractInitialUserCache,
+  buildVatAiSuggestFieldsPrompt,
+  buildVatChatSystemPrompt,
 } from "../server/routes";
 
 describe("deriveFyYear", () => {
@@ -1963,5 +1973,239 @@ describe("buildPermissionsMap", () => {
 
   it("handles empty array", () => {
     expect(buildPermissionsMap([])).toEqual({});
+  });
+});
+
+describe("formatPlannerTaskEntry", () => {
+  it("formats not started task without assignees", () => {
+    expect(formatPlannerTaskEntry({ title: "Task A", percentComplete: 0 }, "")).toBe("Task A [Not Started]");
+  });
+
+  it("formats completed task with assignees", () => {
+    expect(formatPlannerTaskEntry({ title: "Task B", percentComplete: 100 }, "John")).toBe("Task B [Completed] (John)");
+  });
+
+  it("formats in progress task", () => {
+    expect(formatPlannerTaskEntry({ title: "Task C", percentComplete: 50 }, "Alice, Bob")).toBe("Task C [In Progress] (Alice, Bob)");
+  });
+
+  it("handles missing percentComplete", () => {
+    expect(formatPlannerTaskEntry({ title: "X" }, "")).toBe("X [Not Started]");
+  });
+});
+
+describe("buildVatAiRiskSummary", () => {
+  it("uses userRisks when provided", () => {
+    const userRisks = [{ description: "Risk 1", impactRating: "High", likelihood: "Low", status: "Open", owner: "Alice" }];
+    const result = buildVatAiRiskSummary(userRisks, []);
+    expect(result).toContain("Risk 1");
+    expect(result).toContain("High");
+    expect(result).toContain("Low");
+  });
+
+  it("falls back to stored risks when userRisks is undefined", () => {
+    const risks = [{ description: "Stored Risk", impactRating: "Medium", likelihood: "Medium", status: "Open", owner: "Bob" }];
+    const result = buildVatAiRiskSummary(undefined, risks);
+    expect(result).toContain("Stored Risk");
+  });
+
+  it("falls back to stored risks when userRisks is empty", () => {
+    const risks = [{ description: "R2", impactRating: "Low", likelihood: "High", status: "Closed", owner: "Z" }];
+    const result = buildVatAiRiskSummary([], risks);
+    expect(result).toContain("R2");
+  });
+
+  it("handles missing fields with N/A defaults", () => {
+    const userRisks = [{ description: "RiskX" }];
+    const result = buildVatAiRiskSummary(userRisks, []);
+    expect(result).toContain("N/A");
+  });
+});
+
+describe("buildVatAiActionSummaries", () => {
+  it("separates completed and open actions", () => {
+    const items = [
+      { description: "Done task", status: "Completed", owner: "A", section: "S1" },
+      { description: "Open task", status: "Open", owner: "B", dueDate: "2024-01-01" },
+    ];
+    const result = buildVatAiActionSummaries(items);
+    expect(result.completedActionsSummary).toContain("Done task");
+    expect(result.openActionsSummary).toContain("Open task");
+  });
+
+  it("treats Done and Closed as completed", () => {
+    const items = [
+      { description: "T1", status: "Done", owner: "X" },
+      { description: "T2", status: "Closed", owner: "Y" },
+    ];
+    const result = buildVatAiActionSummaries(items);
+    expect(result.completedActionsSummary).toContain("T1");
+    expect(result.completedActionsSummary).toContain("T2");
+    expect(result.openActionsSummary).toBe("");
+  });
+
+  it("handles empty array", () => {
+    const result = buildVatAiActionSummaries([]);
+    expect(result.completedActionsSummary).toBe("");
+    expect(result.openActionsSummary).toBe("");
+  });
+});
+
+describe("buildVatAiPlannerSummary", () => {
+  it("groups completed and in-progress tasks", () => {
+    const tasks = [
+      { taskName: "Task1", progress: "100%", bucketName: "B1" },
+      { taskName: "Task2", progress: "50%", dueDate: "2024-06-01" },
+      { taskName: "Task3", progress: "0%" },
+    ];
+    const result = buildVatAiPlannerSummary(tasks);
+    expect(result).toContain("Completed:");
+    expect(result).toContain("Task1");
+    expect(result).toContain("In Progress:");
+    expect(result).toContain("Task2");
+    expect(result).not.toContain("Task3");
+  });
+
+  it("handles all completed", () => {
+    const tasks = [{ taskName: "T", progress: "Complete", bucketName: "B" }];
+    const result = buildVatAiPlannerSummary(tasks);
+    expect(result).toContain("Completed:");
+    expect(result).not.toContain("In Progress:");
+  });
+
+  it("handles empty tasks", () => {
+    expect(buildVatAiPlannerSummary([])).toBe("");
+  });
+});
+
+describe("buildVatReportContextString", () => {
+  it("returns empty string for null report", () => {
+    expect(buildVatReportContextString(null)).toBe("");
+  });
+
+  it("builds context with report data", () => {
+    const report = { overallStatus: "GREEN", statusSummary: "All good", openOppsSummary: "5 opps", bigPlays: "Big deal", approachToShortfall: "Plan B" };
+    const result = buildVatReportContextString(report);
+    expect(result).toContain("PREVIOUS REPORT CONTENT:");
+    expect(result).toContain("GREEN");
+    expect(result).toContain("All good");
+  });
+
+  it("uses custom label", () => {
+    const result = buildVatReportContextString({ overallStatus: "RED" }, "CUSTOM LABEL");
+    expect(result).toContain("CUSTOM LABEL:");
+  });
+
+  it("handles missing fields", () => {
+    const result = buildVatReportContextString({});
+    expect(result).toContain("Not set");
+    expect(result).toContain("Empty");
+  });
+});
+
+describe("buildPlannerCompletedByName", () => {
+  it("resolves user by id", () => {
+    const pt = { completedBy: { user: { id: "u1", displayName: "Fallback" } } };
+    const resolve = (uid: string) => uid === "u1" ? "Resolved Name" : "Unknown";
+    expect(buildPlannerCompletedByName(pt, resolve)).toBe("Resolved Name");
+  });
+
+  it("falls back to displayName", () => {
+    const pt = { completedBy: { user: { displayName: "Display" } } };
+    expect(buildPlannerCompletedByName(pt, () => "X")).toBe("Display");
+  });
+
+  it("returns Unknown when no completedBy", () => {
+    expect(buildPlannerCompletedByName({}, () => "X")).toBe("Unknown");
+  });
+
+  it("returns Unknown when completedBy has no user", () => {
+    expect(buildPlannerCompletedByName({ completedBy: {} }, () => "X")).toBe("Unknown");
+  });
+});
+
+describe("buildPlannerSyncResult", () => {
+  it("detects completed task", () => {
+    const pt = { completedBy: { user: { id: "u1", displayName: "John" } }, completedDateTime: "2024-01-15T10:00:00Z" };
+    const rec = { taskName: "Task", bucketName: "B", progress: "Completed", dueDate: "2024-01-15", priority: "Medium", assignedTo: "John", extId: "e1" };
+    const existing = { progress: "In Progress", taskName: "Task", dueDate: "2024-01-15", priority: "Medium", bucketName: "B", assignedTo: "John", externalId: "e1" };
+    const result = buildPlannerSyncResult(pt, rec, existing, () => "John");
+    expect(result.wasCompleted).toBe(true);
+    expect(result.completedInfo).toBeDefined();
+    expect(result.completedInfo!.completedBy).toBe("John");
+  });
+
+  it("detects no completion when already completed", () => {
+    const rec = { taskName: "T", bucketName: "B", progress: "Completed", dueDate: "", priority: "Low", assignedTo: "", extId: "e1" };
+    const existing = { progress: "Completed", taskName: "T", dueDate: "", priority: "Low", bucketName: "B", assignedTo: "", externalId: "e1" };
+    const result = buildPlannerSyncResult({}, rec, existing, () => "X");
+    expect(result.wasCompleted).toBe(false);
+  });
+
+  it("detects bucket update needed", () => {
+    const rec = { taskName: "T", bucketName: "NewBucket", progress: "Not Started", dueDate: "", priority: "Low", assignedTo: "", extId: "e1" };
+    const existing = { progress: "Not Started", taskName: "T", dueDate: "", priority: "Low", bucketName: "OldBucket", assignedTo: "", externalId: "e1" };
+    const result = buildPlannerSyncResult({}, rec, existing, () => "X");
+    expect(result.needsUpdate).toBe(true);
+  });
+});
+
+describe("extractInitialUserCache", () => {
+  it("extracts user id/name pairs", () => {
+    const tasks = [
+      { completedBy: { user: { id: "u1", displayName: "Alice" } } },
+      { completedBy: { user: { id: "u2", displayName: "Bob" } } },
+      { completedBy: null },
+      {},
+    ];
+    const cache = extractInitialUserCache(tasks);
+    expect(cache.size).toBe(2);
+    expect(cache.get("u1")).toBe("Alice");
+    expect(cache.get("u2")).toBe("Bob");
+  });
+
+  it("returns empty map for empty tasks", () => {
+    expect(extractInitialUserCache([]).size).toBe(0);
+  });
+});
+
+describe("buildVatAiSuggestFieldsPrompt", () => {
+  it("includes vatName and pipeline data", () => {
+    const result = buildVatAiSuggestFieldsPrompt("DAFF", "Pipeline info", "", "", "", "", "", undefined);
+    expect(result).toContain("DAFF");
+    expect(result).toContain("Pipeline info");
+    expect(result).toContain("statusSummary");
+  });
+
+  it("includes risk summary when provided", () => {
+    const result = buildVatAiSuggestFieldsPrompt("SAU", "", "Risk data here", "", "", "", "", undefined);
+    expect(result).toContain("CURRENT RISKS");
+    expect(result).toContain("Risk data here");
+  });
+
+  it("includes user notes", () => {
+    const result = buildVatAiSuggestFieldsPrompt("V", "", "", "", "", "", "", "My notes");
+    expect(result).toContain("USER NOTES");
+    expect(result).toContain("My notes");
+  });
+
+  it("handles all empty inputs", () => {
+    const result = buildVatAiSuggestFieldsPrompt("", "", "", "", "", "", "", undefined);
+    expect(result).toContain("No pipeline data available");
+  });
+});
+
+describe("buildVatChatSystemPrompt", () => {
+  it("includes vatName and pipeline data", () => {
+    const result = buildVatChatSystemPrompt("VICGov", "Pipe data", "Risk info", "Report ctx");
+    expect(result).toContain("VICGov");
+    expect(result).toContain("Pipe data");
+    expect(result).toContain("Risk info");
+    expect(result).toContain("Report ctx");
+  });
+
+  it("handles empty pipeline", () => {
+    const result = buildVatChatSystemPrompt("T", "", "", "");
+    expect(result).toContain("No pipeline data available");
   });
 });

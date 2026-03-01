@@ -98,6 +98,16 @@ function getCertColor(certLower: string): string {
   return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
 }
 
+function CertBadge({ cert }: Readonly<{ cert: string }>) {
+  const trimmed = cert.trim();
+  const color = getCertColor(trimmed.toLowerCase());
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
+      {trimmed}
+    </span>
+  );
+}
+
 function CertifiedEmployeeRow({ emp }: Readonly<{ emp: Employee }>) {
   const certs = (emp.certifications ?? "").split(";");
   return (
@@ -113,18 +123,64 @@ function CertifiedEmployeeRow({ emp }: Readonly<{ emp: Employee }>) {
       <TableCell className="text-sm">{emp.location || "-"}</TableCell>
       <TableCell>
         <div className="flex gap-1 flex-wrap">
-          {certs.map(cert => {
-            const trimmed = cert.trim();
-            const color = getCertColor(trimmed.toLowerCase());
-            return (
-              <span key={trimmed} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
-                {trimmed}
-              </span>
-            );
-          })}
+          {certs.map(cert => (
+            <CertBadge key={cert.trim()} cert={cert} />
+          ))}
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+function PartnerExpandedContent({ details, certStaff, partner }: Readonly<{
+  details: { opps: PipelineOpp[]; totalValue: number } | undefined;
+  certStaff: Array<{ employee: Employee; certs: string[] }>;
+  partner: string;
+}>) {
+  return (
+    <div className="p-4 space-y-3">
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Opportunities</h4>
+        <div className="space-y-1">
+          {details?.opps.map(opp => (
+            <div key={opp.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] px-1.5">{PHASE_MAP[opp.classification] || opp.classification}</Badge>
+                <span>{opp.name}</span>
+                <span className="text-muted-foreground">({opp.vat})</span>
+              </div>
+              <span className="font-medium">{opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {certStaff.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+            <Award className="h-3 w-3" /> Certified Staff
+          </h4>
+          <div className="space-y-1">
+            {certStaff.map(({ employee, certs }) => (
+              <div key={employee.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{employee.firstName} {employee.lastName}</span>
+                  <Badge variant="outline" className="text-[10px]">{employee.staffType}</Badge>
+                  <span className="text-muted-foreground text-xs">{employee.role} - {employee.team}</span>
+                </div>
+                <div className="flex gap-1 flex-wrap justify-end">
+                  {certs.map(cert => (
+                    <Badge key={cert} variant="secondary" className="text-[10px] px-1.5">{cert}</Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {certStaff.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">No staff with {partner}-related certifications found</p>
+      )}
+    </div>
   );
 }
 
@@ -383,49 +439,7 @@ export default function PartnerView() {
                       {isExpanded && (
                         <TableRow>
                           <TableCell colSpan={5} className="bg-muted/30 p-0">
-                            <div className="p-4 space-y-3">
-                              <div>
-                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Opportunities</h4>
-                                <div className="space-y-1">
-                                  {details?.opps.map(opp => (
-                                    <div key={opp.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="text-[10px] px-1.5">{PHASE_MAP[opp.classification] || opp.classification}</Badge>
-                                        <span>{opp.name}</span>
-                                        <span className="text-muted-foreground">({opp.vat})</span>
-                                      </div>
-                                      <span className="font-medium">{opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              {certStaff.length > 0 && (
-                                <div>
-                                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
-                                    <Award className="h-3 w-3" /> Certified Staff
-                                  </h4>
-                                  <div className="space-y-1">
-                                    {certStaff.map(({ employee, certs }) => (
-                                      <div key={employee.id} className="flex items-center justify-between text-sm py-1 px-2 rounded bg-background">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-medium">{employee.firstName} {employee.lastName}</span>
-                                          <Badge variant="outline" className="text-[10px]">{employee.staffType}</Badge>
-                                          <span className="text-muted-foreground text-xs">{employee.role} - {employee.team}</span>
-                                        </div>
-                                        <div className="flex gap-1 flex-wrap justify-end">
-                                          {certs.map(cert => (
-                                            <Badge key={cert} variant="secondary" className="text-[10px] px-1.5">{cert}</Badge>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {certStaff.length === 0 && (
-                                <p className="text-xs text-muted-foreground italic">No staff with {partner}-related certifications found</p>
-                              )}
-                            </div>
+                            <PartnerExpandedContent details={details} certStaff={certStaff} partner={partner} />
                           </TableCell>
                         </TableRow>
                       )}

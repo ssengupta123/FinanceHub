@@ -210,6 +210,19 @@ const tierLabels: Record<string, string> = {
   targetAmazing: "Amazing",
 };
 
+export function parseVatTargetVal(v: string): number | null {
+  const n = Number.parseFloat(v);
+  return Number.isNaN(n) ? null : n;
+}
+
+export function formatVatTargetDisplay(type: string, val: string): string {
+  const n = Number.parseFloat(val);
+  if (Number.isNaN(n)) return val;
+  if (type === "dollar") return `$${n.toLocaleString()}`;
+  if (type === "percent") return `${(n * 100).toFixed(1)}%`;
+  return val;
+}
+
 function VatTargetsContent({ isLoading, selectedVat, existingTargets, getFieldValue, setFieldValue, formatDisplay, handleSaveAll, isSaving }: Readonly<{
   isLoading: boolean;
   selectedVat: string;
@@ -364,11 +377,6 @@ function VatFinancialTargetsEditor() {
     },
   });
 
-  const parseVal = (v: string) => {
-    const n = Number.parseFloat(v);
-    return Number.isNaN(n) ? null : n;
-  };
-
   const handleSaveAll = async () => {
     if (!selectedVat) {
       toast({ title: "Please select a VAT first", variant: "destructive" });
@@ -388,10 +396,10 @@ function VatFinancialTargetsEditor() {
         vatName: selectedVat,
         fyYear: selectedFY,
         metric: m.key,
-        targetOk: parseVal(ok),
-        targetGood: parseVal(good),
-        targetGreat: parseVal(great),
-        targetAmazing: parseVal(amazing),
+        targetOk: parseVatTargetVal(ok),
+        targetGood: parseVatTargetVal(good),
+        targetGreat: parseVatTargetVal(great),
+        targetAmazing: parseVatTargetVal(amazing),
       });
       savedCount++;
     }
@@ -402,14 +410,6 @@ function VatFinancialTargetsEditor() {
     } else {
       toast({ title: "No values to save", variant: "destructive" });
     }
-  };
-
-  const formatDisplay = (type: string, val: string) => {
-    const n = Number.parseFloat(val);
-    if (Number.isNaN(n)) return val;
-    if (type === "dollar") return `$${n.toLocaleString()}`;
-    if (type === "percent") return `${(n * 100).toFixed(1)}%`;
-    return val;
   };
 
   const isLoading = vatsLoading || targetsLoading;
@@ -451,7 +451,7 @@ function VatFinancialTargetsEditor() {
           existingTargets={existingTargets}
           getFieldValue={getFieldValue}
           setFieldValue={setFieldValue}
-          formatDisplay={formatDisplay}
+          formatDisplay={formatVatTargetDisplay}
           handleSaveAll={handleSaveAll}
           isSaving={saveMutation.isPending}
         />

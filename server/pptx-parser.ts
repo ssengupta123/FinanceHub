@@ -150,47 +150,53 @@ function cleanupDir(dir: string) {
   }
 }
 
+export function parseSlideFile(slidesDir: string, resolvedTmpDir: string, sf: string): ParsedSlide {
+  const filePath = path.join(slidesDir, sf);
+  const resolvedPath = fs.realpathSync(filePath);
+  if (!resolvedPath.startsWith(resolvedTmpDir)) {
+    throw new Error("Zip Slip detected: entry resolves outside extraction directory.");
+  }
+  const content = fs.readFileSync(resolvedPath, "utf8");
+  const idx = Number.parseInt(/\d+/.exec(sf)![0]);
+  return {
+    index: idx,
+    paragraphs: extractParagraphs(content),
+    tables: extractTables(content),
+    size: content.length,
+  };
+}
+
+export function getSortedSlideFiles(slidesDir: string): string[] {
+  return fs.readdirSync(slidesDir)
+    .filter(f => /^slide\d+\.xml$/.test(f))
+    .sort((a, b) => Number.parseInt(/\d+/.exec(a)![0]) - Number.parseInt(/\d+/.exec(b)![0]));
+}
+
+function unzipPptx(pptxPath: string, tmpDir: string): void {
+  try {
+    execSync(`unzip -o "${pptxPath}" "ppt/slides/*.xml" -d "${tmpDir}"`, { stdio: "pipe" });
+  } catch (e) {
+    console.error("[extractSlides] PPTX extraction failed:", (e as Error).message);
+    throw new Error("Failed to extract PPTX file. Make sure it's a valid PowerPoint file.");
+  }
+}
+
 function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pptx-"));
 
   try {
     const pptxPath = path.join(tmpDir, "input.pptx");
     fs.writeFileSync(pptxPath, pptxBuffer);
-
-    try {
-      execSync(`unzip -o "${pptxPath}" "ppt/slides/*.xml" -d "${tmpDir}"`, { stdio: "pipe" });
-    } catch (e) {
-      console.error("[extractSlides] PPTX extraction failed:", (e as Error).message);
-      throw new Error("Failed to extract PPTX file. Make sure it's a valid PowerPoint file.");
-    }
+    unzipPptx(pptxPath, tmpDir);
 
     const slidesDir = path.join(tmpDir, "ppt", "slides");
     if (!fs.existsSync(slidesDir)) {
       throw new Error("No slides found in the PPTX file.");
     }
 
-    const slideFiles = fs.readdirSync(slidesDir)
-      .filter(f => /^slide\d+\.xml$/.test(f))
-      .sort((a, b) => Number.parseInt(/\d+/.exec(a)![0]) - Number.parseInt(/\d+/.exec(b)![0]));
-
+    const slideFiles = getSortedSlideFiles(slidesDir);
     const resolvedTmpDir = fs.realpathSync(tmpDir);
-    const slides: ParsedSlide[] = slideFiles.map(sf => {
-      const filePath = path.join(slidesDir, sf);
-      const resolvedPath = fs.realpathSync(filePath);
-      if (!resolvedPath.startsWith(resolvedTmpDir)) {
-        throw new Error("Zip Slip detected: entry resolves outside extraction directory.");
-      }
-      const content = fs.readFileSync(resolvedPath, "utf8");
-      const idx = Number.parseInt(/\d+/.exec(sf)![0]);
-      return {
-        index: idx,
-        paragraphs: extractParagraphs(content),
-        tables: extractTables(content),
-        size: content.length,
-      };
-    });
-
-    return slides;
+    return slideFiles.map(sf => parseSlideFile(slidesDir, resolvedTmpDir, sf));
   } finally {
     cleanupDir(tmpDir);
   }
@@ -527,37 +533,51 @@ interface VatGroup {
   plannerSlides: ParsedSlide[];
 }
 
+export function isCoverSlide(slide: ParsedSlide): boolean {
+  if (slide.index !== 1) return false;
+  const first = (slide.paragraphs[0] || "").toUpperCase();
+  return first.includes("VAT REPORT") && first.includes("SALES COMMITTEE");
+}
+
+export function isEmptySlide(slide: ParsedSlide): boolean {
+  return slide.paragraphs.length === 0 && slide.tables.length === 0;
+}
+
+export function tryStartNewGroup(slide: ParsedSlide): VatGroup | null {
+  if (!isTitleSlide(slide)) return null;
+  const firstPara = slide.paragraphs[0] || "";
+  const vatName = resolveVatName(firstPara);
+  if (!vatName) return null;
+  return { vatName, titleSlide: slide, contentSlides: [], plannerSlides: [] };
+}
+
+export function assignSlideToGroup(slide: ParsedSlide, group: VatGroup): void {
+  if (isPlannerSlide(slide)) {
+    if (slide.tables.length > 0) {
+      group.plannerSlides.push(slide);
+    }
+  } else {
+    group.contentSlides.push(slide);
+  }
+}
+
 export function groupSlidesByVat(slides: ParsedSlide[]): VatGroup[] {
   const groups: VatGroup[] = [];
   let currentGroup: VatGroup | null = null;
 
   for (const slide of slides) {
-    if (slide.index === 1) {
-      const first = (slide.paragraphs[0] || "").toUpperCase();
-      if (first.includes("VAT REPORT") && first.includes("SALES COMMITTEE")) continue;
-    }
+    if (isCoverSlide(slide)) continue;
+    if (isEmptySlide(slide)) continue;
 
-    if (slide.paragraphs.length === 0 && slide.tables.length === 0) continue;
-
-    if (isTitleSlide(slide)) {
-      const firstPara = slide.paragraphs[0] || "";
-      const vatName = resolveVatName(firstPara);
-      if (vatName) {
-        currentGroup = { vatName, titleSlide: slide, contentSlides: [], plannerSlides: [] };
-        groups.push(currentGroup);
-        continue;
-      }
+    const newGroup = tryStartNewGroup(slide);
+    if (newGroup) {
+      currentGroup = newGroup;
+      groups.push(currentGroup);
+      continue;
     }
 
     if (!currentGroup) continue;
-
-    if (isPlannerSlide(slide)) {
-      if (slide.tables.length > 0) {
-        currentGroup.plannerSlides.push(slide);
-      }
-    } else {
-      currentGroup.contentSlides.push(slide);
-    }
+    assignSlideToGroup(slide, currentGroup);
   }
 
   return groups;
@@ -615,9 +635,9 @@ export function findFallbackOverallStatus(contentSlides: ParsedSlide[]): string 
   return "";
 }
 
-export function buildReportFromGroup(group: VatGroup, globalDate: string): ParsedVatReport {
-  const report: ParsedVatReport = {
-    vatName: group.vatName,
+export function createEmptyReport(vatName: string, globalDate: string): ParsedVatReport {
+  return {
+    vatName,
     reportDate: globalDate,
     overallStatus: "",
     statusSummary: "",
@@ -636,27 +656,39 @@ export function buildReportFromGroup(group: VatGroup, globalDate: string): Parse
     risks: [],
     plannerTasks: [],
   };
+}
 
-  for (const slide of group.contentSlides) {
-    const reportDate = extractReportDate(slide.paragraphs, group.titleSlide.paragraphs);
-    if (reportDate !== new Date().toISOString().split("T")[0]) {
-      report.reportDate = reportDate;
-    }
-
-    for (const table of slide.tables) {
-      processTableForReport(table, report);
-    }
-
-    appendContentFields(report, extractContentFromParagraphs(slide.paragraphs));
+export function processContentSlide(slide: ParsedSlide, titleSlide: ParsedSlide, report: ParsedVatReport): void {
+  const reportDate = extractReportDate(slide.paragraphs, titleSlide.paragraphs);
+  if (reportDate !== new Date().toISOString().split("T")[0]) {
+    report.reportDate = reportDate;
   }
+  for (const table of slide.tables) {
+    processTableForReport(table, report);
+  }
+  appendContentFields(report, extractContentFromParagraphs(slide.paragraphs));
+}
 
-  for (const slide of group.plannerSlides) {
+export function collectPlannerTasks(plannerSlides: ParsedSlide[]): ParsedPlannerTask[] {
+  const tasks: ParsedPlannerTask[] = [];
+  for (const slide of plannerSlides) {
     for (const table of slide.tables) {
       if (table.length > 0 && table[0].length === 7) {
-        report.plannerTasks.push(...parsePlannerTable(table));
+        tasks.push(...parsePlannerTable(table));
       }
     }
   }
+  return tasks;
+}
+
+export function buildReportFromGroup(group: VatGroup, globalDate: string): ParsedVatReport {
+  const report = createEmptyReport(group.vatName, globalDate);
+
+  for (const slide of group.contentSlides) {
+    processContentSlide(slide, group.titleSlide, report);
+  }
+
+  report.plannerTasks.push(...collectPlannerTasks(group.plannerSlides));
 
   if (!report.overallStatus) {
     report.overallStatus = findFallbackOverallStatus(group.contentSlides);

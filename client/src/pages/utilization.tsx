@@ -328,6 +328,141 @@ function buildProjectBreakdown(
   }).sort((a, b) => b.avgHoursPerWeek - a.avgHoursPerWeek);
 }
 
+function buildFutureWeeks(currentWeekStart: Date): { key: string; label: string; date: Date }[] {
+  const futureWeeks: { key: string; label: string; date: Date }[] = [];
+  for (let i = 0; i < 13; i++) {
+    const ws = new Date(currentWeekStart);
+    ws.setDate(ws.getDate() + i * 7);
+    const key = getISOWeekKey(ws);
+    futureWeeks.push({ key, label: formatWeekLabel(ws), date: new Date(ws) });
+  }
+  return futureWeeks;
+}
+
+function computeEmployeeRolling(
+  emp: Employee,
+  futureWeeks: { key: string; label: string; date: Date }[],
+  empRecentAvg: Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>,
+  empProjectAllocations: Map<number, EmpAllocation[]>,
+  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>,
+  hasResourcePlans: boolean,
+  rpByEmpMonth: Map<string, number>,
+  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>
+) {
+  const recent = empRecentAvg.get(emp.id)!;
+  const allocations = empProjectAllocations.get(emp.id) || [];
+
+  const weeks = futureWeeks.map((fw) => computeWeekProjection(
+    emp.id, fw.key, fw.date, actualDataByEmpWeek,
+    hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects,
+    allocations, { avgHours: recent.avgHours, avgBillable: recent.avgBillable }
+  ));
+
+  const avgUtil = weeks.length > 0
+    ? weeks.reduce((s, w) => s + w.utilization, 0) / weeks.length
+    : 0;
+  const totalBench = weeks.reduce((s, w) => s + w.bench, 0);
+  const totalWorked = weeks.reduce((s, w) => s + w.worked, 0);
+  const maxProjectCount = Math.max(...weeks.map(w => w.projectCount));
+
+  return {
+    employeeId: emp.id,
+    name: recent.name,
+    role: recent.role,
+    weeks,
+    avgUtil,
+    totalBench,
+    totalWorked,
+    isAllocated: recent.isAllocated,
+    maxProjectCount,
+  };
+}
+
+function buildOverutilisedList(
+  rolling: ReturnType<typeof computeEmployeeRolling>[],
+  empProjectAllocations: Map<number, EmpAllocation[]>,
+  activeProjects: Project[],
+  weekCount: number
+) {
+  return rolling
+    .filter(r => r.avgUtil > 100)
+    .map(r => {
+      const allocs = empProjectAllocations.get(r.employeeId) || [];
+      const projectBreakdown = buildProjectBreakdown(allocs, activeProjects);
+      return { name: r.name, role: r.role, avgHours: r.totalWorked / weekCount, pct: r.avgUtil, projectCount: r.maxProjectCount, projectBreakdown };
+    })
+    .sort((a, b) => b.pct - a.pct);
+}
+
+type UtilizationResult = {
+  weekColumns: { key: string; label: string }[];
+  rollingView: ReturnType<typeof computeEmployeeRolling>[];
+  benchSummary: { totalCapacity: number; totalWorked: number; totalBench: number; benchPct: number; onBenchCount: number };
+  overutilisedList: ReturnType<typeof buildOverutilisedList>;
+  allActiveProjects: Project[];
+};
+
+const EMPTY_UTIL_RESULT: UtilizationResult = {
+  weekColumns: [],
+  rollingView: [],
+  benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 },
+  overutilisedList: [],
+  allActiveProjects: [],
+};
+
+function computeUtilizationData(
+  weeklyData: WeeklyUtilData[] | undefined,
+  permanentEmployees: Employee[],
+  permanentIds: Set<number>,
+  fyTimesheets: Timesheet[],
+  projectList: Project[] | undefined,
+  resourcePlans: ResourcePlan[] | undefined
+): UtilizationResult {
+  if (!weeklyData || permanentEmployees.length === 0) return EMPTY_UTIL_RESULT;
+
+  const today = new Date();
+  const currentWeekStart = getWeekStart(today);
+  const futureWeeks = buildFutureWeeks(currentWeekStart);
+  const weekCols = futureWeeks.map(w => ({ key: w.key, label: w.label }));
+
+  const recentCutoff = new Date(today);
+  recentCutoff.setDate(recentCutoff.getDate() - 28);
+  const recentData = weeklyData.filter(row => {
+    if (!permanentIds.has(row.employee_id)) return false;
+    const d = new Date(row.week_ending);
+    return d >= recentCutoff && d <= today;
+  });
+
+  const resourcePlanList = resourcePlans || [];
+  const hasResourcePlans = resourcePlanList.length > 0;
+  const { rpByEmpMonth, rpByEmpMonthProjects } = buildResourcePlanLookups(resourcePlanList);
+
+  const activeProjects = filterActiveProjects(projectList || [], today);
+  const empProjectAllocations = buildEmpProjectAllocationsMap(permanentEmployees, fyTimesheets, activeProjects, today);
+  const empRecentAvg = buildEmpRecentAvgMap(permanentEmployees, recentData, empProjectAllocations);
+  const actualDataByEmpWeek = buildActualDataByEmpWeek(weeklyData, permanentIds);
+
+  const rolling = permanentEmployees.map(emp =>
+    computeEmployeeRolling(emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects)
+  ).sort((a, b) => b.avgUtil - a.avgUtil);
+
+  const totalCapacity = rolling.length * STANDARD_WEEKLY_HOURS * weekCols.length;
+  const totalWorked = rolling.reduce((s, r) => s + r.totalWorked, 0);
+  const totalBench = rolling.reduce((s, r) => s + r.totalBench, 0);
+  const benchPct = totalCapacity > 0 ? (totalBench / totalCapacity) * 100 : 0;
+  const onBenchCount = rolling.filter(r => !r.isAllocated).length;
+
+  const overutilised = buildOverutilisedList(rolling, empProjectAllocations, activeProjects, weekCols.length);
+
+  return {
+    weekColumns: weekCols,
+    rollingView: rolling,
+    benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
+    overutilisedList: overutilised,
+    allActiveProjects: activeProjects,
+  };
+}
+
 function OverutilisedEmployeeRow({ emp, isExpanded, onToggle }: Readonly<{
   emp: any;
   isExpanded: boolean;
@@ -380,6 +515,12 @@ function OverutilisedEmployeeRow({ emp, isExpanded, onToggle }: Readonly<{
   );
 }
 
+function computeWeekTotalUtil(rollingView: ReturnType<typeof computeEmployeeRolling>[], weekIndex: number): number {
+  const weekWorked = rollingView.reduce((s, r) => s + r.weeks[weekIndex].worked, 0);
+  const weekCap = rollingView.length * STANDARD_WEEKLY_HOURS;
+  return weekCap > 0 ? (weekWorked / weekCap) * 100 : 0;
+}
+
 function computeProjectAvgPct(weeks: any[], projId: number): string {
   const weekAllocs = weeks.map((w: any) => {
     const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
@@ -398,6 +539,12 @@ function computeProjectAvgHrs(weeks: any[], projId: number): string {
   return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}h` : "-";
 }
 
+function RowIndicator({ hasProjects, isExpanded, avgUtil }: Readonly<{ hasProjects: boolean; isExpanded: boolean; avgUtil: number }>) {
+  if (!hasProjects) return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(avgUtil)}`} />;
+  if (isExpanded) return <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
+  return <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
+}
+
 function ProjectWeekCell({ week, projId, weekKey }: Readonly<{ week: any; projId: number; weekKey: string }>) {
   const pa = (week.projectAllocations || []).find((a: any) => a.projectId === projId);
   const hours = pa ? pa.hours : 0;
@@ -411,6 +558,47 @@ function ProjectWeekCell({ week, projId, weekKey }: Readonly<{ week: any; projId
             <div className="opacity-70">{pct.toFixed(0)}%</div>
           </>
         ) : "-"}
+      </div>
+    </TableCell>
+  );
+}
+
+function ProjectAllocRow({ row, projId, weekColumns, allActiveProjects, projects }: Readonly<{
+  row: any;
+  projId: number;
+  weekColumns: { key: string; label: string }[];
+  allActiveProjects: Project[];
+  projects: Project[];
+}>) {
+  const proj = allActiveProjects.find((p: any) => p.id === projId) || projects.find((p: any) => p.id === projId);
+  const projName = proj ? (proj.projectCode || proj.name) : `Project ${projId}`;
+  const projClient = proj?.client || "";
+  return (
+    <TableRow key={`${row.employeeId}-proj-${projId}`} className="bg-muted/20" data-testid={`row-project-alloc-${row.employeeId}-${projId}`}>
+      <TableCell className="sticky left-0 bg-muted/20 z-10 pl-8">
+        <span className="text-xs text-muted-foreground">{projName}{projClient ? ` (${projClient})` : ""}</span>
+      </TableCell>
+      <TableCell className="text-right text-xs text-muted-foreground">
+        {computeProjectAvgPct(row.weeks, projId)}
+      </TableCell>
+      <TableCell className="text-right text-xs text-muted-foreground">
+        {computeProjectAvgHrs(row.weeks, projId)}
+      </TableCell>
+      {row.weeks.map((week: any, wi: number) => (
+        <ProjectWeekCell key={weekColumns[wi]?.key ?? wi} week={week} projId={projId} weekKey={weekColumns[wi]?.key ?? String(wi)} />
+      ))}
+    </TableRow>
+  );
+}
+
+function WeekUtilCell({ week, weekKey }: Readonly<{ week: any; weekKey: string }>) {
+  return (
+    <TableCell key={weekKey} className="text-center p-1">
+      <div
+        className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
+        title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
+      >
+        {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
       </div>
     </TableCell>
   );
@@ -450,11 +638,7 @@ function RollingViewRow({ row, weekColumns, expandedRows, setExpandedRows, allAc
       >
         <TableCell className="font-medium sticky left-0 bg-background z-10">
           <div className="flex items-center gap-2">
-            {(() => {
-              if (!hasProjects) return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />;
-              if (isExpanded) return <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
-              return <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />;
-            })()}
+            <RowIndicator hasProjects={hasProjects} isExpanded={isExpanded} avgUtil={row.avgUtil} />
             {row.name}
             {hasProjects && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{uniqueProjectIds.size}p</Badge>}
           </div>
@@ -466,38 +650,155 @@ function RollingViewRow({ row, weekColumns, expandedRows, setExpandedRows, allAc
         </TableCell>
         <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
         {row.weeks.map((week: any, wi: number) => (
-          <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
-            <div
-              className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
-              title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
-            >
-              {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
-            </div>
-          </TableCell>
+          <WeekUtilCell key={weekColumns[wi]?.key ?? wi} week={week} weekKey={weekColumns[wi]?.key ?? String(wi)} />
         ))}
       </TableRow>
-      {isExpanded && Array.from(uniqueProjectIds).map(projId => {
-        const proj = allActiveProjects.find((p: any) => p.id === projId) || projects.find((p: any) => p.id === projId);
-        const projName = proj ? (proj.projectCode || proj.name) : `Project ${projId}`;
-        const projClient = proj?.client || "";
-        return (
-          <TableRow key={`${row.employeeId}-proj-${projId}`} className="bg-muted/20" data-testid={`row-project-alloc-${row.employeeId}-${projId}`}>
-            <TableCell className="sticky left-0 bg-muted/20 z-10 pl-8">
-              <span className="text-xs text-muted-foreground">{projName}{projClient ? ` (${projClient})` : ""}</span>
-            </TableCell>
-            <TableCell className="text-right text-xs text-muted-foreground">
-              {computeProjectAvgPct(row.weeks, projId)}
-            </TableCell>
-            <TableCell className="text-right text-xs text-muted-foreground">
-              {computeProjectAvgHrs(row.weeks, projId)}
-            </TableCell>
-            {row.weeks.map((week: any, wi: number) => (
-              <ProjectWeekCell key={weekColumns[wi]?.key ?? wi} week={week} projId={projId} weekKey={weekColumns[wi]?.key ?? String(wi)} />
-            ))}
-          </TableRow>
-        );
-      })}
+      {isExpanded && Array.from(uniqueProjectIds).map(projId => (
+        <ProjectAllocRow
+          key={`${row.employeeId}-proj-${projId}`}
+          row={row}
+          projId={projId}
+          weekColumns={weekColumns}
+          allActiveProjects={allActiveProjects}
+          projects={projects}
+        />
+      ))}
     </Fragment>
+  );
+}
+
+function SummaryCards({ isLoading, allocPct, allocatedCount, permanentCount, overutilisedCount, billableData, benchSummary, benchColor }: Readonly<{
+  isLoading: boolean;
+  allocPct: number;
+  allocatedCount: number;
+  permanentCount: number;
+  overutilisedCount: number;
+  billableData: { ratio: number; billHrs: number; totalHrs: number };
+  benchSummary: { totalBench: number; benchPct: number; onBenchCount: number };
+  benchColor: string;
+}>) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Staff Allocation</CardTitle>
+          <Users className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-20" /> : (
+            <div className={`text-2xl font-bold ${utilTextColor(allocPct)}`} data-testid="text-staff-allocation">
+              {allocPct.toFixed(1)}%
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{allocatedCount} / {permanentCount} perm staff on active projects</p>
+        </CardContent>
+      </Card>
+      <Card className={!isLoading && overutilisedCount > 0 ? "border-red-500/50" : ""}>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Overutilised Resources</CardTitle>
+          <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-20" /> : (
+            <div className={`text-2xl font-bold ${overutilisedCount > 0 ? "text-red-600 dark:text-red-400" : ""}`} data-testid="text-overutilised-count">
+              {overutilisedCount}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {overutilisedCount > 0
+              ? `${overutilisedCount} resources over 100% allocation`
+              : "No resources over 100% allocation"
+            }
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Billable Ratio</CardTitle>
+          <Target className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-20" /> : (
+            <>
+              <div className={`text-2xl font-bold ${utilTextColor(billableData.ratio)}`} data-testid="text-billable-ratio">{billableData.ratio.toFixed(1)}%</div>
+              <p className="text-xs text-muted-foreground">{billableData.billHrs.toFixed(0)}h billable of {billableData.totalHrs.toFixed(0)}h total (perm only)</p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">Bench Time</CardTitle>
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? <Skeleton className="h-8 w-20" /> : (
+            <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {`${benchSummary.benchPct.toFixed(1)}% capacity | ${benchSummary.onBenchCount} on bench (perm only)`}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function OverutilisedTable({ overutilisedList, expandedOverutil, setExpandedOverutil }: Readonly<{
+  overutilisedList: ReturnType<typeof buildOverutilisedList>;
+  expandedOverutil: Set<string>;
+  setExpandedOverutil: (fn: (prev: Set<string>) => Set<string>) => void;
+}>) {
+  if (overutilisedList.length === 0) return null;
+  const toggleExpanded = (name: string) => {
+    setExpandedOverutil(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+  return (
+    <Card className="border-red-500/50">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+          <span>Overutilised Resources (Allocation &gt; 100%)</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead className="text-right">Avg Hours/Week</TableHead>
+              <TableHead className="text-right">Active Projects</TableHead>
+              <TableHead className="text-right">Allocation %</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {overutilisedList.map((emp: any) => (
+              <OverutilisedEmployeeRow
+                key={emp.name}
+                emp={emp}
+                isExpanded={expandedOverutil.has(emp.name)}
+                onToggle={() => toggleExpanded(emp.name)}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UtilLegendItem({ color, label }: Readonly<{ color: string; label: string }>) {
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground"><span className={`inline-block w-2.5 h-2.5 rounded-full ${color}`} /><span>{label}</span></span>
   );
 }
 
@@ -554,111 +855,10 @@ export default function UtilizationDashboard() {
     return permanentEmployees.filter(emp => isAllocatedToActiveProject(emp.id, fyTimesheets, projectList));
   }, [permanentEmployees, fyTimesheets, projects]);
 
-  const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects } = useMemo(() => {
-    const emptyResult: {
-      weekColumns: { key: string; label: string }[];
-      rollingView: any[];
-      benchSummary: { totalCapacity: number; totalWorked: number; totalBench: number; benchPct: number; onBenchCount: number };
-      overutilisedList: { name: string; role: string; avgHours: number; pct: number }[];
-      allActiveProjects: Project[];
-    } = {
-      weekColumns: [],
-      rollingView: [],
-      benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 },
-      overutilisedList: [],
-      allActiveProjects: [],
-    };
-
-    if (!weeklyData || permanentEmployees.length === 0) return emptyResult;
-
-    const today = new Date();
-    const currentWeekStart = getWeekStart(today);
-
-    const futureWeeks: { key: string; label: string; date: Date }[] = [];
-    for (let i = 0; i < 13; i++) {
-      const ws = new Date(currentWeekStart);
-      ws.setDate(ws.getDate() + i * 7);
-      const key = getISOWeekKey(ws);
-      futureWeeks.push({ key, label: formatWeekLabel(ws), date: new Date(ws) });
-    }
-
-    const weekCols = futureWeeks.map(w => ({ key: w.key, label: w.label }));
-
-    const recentCutoff = new Date(today);
-    recentCutoff.setDate(recentCutoff.getDate() - 28);
-    const recentData = weeklyData.filter(row => {
-      if (!permanentIds.has(row.employee_id)) return false;
-      const d = new Date(row.week_ending);
-      return d >= recentCutoff && d <= today;
-    });
-
-    const resourcePlanList = resourcePlans || [];
-    const hasResourcePlans = resourcePlanList.length > 0;
-    const { rpByEmpMonth, rpByEmpMonthProjects } = buildResourcePlanLookups(resourcePlanList);
-
-    const activeProjects = filterActiveProjects(projects || [], today);
-
-    const empProjectAllocations = buildEmpProjectAllocationsMap(permanentEmployees, fyTimesheets, activeProjects, today);
-
-    const empRecentAvg = buildEmpRecentAvgMap(permanentEmployees, recentData, empProjectAllocations);
-
-    const actualDataByEmpWeek = buildActualDataByEmpWeek(weeklyData, permanentIds);
-
-    const rolling = permanentEmployees.map(emp => {
-      const recent = empRecentAvg.get(emp.id)!;
-      const allocations = empProjectAllocations.get(emp.id) || [];
-
-      const weeks = futureWeeks.map((fw) => {
-        return computeWeekProjection(
-          emp.id, fw.key, fw.date, actualDataByEmpWeek,
-          hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects,
-          allocations, { avgHours: recent.avgHours, avgBillable: recent.avgBillable }
-        );
-      });
-
-      const avgUtil = weeks.length > 0
-        ? weeks.reduce((s, w) => s + w.utilization, 0) / weeks.length
-        : 0;
-      const totalBench = weeks.reduce((s, w) => s + w.bench, 0);
-      const totalWorked = weeks.reduce((s, w) => s + w.worked, 0);
-      const maxProjectCount = Math.max(...weeks.map(w => w.projectCount));
-
-      return {
-        employeeId: emp.id,
-        name: recent.name,
-        role: recent.role,
-        weeks,
-        avgUtil,
-        totalBench,
-        totalWorked,
-        isAllocated: recent.isAllocated,
-        maxProjectCount,
-      };
-    }).sort((a, b) => b.avgUtil - a.avgUtil);
-
-    const totalCapacity = rolling.length * STANDARD_WEEKLY_HOURS * weekCols.length;
-    const totalWorked = rolling.reduce((s, r) => s + r.totalWorked, 0);
-    const totalBench = rolling.reduce((s, r) => s + r.totalBench, 0);
-    const benchPct = totalCapacity > 0 ? (totalBench / totalCapacity) * 100 : 0;
-    const onBenchCount = rolling.filter(r => !r.isAllocated).length;
-
-    const overutilised = rolling
-      .filter(r => r.avgUtil > 100)
-      .map(r => {
-        const allocs = empProjectAllocations.get(r.employeeId) || [];
-        const projectBreakdown = buildProjectBreakdown(allocs, activeProjects);
-        return { name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil, projectCount: r.maxProjectCount, projectBreakdown };
-      })
-      .sort((a, b) => b.pct - a.pct);
-
-    return {
-      weekColumns: weekCols,
-      rollingView: rolling,
-      benchSummary: { totalCapacity, totalWorked, totalBench, benchPct, onBenchCount },
-      overutilisedList: overutilised,
-      allActiveProjects: activeProjects,
-    };
-  }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
+  const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects } = useMemo(
+    () => computeUtilizationData(weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans),
+    [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]
+  );
 
   const allocPct = computeAllocPct(allocatedPermanent.length, permanentEmployees.length);
   const billableData = computeBillableRatio(fyTimesheets, permanentIds);
@@ -673,15 +873,9 @@ export default function UtilizationDashboard() {
             Forward-looking 13-week resource utilisation for permanent staff
           </p>
           <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /><span>Good (80-100%)</span>
-            </span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500" /><span>Fair (50-79%)</span>
-            </span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /><span>Risk (&lt;50% or &gt;100%)</span>
-            </span>
+            <UtilLegendItem color="bg-green-500" label="Good (80-100%)" />
+            <UtilLegendItem color="bg-amber-500" label="Fair (50-79%)" />
+            <UtilLegendItem color="bg-red-500" label="Risk (<50% or >100%)" />
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -700,110 +894,22 @@ export default function UtilizationDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Staff Allocation</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className={`text-2xl font-bold ${utilTextColor(allocPct)}`} data-testid="text-staff-allocation">
-                {allocPct.toFixed(1)}%
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">{allocatedPermanent.length} / {permanentEmployees.length} perm staff on active projects</p>
-          </CardContent>
-        </Card>
-        <Card className={!isLoading && overutilisedList.length > 0 ? "border-red-500/50" : ""}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overutilised Resources</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className={`text-2xl font-bold ${overutilisedList.length > 0 ? "text-red-600 dark:text-red-400" : ""}`} data-testid="text-overutilised-count">
-                {overutilisedList.length}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {overutilisedList.length > 0
-                ? `${overutilisedList.length} resources over 100% allocation`
-                : "No resources over 100% allocation"
-              }
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Billable Ratio</CardTitle>
-            <Target className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <>
-                <div className={`text-2xl font-bold ${utilTextColor(billableData.ratio)}`} data-testid="text-billable-ratio">{billableData.ratio.toFixed(1)}%</div>
-                <p className="text-xs text-muted-foreground">{billableData.billHrs.toFixed(0)}h billable of {billableData.totalHrs.toFixed(0)}h total (perm only)</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Bench Time</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {benchSummary.benchPct.toFixed(1)}% capacity | {benchSummary.onBenchCount} on bench (perm only)
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <SummaryCards
+        isLoading={isLoading}
+        allocPct={allocPct}
+        allocatedCount={allocatedPermanent.length}
+        permanentCount={permanentEmployees.length}
+        overutilisedCount={overutilisedList.length}
+        billableData={billableData}
+        benchSummary={benchSummary}
+        benchColor={benchColor}
+      />
 
-      {overutilisedList.length > 0 && (
-        <Card className="border-red-500/50">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <span>Overutilised Resources (Allocation &gt; 100%)</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Avg Hours/Week</TableHead>
-                  <TableHead className="text-right">Active Projects</TableHead>
-                  <TableHead className="text-right">Allocation %</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overutilisedList.map((emp: any) => (
-                  <OverutilisedEmployeeRow
-                    key={emp.name}
-                    emp={emp}
-                    isExpanded={expandedOverutil.has(emp.name)}
-                    onToggle={() => {
-                      setExpandedOverutil(prev => {
-                        const next = new Set(prev);
-                        if (next.has(emp.name)) next.delete(emp.name);
-                        else next.add(emp.name);
-                        return next;
-                      });
-                    }}
-                  />
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <OverutilisedTable
+        overutilisedList={overutilisedList}
+        expandedOverutil={expandedOverutil}
+        setExpandedOverutil={setExpandedOverutil}
+      />
 
       <Card>
         <CardHeader>
@@ -811,10 +917,7 @@ export default function UtilizationDashboard() {
             <CardTitle className="text-base">Rolling 13-Week Resource Utilisation (Forward Projection)</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               Permanent employees only. Cross-references resource plans and project date ranges to detect multi-project allocations.
-              <span className="ml-2 inline-flex items-center gap-1">
-                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /><span>Actual</span>
-                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /><span>Projected</span>
-              </span>
+              <span className="ml-2 inline-flex items-center gap-1"><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /><span>Actual</span><span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /><span>Projected</span></span>
             </p>
           </div>
         </CardHeader>
@@ -856,16 +959,11 @@ export default function UtilizationDashboard() {
                         : 0}%
                     </TableCell>
                     <TableCell className="text-right">{benchSummary.totalBench.toFixed(0)}</TableCell>
-                    {weekColumns.map((wc, wi) => {
-                      const weekWorked = rollingView.reduce((s: number, r: any) => s + r.weeks[wi].worked, 0);
-                      const weekCap = rollingView.length * STANDARD_WEEKLY_HOURS;
-                      const weekUtil = weekCap > 0 ? (weekWorked / weekCap) * 100 : 0;
-                      return (
-                        <TableCell key={wc.key} className="text-center p-1">
-                          <div className="text-xs font-medium">{weekUtil.toFixed(0)}%</div>
-                        </TableCell>
-                      );
-                    })}
+                    {weekColumns.map((wc, wi) => (
+                      <TableCell key={wc.key} className="text-center p-1">
+                        <div className="text-xs font-medium">{computeWeekTotalUtil(rollingView, wi).toFixed(0)}%</div>
+                      </TableCell>
+                    ))}
                   </TableRow>
                 </TableBody>
               </Table>
