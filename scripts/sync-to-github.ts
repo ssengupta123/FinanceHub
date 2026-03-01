@@ -276,19 +276,6 @@ async function main() {
       console.log('Main branch created.');
     }
 
-    console.log(`\nTriggering deployment workflow...`);
-    try {
-      await octokit.actions.createWorkflowDispatch({
-        owner: user.login,
-        repo: repoName,
-        workflow_id: 'azure-deploy.yml',
-        ref: 'main',
-      });
-      console.log(`Deployment workflow triggered successfully.`);
-    } catch (dispatchErr: any) {
-      console.warn(`Could not trigger workflow dispatch: ${dispatchErr.message}`);
-    }
-
     console.log(`\n--- Summary ---`);
     console.log(`Repository:  https://github.com/${user.login}/${repoName}`);
     console.log(`Feature:     ${branchName}`);
