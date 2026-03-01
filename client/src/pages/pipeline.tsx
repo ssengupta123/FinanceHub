@@ -90,12 +90,12 @@ function classificationColor(c: string): "default" | "secondary" | "outline" | "
 }
 
 function getOppValue(opp: PipelineOpportunity): number {
-  const v = parseFloat(opp.value || "0");
+  const v = Number.parseFloat(opp.value || "0");
   return Number.isNaN(v) ? 0 : v;
 }
 
 function getOppMargin(opp: PipelineOpportunity): number {
-  const m = parseFloat(opp.marginPercent || "0");
+  const m = Number.parseFloat(opp.marginPercent || "0");
   return Number.isNaN(m) ? 0 : m;
 }
 

@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -43,7 +42,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, DollarSign, Users, TrendingUp, ArrowUpDown, Clock } from "lucide-react";
+import { Plus, Trash2, DollarSign, Users, TrendingUp, ArrowUpDown } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 interface DerivedRate {
@@ -60,15 +59,22 @@ interface DerivedRate {
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
-  const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0.00";
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
+  if (Number.isNaN(n)) return "$0.00";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
+}
+
+function marginColorClass(margin: number): string {
+  if (margin >= 30) return "text-green-600 dark:text-green-400";
+  if (margin >= 15) return "text-amber-600 dark:text-amber-400";
+  if (margin > 0) return "text-red-600 dark:text-red-400";
+  return "text-muted-foreground";
 }
 
 function parseNum(val: string | number | null | undefined): number {
   if (!val) return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
-  return isNaN(n) ? 0 : n;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 type SortField = "cost_band" | "avg_sell_rate" | "avg_cost_rate" | "margin_pct" | "total_hours" | "employee_count";
@@ -371,25 +377,24 @@ export default function RateCards() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loadingDerived ? (
+                {loadingDerived && (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
+                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
                   ))
-                ) : filteredDerived.length === 0 ? (
+                )}
+                {!loadingDerived && filteredDerived.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       No rate data available. Upload timesheet data first.
                     </TableCell>
                   </TableRow>
-                ) : (
+                )}
+                {!loadingDerived && filteredDerived.length > 0 && (
                   filteredDerived.map((row, idx) => {
                     const margin = parseNum(row.margin_pct);
-                    const marginColor = margin >= 30 ? "text-green-600 dark:text-green-400"
-                      : margin >= 15 ? "text-amber-600 dark:text-amber-400"
-                      : margin > 0 ? "text-red-600 dark:text-red-400"
-                      : "text-muted-foreground";
+                    const rowKey = `${row.cost_band}-${row.role}-${row.location}`;
                     return (
-                      <TableRow key={idx} data-testid={`row-derived-rate-${idx}`}>
+                      <TableRow key={rowKey} data-testid={`row-derived-rate-${idx}`}>
                         <TableCell>
                           <div>
                             <div className="font-medium">{row.cost_band || row.role}</div>
@@ -403,7 +408,7 @@ export default function RateCards() {
                         <TableCell className="text-right">{parseNum(row.total_hours).toLocaleString()}</TableCell>
                         <TableCell className="text-right">{formatCurrency(row.avg_cost_rate)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(row.avg_sell_rate)}</TableCell>
-                        <TableCell className={`text-right font-medium ${marginColor}`}>{margin.toFixed(1)}%</TableCell>
+                        <TableCell className={`text-right font-medium ${marginColorClass(margin)}`}>{margin.toFixed(1)}%</TableCell>
                       </TableRow>
                     );
                   })

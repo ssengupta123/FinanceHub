@@ -18,13 +18,13 @@ import { ArrowLeft } from "lucide-react";
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
 function formatPercent(val: string | number | null | undefined) {
   if (!val) return "0%";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return `${n.toFixed(1)}%`;
 }
 

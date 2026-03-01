@@ -4,7 +4,7 @@ import { ConnectSessionKnexStore } from "connect-session-knex";
 import jwt from "jsonwebtoken";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
-import { createServer } from "http";
+import { createServer } from "node:http";
 import { runMigrations, runIncrementalMigrations } from "./db";
 import { db } from "./db";
 import { storage } from "./storage";
@@ -191,7 +191,7 @@ if (process.env.NODE_ENV === "production") {
   await setupVite(httpServer, app);
 }
 
-const port = parseInt(process.env.PORT || "5000", 10);
+const port = Number.parseInt(process.env.PORT || "5000", 10);
 httpServer.on("error", (err) => {
   console.log("[SERVER] httpServer error:", err);
 });

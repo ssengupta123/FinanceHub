@@ -132,7 +132,7 @@ function VatReportStatusSection({ report, onUpdate }: Readonly<{ report: VatRepo
   };
 
   const overallStatus = (report.overallStatus || "").toUpperCase();
-  const reportData = report as unknown as Record<string, string | null | undefined>;
+  const reportData: Record<string, string | null | undefined> = report as any;
 
   if (editing) {
     return (
@@ -495,7 +495,9 @@ function RiskEditDialog({ risk, isNew, employees, onSave, onCancel, isPending }:
         <div className="flex gap-2 justify-end">
           <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
           <Button size="sm" onClick={() => onSave(form)} disabled={!form.description || isPending} data-testid="button-submit-risk">
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : isNew ? "Add" : "Save"}
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {!isPending && isNew ? "Add" : null}
+            {!isPending && !isNew ? "Save" : null}
           </Button>
         </div>
       </CardContent>
@@ -677,24 +679,34 @@ function RisksTable({ reportId }: Readonly<{ reportId: number }>) {
         {(showAdd || editingId !== null) && (
           <div ref={editFormRef}>
             <RiskEditDialog
-              risk={editingId !== null ? editForm : newRisk}
+              risk={editingId === null ? newRisk : editForm}
               isNew={editingId === null}
               employees={employees}
               onSave={(data) => {
-                if (editingId !== null) {
-                  updateMutation.mutate({ id: editingId, data });
-                } else {
+                if (editingId === null) {
                   addMutation.mutate(data);
+                } else {
+                  updateMutation.mutate({ id: editingId, data });
                 }
               }}
               onCancel={() => { setShowAdd(false); setEditingId(null); }}
-              isPending={editingId !== null ? updateMutation.isPending : addMutation.isPending}
+              isPending={editingId === null ? addMutation.isPending : updateMutation.isPending}
             />
           </div>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function groupTasksByBucket<T extends { bucketName: string | null }>(tasks: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const task of tasks) {
+    const bucket = task.bucketName || "Uncategorised";
+    if (!grouped.has(bucket)) grouped.set(bucket, []);
+    grouped.get(bucket)!.push(task);
+  }
+  return grouped;
 }
 
 function PlannerTasksTable({ reportId }: Readonly<{ reportId: number }>) {
@@ -847,14 +859,7 @@ function PlannerTasksTable({ reportId }: Readonly<{ reportId: number }>) {
         {tasks.length === 0 ? (
           <div className="text-center text-xs text-muted-foreground py-4 border rounded-md">No planner tasks</div>
         ) : (
-          (() => {
-            const grouped = new Map<string, typeof tasks>();
-            for (const task of tasks) {
-              const bucket = task.bucketName || "Uncategorised";
-              if (!grouped.has(bucket)) grouped.set(bucket, []);
-              grouped.get(bucket)!.push(task);
-            }
-            return Array.from(grouped.entries()).map(([bucketName, bucketTasks]) => (
+          Array.from(groupTasksByBucket(tasks).entries()).map(([bucketName, bucketTasks]) => (
               <div key={bucketName} className="mb-4">
                 <div className="bg-muted/50 px-3 py-1.5 rounded-t-md border border-b-0">
                   <span className="text-xs font-semibold uppercase tracking-wide">{bucketName}</span>
@@ -876,81 +881,15 @@ function PlannerTasksTable({ reportId }: Readonly<{ reportId: number }>) {
                     <TableBody>
                       {bucketTasks.map((task) => {
                         if (editingId === task.id) {
-                          return (
-                            <TableRow key={task.id}>
-                              <TableCell><Input value={editForm.taskName || ""} onChange={(e) => setEditForm({ ...editForm, taskName: e.target.value })} className="h-8 text-xs" /></TableCell>
-                              <TableCell>
-                                <Select value={editForm.progress || "Not started"} onValueChange={(v) => setEditForm({ ...editForm, progress: v })}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Not started">Not started</SelectItem>
-                                    <SelectItem value="In progress">In progress</SelectItem>
-                                    <SelectItem value="Completed">Completed</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell><Input value={editForm.dueDate || ""} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="h-8 text-xs" /></TableCell>
-                              <TableCell>
-                                <Select value={editForm.priority || "Medium"} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Important">Important</SelectItem>
-                                    <SelectItem value="Medium">Medium</SelectItem>
-                                    <SelectItem value="Low">Low</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell><Input value={editForm.assignedTo || ""} onChange={(e) => setEditForm({ ...editForm, assignedTo: e.target.value })} className="h-8 text-xs" /></TableCell>
-                              <TableCell>
-                                <Select value={editForm.labels || "GREEN"} onValueChange={(v) => setEditForm({ ...editForm, labels: v })}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="GREEN">GREEN</SelectItem>
-                                    <SelectItem value="AMBER">AMBER</SelectItem>
-                                    <SelectItem value="RED">RED</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: task.id, data: editForm })}><Save className="h-3 w-3" /></Button>
-                                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><ChevronUp className="h-3 w-3" /></Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
+                          return renderPlannerTaskEditRow(task, editForm, setEditForm, updateMutation, setEditingId);
                         }
-                        return (
-                          <TableRow key={task.id}>
-                            <TableCell className="text-xs">{task.taskName}</TableCell>
-                            <TableCell className="text-xs">{task.progress || "—"}</TableCell>
-                            <TableCell className="text-xs whitespace-nowrap">{task.dueDate || "—"}</TableCell>
-                            <TableCell className="text-xs">{task.priority || "—"}</TableCell>
-                            <TableCell className="text-xs">{task.assignedTo || "—"}</TableCell>
-                            <TableCell><StatusDot status={task.labels} /></TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                {can("vat_reports", "edit") && (
-                                  <Button size="sm" variant="ghost" onClick={() => { setEditingId(task.id); setEditForm({ ...task }); }} data-testid={`button-edit-task-${task.id}`}>
-                                    <Edit2 className="h-3 w-3" />
-                                  </Button>
-                                )}
-                                {can("vat_reports", "delete") && (
-                                  <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(task.id)} data-testid={`button-delete-task-${task.id}`}>
-                                    <Trash2 className="h-3 w-3 text-destructive" />
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
+                        return renderPlannerTaskDisplayRow(task, can, setEditingId, setEditForm, deleteMutation);
                       })}
                     </TableBody>
                   </Table>
                 </div>
               </div>
-            ));
-          })()
+            ))
         )}
 
         {showAdd && (
@@ -1017,6 +956,182 @@ function PlannerTasksTable({ reportId }: Readonly<{ reportId: number }>) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function renderActionItemEditRow(
+  item: VatActionItem,
+  editForm: Partial<VatActionItem>,
+  setEditForm: (f: Partial<VatActionItem>) => void,
+  updateMutation: { mutate: (args: { id: number; data: Partial<VatActionItem> }) => void },
+  setEditingId: (id: number | null) => void,
+) {
+  return (
+    <TableRow key={item.id}>
+      <TableCell>
+        <Select value={editForm.section || "Open Opps"} onValueChange={(v) => setEditForm({ ...editForm, section: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Open Opps">Open Opps</SelectItem>
+            <SelectItem value="Big Plays">Big Plays</SelectItem>
+            <SelectItem value="Account Goals">Account Goals</SelectItem>
+            <SelectItem value="Relationships">Relationships</SelectItem>
+            <SelectItem value="Research">Research</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell><Input value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell><Input value={editForm.owner || ""} onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell><Input value={editForm.dueDate || ""} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell>
+        <Select value={editForm.status || "open"} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <Select value={editForm.priority || "Medium"} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="Low">Low</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: item.id, data: editForm })}><Save className="h-3 w-3" /></Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><ChevronUp className="h-3 w-3" /></Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function renderActionItemDisplayRow(
+  item: VatActionItem,
+  can: (resource: string, action: string) => boolean,
+  setEditingId: (id: number) => void,
+  setEditForm: (f: Partial<VatActionItem>) => void,
+  deleteMutation: { mutate: (id: number) => void },
+) {
+  return (
+    <TableRow key={item.id}>
+      <TableCell className="text-xs font-medium">{item.section}</TableCell>
+      <TableCell className="text-xs">{item.description}</TableCell>
+      <TableCell className="text-xs">{item.owner || "—"}</TableCell>
+      <TableCell className="text-xs whitespace-nowrap">{item.dueDate || "—"}</TableCell>
+      <TableCell>
+        <Badge variant={item.status === "completed" ? "default" : "outline"} className="text-xs">
+          {item.status || "open"}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-xs">{item.priority || "—"}</TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          {can("vat_reports", "edit") && (
+            <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditForm({ ...item }); }} data-testid={`button-edit-action-${item.id}`}>
+              <Edit2 className="h-3 w-3" />
+            </Button>
+          )}
+          {can("vat_reports", "delete") && (
+            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-action-${item.id}`}>
+              <Trash2 className="h-3 w-3 text-destructive" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function renderPlannerTaskEditRow(
+  task: VatPlannerTask,
+  editForm: Partial<VatPlannerTask>,
+  setEditForm: (f: Partial<VatPlannerTask>) => void,
+  updateMutation: { mutate: (args: { id: number; data: Partial<VatPlannerTask> }) => void },
+  setEditingId: (id: number | null) => void,
+) {
+  return (
+    <TableRow key={task.id}>
+      <TableCell><Input value={editForm.taskName || ""} onChange={(e) => setEditForm({ ...editForm, taskName: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell>
+        <Select value={editForm.progress || "Not started"} onValueChange={(v) => setEditForm({ ...editForm, progress: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Not started">Not started</SelectItem>
+            <SelectItem value="In progress">In progress</SelectItem>
+            <SelectItem value="Completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell><Input value={editForm.dueDate || ""} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell>
+        <Select value={editForm.priority || "Medium"} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Important">Important</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="Low">Low</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell><Input value={editForm.assignedTo || ""} onChange={(e) => setEditForm({ ...editForm, assignedTo: e.target.value })} className="h-8 text-xs" /></TableCell>
+      <TableCell>
+        <Select value={editForm.labels || "GREEN"} onValueChange={(v) => setEditForm({ ...editForm, labels: v })}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="GREEN">GREEN</SelectItem>
+            <SelectItem value="AMBER">AMBER</SelectItem>
+            <SelectItem value="RED">RED</SelectItem>
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: task.id, data: editForm })}><Save className="h-3 w-3" /></Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><ChevronUp className="h-3 w-3" /></Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function renderPlannerTaskDisplayRow(
+  task: VatPlannerTask,
+  can: (resource: string, action: string) => boolean,
+  setEditingId: (id: number) => void,
+  setEditForm: (f: Partial<VatPlannerTask>) => void,
+  deleteMutation: { mutate: (id: number) => void },
+) {
+  return (
+    <TableRow key={task.id}>
+      <TableCell className="text-xs">{task.taskName}</TableCell>
+      <TableCell className="text-xs">{task.progress || "—"}</TableCell>
+      <TableCell className="text-xs whitespace-nowrap">{task.dueDate || "—"}</TableCell>
+      <TableCell className="text-xs">{task.priority || "—"}</TableCell>
+      <TableCell className="text-xs">{task.assignedTo || "—"}</TableCell>
+      <TableCell><StatusDot status={task.labels} /></TableCell>
+      <TableCell>
+        <div className="flex gap-1">
+          {can("vat_reports", "edit") && (
+            <Button size="sm" variant="ghost" onClick={() => { setEditingId(task.id); setEditForm({ ...task }); }} data-testid={`button-edit-task-${task.id}`}>
+              <Edit2 className="h-3 w-3" />
+            </Button>
+          )}
+          {can("vat_reports", "delete") && (
+            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(task.id)} data-testid={`button-delete-task-${task.id}`}>
+              <Trash2 className="h-3 w-3 text-destructive" />
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -1110,80 +1225,9 @@ function ActionItemsSection({ reportId }: Readonly<{ reportId: number }>) {
               ) : (
                 items.map((item) => {
                   if (editingId === item.id) {
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Select value={editForm.section || "Open Opps"} onValueChange={(v) => setEditForm({ ...editForm, section: v })}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Open Opps">Open Opps</SelectItem>
-                              <SelectItem value="Big Plays">Big Plays</SelectItem>
-                              <SelectItem value="Account Goals">Account Goals</SelectItem>
-                              <SelectItem value="Relationships">Relationships</SelectItem>
-                              <SelectItem value="Research">Research</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell><Input value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="h-8 text-xs" /></TableCell>
-                        <TableCell><Input value={editForm.owner || ""} onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })} className="h-8 text-xs" /></TableCell>
-                        <TableCell><Input value={editForm.dueDate || ""} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="h-8 text-xs" /></TableCell>
-                        <TableCell>
-                          <Select value={editForm.status || "open"} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="open">Open</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Select value={editForm.priority || "Medium"} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="High">High</SelectItem>
-                              <SelectItem value="Medium">Medium</SelectItem>
-                              <SelectItem value="Low">Low</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => updateMutation.mutate({ id: item.id, data: editForm })}><Save className="h-3 w-3" /></Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><ChevronUp className="h-3 w-3" /></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
+                    return renderActionItemEditRow(item, editForm, setEditForm, updateMutation, setEditingId);
                   }
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className="text-xs font-medium">{item.section}</TableCell>
-                      <TableCell className="text-xs">{item.description}</TableCell>
-                      <TableCell className="text-xs">{item.owner || "—"}</TableCell>
-                      <TableCell className="text-xs whitespace-nowrap">{item.dueDate || "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant={item.status === "completed" ? "default" : "outline"} className="text-xs">
-                          {item.status || "open"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">{item.priority || "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {can("vat_reports", "edit") && (
-                            <Button size="sm" variant="ghost" onClick={() => { setEditingId(item.id); setEditForm({ ...item }); }} data-testid={`button-edit-action-${item.id}`}>
-                              <Edit2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                          {can("vat_reports", "delete") && (
-                            <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-action-${item.id}`}>
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
+                  return renderActionItemDisplayRow(item, can, setEditingId, setEditForm, deleteMutation);
                 })
               )}
             </TableBody>
@@ -1315,6 +1359,14 @@ type ReportDraftFields = {
   researchStatus: string;
 };
 
+const RAG_KEY_MAP: Record<string, keyof ReportDraftFields> = {
+  openOppsSummary: "openOppsStatus",
+  bigPlays: "bigPlaysStatus",
+  accountGoals: "accountGoalsStatus",
+  relationships: "relationshipsStatus",
+  research: "researchStatus",
+};
+
 const DRAFT_FIELD_LABELS: { key: keyof ReportDraftFields; label: string }[] = [
   { key: "statusSummary", label: "Status Summary" },
   { key: "openOppsSummary", label: "Open Opps Summary" },
@@ -1403,7 +1455,7 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
     const applied = new Set<string>();
     for (const { key } of DRAFT_FIELD_LABELS) {
       const content = suggestions[key];
-      if (content && content.trim()) {
+      if (content?.trim()) {
         onApplyContent(key, content.trim());
         applied.add(key);
       }
@@ -1422,14 +1474,14 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
           <button
             onClick={() => { if (s < 3 || suggestions) setStep(s as 1|2|3); }}
             className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold transition-colors ${
-              step === s ? "bg-purple-500 text-white" : step > s ? "bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300" : "bg-muted text-muted-foreground"
+              step === s ? "bg-purple-500 text-white" : (step > s ? "bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300" : "bg-muted text-muted-foreground")
             }`}
             data-testid={`step-indicator-${s}`}
           >
             {s}
           </button>
           <span className={`text-[10px] ${step === s ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-            {s === 1 ? "Risks" : s === 2 ? "Planner Actions" : "Generate"}
+            {s === 1 ? "Risks" : (s === 2 ? "Planner Actions" : "Generate")}
           </span>
           {s < 3 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />}
         </div>
@@ -1913,7 +1965,7 @@ export default function VatReportsPage() {
     queryKey: ["/api/vats"],
   });
   const VAT_NAMES = useMemo(() => {
-    if (dynamicVats && dynamicVats.length > 0) return dynamicVats.map(v => v.name);
+    if (dynamicVats?.length) return dynamicVats.map(v => v.name);
     return [...FALLBACK_VAT_NAMES];
   }, [dynamicVats]);
 
@@ -2084,20 +2136,14 @@ export default function VatReportsPage() {
                 />
               </div>
               <div className="flex flex-col min-h-0 overflow-hidden">
-                <label className="text-sm font-medium mb-2">Report Content</label>
+                <label htmlFor="report-content-area" className="text-sm font-medium mb-2">Report Content</label>
                 <ScrollArea className="flex-1 pr-3">
                   <div className="space-y-3">
                     {DRAFT_FIELD_LABELS.map(({ key, label }) => {
-                      const ragKey = ({
-                        openOppsSummary: "openOppsStatus",
-                        bigPlays: "bigPlaysStatus",
-                        accountGoals: "accountGoalsStatus",
-                        relationships: "relationshipsStatus",
-                        research: "researchStatus",
-                      } as Record<string, keyof ReportDraftFields>)[key];
+                      const ragKey = RAG_KEY_MAP[key];
                       return (
                         <div key={key}>
-                          <label className="text-xs font-bold mb-1 block flex items-center justify-between">
+                          <label htmlFor={`draft-field-${key}`} className="text-xs font-bold mb-1 block flex items-center justify-between">
                             <span className="flex items-center gap-1.5">
                               {label}
                               {ragKey && (
@@ -2117,6 +2163,7 @@ export default function VatReportsPage() {
                             {draftFields[key] && <Badge variant="secondary" className="text-[9px] px-1 py-0">filled</Badge>}
                           </label>
                           <Textarea
+                            id={`draft-field-${key}`}
                             value={draftFields[key]}
                             onChange={(e) => setDraftFields(prev => ({ ...prev, [key]: e.target.value }))}
                             rows={3}

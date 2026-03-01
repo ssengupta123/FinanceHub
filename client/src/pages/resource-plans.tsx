@@ -30,14 +30,14 @@ interface ResourceAllocation {
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0.00";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
 }
 
 function parseNum(val: string | number | null | undefined): number {
   if (!val) return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return Number.isNaN(n) ? 0 : n;
 }
 
@@ -138,7 +138,7 @@ export default function ResourcePlans() {
 
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
-    createMutation.mutate({ employeeId: parseInt(employeeId), projectId: parseInt(projectId), month, plannedDays, plannedHours, allocationPercent });
+    createMutation.mutate({ employeeId: Number.parseInt(employeeId), projectId: Number.parseInt(projectId), month, plannedDays, plannedHours, allocationPercent });
   }
 
   function handleSort(field: SortField) {
@@ -299,17 +299,21 @@ export default function ResourcePlans() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loadingAllocations ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
-                  ))
-                ) : filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No resource allocation data available. Upload timesheet data first.</TableCell>
-                  </TableRow>
-                ) : (
-                  filtered.map((row, idx) => (
-                    <TableRow key={`${row.employee_id}-${row.project_id}-${row.month}-${idx}`} data-testid={`row-allocation-${row.employee_id}-${row.project_id}`}>
+                {(() => {
+                  if (loadingAllocations) {
+                    return Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
+                    ));
+                  }
+                  if (filtered.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No resource allocation data available. Upload timesheet data first.</TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return filtered.map((row) => (
+                    <TableRow key={`${row.employee_id}-${row.project_id}-${row.month}`} data-testid={`row-allocation-${row.employee_id}-${row.project_id}`}>
                       <TableCell className="font-medium">{row.employee_name}</TableCell>
                       <TableCell>{row.project_name}</TableCell>
                       <TableCell>{row.month}</TableCell>
@@ -318,8 +322,8 @@ export default function ResourcePlans() {
                       <TableCell className="text-right">{formatCurrency(row.total_revenue)}</TableCell>
                       <TableCell className="text-right">{row.entry_count}</TableCell>
                     </TableRow>
-                  ))
-                )}
+                  ));
+                })()}
               </TableBody>
             </Table>
           </div>

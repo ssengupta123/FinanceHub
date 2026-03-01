@@ -24,7 +24,7 @@ const CLASSIFICATION_COLORS: Record<string, string> = {
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
@@ -70,7 +70,25 @@ function classificationLabel(c: string) {
 }
 
 type FinancialTargets = { revenue_target: number; margin_target: number; utilisation_target: number };
-const DEFAULT_TARGETS: FinancialTargets = { revenue_target: 5000000, margin_target: 0.20, utilisation_target: 0.85 };
+const DEFAULT_TARGETS: FinancialTargets = { revenue_target: 5000000, margin_target: 0.2, utilisation_target: 0.85 };
+
+function computeOppRevenue(opp: PipelineOpportunity): number {
+  const oRecord = opp as unknown as Record<string, string>;
+  let monthlyTotal = 0;
+  for (let i = 1; i <= 12; i++) monthlyTotal += Number.parseFloat(oRecord[`revenueM${i}`] || "0");
+  if (monthlyTotal > 0) return monthlyTotal;
+  return Number.parseFloat(oRecord.value || "0");
+}
+
+function computeOppGrossProfit(opp: PipelineOpportunity): number {
+  const oRecord = opp as unknown as Record<string, string>;
+  let monthlyTotal = 0;
+  for (let i = 1; i <= 12; i++) monthlyTotal += Number.parseFloat(oRecord[`grossProfitM${i}`] || "0");
+  if (monthlyTotal > 0) return monthlyTotal;
+  const val = Number.parseFloat(oRecord.value || "0");
+  const margin = Number.parseFloat(oRecord.marginPercent || "0");
+  return val * margin;
+}
 
 export default function Dashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
@@ -128,9 +146,9 @@ export default function Dashboard() {
 
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
 
-  const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
-  const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
-  const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.cost || "0"), 0);
+  const totalContracted = fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.contractValue || "0"), 0);
+  const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + Number.parseFloat(m.revenue || "0"), 0);
+  const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + Number.parseFloat(m.cost || "0"), 0);
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
 
   const avgUtilization = utilizationData?.utilization ?? 0;
@@ -139,8 +157,8 @@ export default function Dashboard() {
     const monthData: { month: string; revenue: number; cost: number; profit: number; gm: number }[] = [];
     for (let m = 1; m <= 12; m++) {
       const monthRecords = fyProjectMonthly.filter(r => r.month === m);
-      const rev = monthRecords.reduce((s, r) => s + parseFloat(r.revenue || "0"), 0);
-      const cost = monthRecords.reduce((s, r) => s + parseFloat(r.cost || "0"), 0);
+      const rev = monthRecords.reduce((s, r) => s + Number.parseFloat(r.revenue || "0"), 0);
+      const cost = monthRecords.reduce((s, r) => s + Number.parseFloat(r.cost || "0"), 0);
       const profit = rev - cost;
       const gm = rev > 0 ? (profit / rev) * 100 : 0;
       monthData.push({ month: FY_MONTHS[m - 1], revenue: rev, cost, profit, gm });
@@ -155,8 +173,8 @@ export default function Dashboard() {
     ytdProjectMonthly.forEach(m => {
       const billing = projectBillingMap.get(m.projectId) || "Other";
       if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
-      result[billing].revenue += parseFloat(m.revenue || "0");
-      result[billing].cost += parseFloat(m.cost || "0");
+      result[billing].revenue += Number.parseFloat(m.revenue || "0");
+      result[billing].cost += Number.parseFloat(m.cost || "0");
     });
     return result;
   }, [ytdProjectMonthly, projectBillingMap]);
@@ -169,22 +187,8 @@ export default function Dashboard() {
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
   const pipelineByClass = classificationOrder.map(cls => {
     const opps = fyPipeline.filter(o => o.classification === cls);
-    const totalRev = opps.reduce((s, o) => {
-      const oRecord = o as unknown as Record<string, string>;
-      let monthlyTotal = 0;
-      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat(oRecord[`revenueM${i}`] || "0");
-      if (monthlyTotal > 0) return s + monthlyTotal;
-      return s + parseFloat(oRecord.value || "0");
-    }, 0);
-    const totalGP = opps.reduce((s, o) => {
-      const oRecord = o as unknown as Record<string, string>;
-      let monthlyTotal = 0;
-      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat(oRecord[`grossProfitM${i}`] || "0");
-      if (monthlyTotal > 0) return s + monthlyTotal;
-      const val = parseFloat(oRecord.value || "0");
-      const margin = parseFloat(oRecord.marginPercent || "0");
-      return s + (val * margin);
-    }, 0);
+    const totalRev = opps.reduce((s, o) => s + computeOppRevenue(o), 0);
+    const totalGP = opps.reduce((s, o) => s + computeOppGrossProfit(o), 0);
     return { classification: cls, name: classificationLabel(cls), count: opps.length, revenue: totalRev, grossProfit: totalGP };
   });
 
@@ -200,8 +204,8 @@ export default function Dashboard() {
   const monthlyTrendData = FY_MONTHS.map((month, mi) => {
     const monthNum = mi + 1;
     const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
-    const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-    const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+    const revenue = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+    const cost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
     const profit = revenue - cost;
     return { month, revenue, cost, profit };
   });
@@ -215,8 +219,8 @@ export default function Dashboard() {
       const monthNum = mi + 1;
       const isElapsed = monthNum <= elapsedMonths;
       const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
-      const revenue = monthlyRecords.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-      const cost = monthlyRecords.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+      const revenue = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+      const cost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
       cumTarget += monthlyTarget;
       if (isElapsed) {
         cumRevenue += revenue;
@@ -428,13 +432,15 @@ export default function Dashboard() {
             </Link>
           </CardHeader>
           <CardContent className="space-y-2 sm:space-y-3 p-3 sm:p-6 pt-0">
-            {isLoading ? (
+            {isLoading && (
               [1, 2, 3].map(n => <Skeleton key={`skeleton-project-${n}`} className="h-12 sm:h-14 w-full" />)
-            ) : activeProjects.length === 0 ? (
+            )}
+            {!isLoading && activeProjects.length === 0 && (
               <p className="text-sm text-muted-foreground">No active projects</p>
-            ) : (
+            )}
+            {!isLoading && activeProjects.length > 0 && (
               activeProjects.slice(0, 5).map(project => {
-                const forecastMargin = parseFloat(project.forecastGmPercent || "0");
+                const forecastMargin = Number.parseFloat(project.forecastGmPercent || "0");
                 return (
                   <Link key={project.id} href={`/projects/${project.id}`}>
                     <div className="flex items-center justify-between gap-2 p-2 sm:p-3 rounded-md hover-elevate cursor-pointer" data-testid={`card-project-${project.id}`}>
@@ -459,11 +465,13 @@ export default function Dashboard() {
             <CardTitle className="text-sm sm:text-base">Monthly Revenue & Margin</CardTitle>
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
-            {isLoading ? (
+            {isLoading && (
               <Skeleton className="h-[200px] sm:h-[260px] w-full" />
-            ) : monthlyTrend.length === 0 ? (
+            )}
+            {!isLoading && monthlyTrend.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-8">No monthly data available</p>
-            ) : (
+            )}
+            {!isLoading && monthlyTrend.length > 0 && (
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />

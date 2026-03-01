@@ -65,7 +65,7 @@ export default function Onboarding() {
 
       <div className="space-y-4">
         {loadingEmployees ? (
-          Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-40 w-full" />)
+          Array.from({ length: 2 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-40 w-full" />)
         ) : onboardingEmployees.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">

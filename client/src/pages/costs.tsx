@@ -29,14 +29,14 @@ interface CostSummary {
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0.00";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
 }
 
 function parseNum(val: string | number | null | undefined): number {
   if (!val) return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return Number.isNaN(n) ? 0 : n;
 }
 
@@ -78,8 +78,8 @@ export default function Costs() {
   const monthToFy = (yyyyMm: string): string | null => {
     if (!yyyyMm || yyyyMm.length < 7) return null;
     const [yearStr, monStr] = yyyyMm.split("-");
-    const year = parseInt(yearStr);
-    const mon = parseInt(monStr);
+    const year = Number.parseInt(yearStr);
+    const mon = Number.parseInt(monStr);
     if (Number.isNaN(year) || Number.isNaN(mon)) return null;
     const fyStart = mon >= 7 ? year : year - 1;
     return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
@@ -166,7 +166,7 @@ export default function Costs() {
 
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
-    createMutation.mutate({ projectId: parseInt(projectId), category, description, amount, month, costType, source });
+    createMutation.mutate({ projectId: Number.parseInt(projectId), category, description, amount, month, costType, source });
   }
 
   function handleSort(field: SortField) {
@@ -349,22 +349,26 @@ export default function Costs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 8 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
-                  ))
-                ) : filteredSummary.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No cost data available. Upload timesheet data first.</TableCell>
-                  </TableRow>
-                ) : (
-                  filteredSummary.map((row, idx) => {
+                {(() => {
+                  if (isLoading) {
+                    return Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 8 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
+                    ));
+                  }
+                  if (filteredSummary.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No cost data available. Upload timesheet data first.</TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return filteredSummary.map((row) => {
                     const cost = parseNum(row.total_cost);
                     const revenue = parseNum(row.total_revenue);
                     const margin = revenue - cost;
                     const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
                     return (
-                      <TableRow key={`${row.project_id}-${row.month}-${idx}`} data-testid={`row-cost-summary-${row.project_id}-${row.month}`}>
+                      <TableRow key={`${row.project_id}-${row.month}`} data-testid={`row-cost-summary-${row.project_id}-${row.month}`}>
                         <TableCell className="font-medium">{row.project_name}</TableCell>
                         <TableCell>{row.month}</TableCell>
                         <TableCell className="text-right">{formatCurrency(cost)}</TableCell>
@@ -375,7 +379,11 @@ export default function Costs() {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={(() => { if (marginPct >= 20) return "text-green-600 dark:text-green-400"; if (marginPct >= 0) return "text-amber-600 dark:text-amber-400"; return "text-red-600 dark:text-red-400"; })()}>
+                          <span className={(() => {
+                            if (marginPct >= 20) return "text-green-600 dark:text-green-400";
+                            if (marginPct >= 0) return "text-amber-600 dark:text-amber-400";
+                            return "text-red-600 dark:text-red-400";
+                          })()}>
                             {marginPct.toFixed(1)}%
                           </span>
                         </TableCell>
@@ -383,8 +391,8 @@ export default function Costs() {
                         <TableCell className="text-right">{row.entry_count}</TableCell>
                       </TableRow>
                     );
-                  })
-                )}
+                  });
+                })()}
               </TableBody>
             </Table>
           </div>

@@ -33,7 +33,7 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined,
+  data?: unknown,
 ): Promise<Response> {
   const headers = getAuthHeaders(data ? { "Content-Type": "application/json" } : undefined);
   const res = await fetch(url, {

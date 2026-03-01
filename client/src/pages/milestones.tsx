@@ -19,13 +19,13 @@ import type { Milestone, Project, Timesheet } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
-  const n = parseFloat(val);
+  const n = Number.parseFloat(val);
   return Number.isNaN(n) ? 0 : n;
 }
 
@@ -290,7 +290,7 @@ export default function Milestones() {
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     createMutation.mutate({
-      projectId: parseInt(projectId),
+      projectId: Number.parseInt(projectId),
       name,
       dueDate: dueDate || null,
       status,
@@ -467,35 +467,42 @@ export default function Milestones() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <Card>
-          <CardContent className="p-4 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={`skeleton-${i}`} className="h-10 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      ) : !filteredMilestones.length ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <div className="space-y-3">
-              <p>No milestones found</p>
-              {(!milestones || milestones.length === 0) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => seedMutation.mutate()}
-                  disabled={seedMutation.isPending}
-                  data-testid="button-seed-milestones"
-                >
-                  <Database className="mr-1 h-4 w-4" />
-                  {seedMutation.isPending ? "Generating..." : "Generate Milestones"}
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
+      {(() => {
+        if (isLoading) {
+          return (
+            <Card>
+              <CardContent className="p-4 space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={`skeleton-${i}`} className="h-10 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          );
+        }
+        if (filteredMilestones.length === 0) {
+          return (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <div className="space-y-3">
+                  <p>No milestones found</p>
+                  {(!milestones || milestones.length === 0) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => seedMutation.mutate()}
+                      disabled={seedMutation.isPending}
+                      data-testid="button-seed-milestones"
+                    >
+                      <Database className="mr-1 h-4 w-4" />
+                      {seedMutation.isPending ? "Generating..." : "Generate Milestones"}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        }
+        return (
         <div className="space-y-6">
           {overdue.length > 0 && (
             <Card className="border-red-300 dark:border-red-800">
@@ -574,7 +581,8 @@ export default function Milestones() {
             </Card>
           )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

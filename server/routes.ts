@@ -1,8 +1,15 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "node:http";
 import { storage } from "./storage";
 import { db, isMSSQL } from "./db";
-import { z } from "zod";
+
+declare module "express-session" {
+  interface SessionData {
+    graphAccessToken?: string;
+    graphTokenExpires?: number;
+    msalAccountKey?: string;
+  }
+}
 import multer from "multer";
 import XLSX from "xlsx";
 import OpenAI from "openai";
@@ -28,7 +35,6 @@ import {
   insertVatRiskSchema,
   insertVatActionItemSchema,
   insertVatPlannerTaskSchema,
-  insertVatChangeLogSchema,
   insertVatTargetSchema,
   insertFeatureRequestSchema,
   VAT_NAMES,
@@ -36,7 +42,7 @@ import {
 } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!(req.session as any)?.userId) {
+  if (!req.session?.userId) {
     return res.status(401).json({ message: "Not authenticated" });
   }
   next();
@@ -44,10 +50,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requirePermission(resource: string, action: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    if (!(req.session as any)?.userId) {
+    if (!req.session?.userId) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    const role = (req.session as any).role || "employee";
+    const role = req.session.role || "employee";
     if (role === "admin") return next();
     const perms = await storage.getPermissionsByRole(role);
     const allowed = perms.some(p => p.resource === resource && p.action === action && p.allowed);
@@ -252,7 +258,7 @@ export async function registerRoutes(
         const fy = String(req.query.fy);
         const parts = fy.split("-");
         if (parts.length === 2) {
-          const fyStartYear = 2000 + parseInt(parts[0], 10);
+          const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
           const startDate = `${fyStartYear}-07-01`;
           const endDate = `${fyStartYear + 1}-06-30`;
           const data = await db("timesheets")
@@ -388,7 +394,7 @@ export async function registerRoutes(
         const fy = String(req.query.fy);
         const parts = fy.split("-");
         if (parts.length === 2) {
-          const fyStartYear = 2000 + parseInt(parts[0], 10);
+          const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
           query = query
             .where("timesheets.week_ending", ">=", `${fyStartYear}-07-01`)
             .where("timesheets.week_ending", "<=", `${fyStartYear + 1}-06-30`);
@@ -832,7 +838,7 @@ export async function registerRoutes(
     if (fy) {
       const parts = fy.split("-");
       if (parts.length === 2) {
-        const fyStartYear = 2000 + parseInt(parts[0], 10);
+        const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
         const fyStart = `${fyStartYear}-07-01`;
         const fyEnd = `${fyStartYear + 1}-07-01`;
         const result = await db.raw(`
@@ -854,8 +860,8 @@ export async function registerRoutes(
         `, [fyStart, fyEnd]);
         const rows = result.rows || result;
         const row = rows[0];
-        const total = parseInt(row?.total_permanent || "0");
-        const allocated = parseInt(row?.allocated_permanent || "0");
+        const total = Number.parseInt(row?.total_permanent || "0");
+        const allocated = Number.parseInt(row?.allocated_permanent || "0");
         return res.json({
           totalPermanent: total,
           allocatedPermanent: allocated,
@@ -982,7 +988,7 @@ export async function registerRoutes(
     const result: Record<string, number> = {};
     for (const [key, defaultVal] of Object.entries(defaults)) {
       const match = fyTargets.find(t => t.key === key);
-      result[key] = parseFloat(match?.value ?? defaultVal);
+      result[key] = Number.parseFloat(match?.value ?? defaultVal);
     }
     res.json(result);
   });
@@ -1005,7 +1011,7 @@ export async function registerRoutes(
       }
       req.session.userId = user.id;
       req.session.username = user.username;
-      req.session.role = (user as any).role || "user";
+      req.session.role = user.role || "user";
       const { password: _, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error: any) {
@@ -1065,7 +1071,7 @@ export async function registerRoutes(
 
   // ─── Permissions ───
   app.get("/api/permissions", requireAuth, async (req, res) => {
-    const role = (req.session as any).role || "employee";
+    const role = req.session.role || "employee";
     if (role === "admin") {
       const { RESOURCE_ACTIONS } = await import("@shared/schema");
       const perms: Record<string, string[]> = {};
@@ -1086,14 +1092,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/role-permissions", requireAuth, async (req, res) => {
-    const role = (req.session as any).role || "employee";
+    const role = req.session.role || "employee";
     if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
     const all = await storage.getAllPermissions();
     res.json(all);
   });
 
   app.put("/api/role-permissions", requireAuth, async (req, res) => {
-    const role = (req.session as any).role || "employee";
+    const role = req.session.role || "employee";
     if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
     const { permissions } = req.body;
     if (!Array.isArray(permissions)) return res.status(400).json({ message: "permissions array required" });
@@ -1210,8 +1216,8 @@ export async function registerRoutes(
       });
 
       const account = tokenResponse.account;
-      const email = (account?.username || tokenResponse.idTokenClaims?.preferred_username || tokenResponse.idTokenClaims?.email || "") as string;
-      const displayName = (account?.name || tokenResponse.idTokenClaims?.name || email.split("@")[0]) as string;
+      const email = String(account?.username || tokenResponse.idTokenClaims?.preferred_username || tokenResponse.idTokenClaims?.email || "");
+      const displayName = String(account?.name || tokenResponse.idTokenClaims?.name || email.split("@")[0]);
 
       if (!email) {
         return res.redirect("/?sso_error=no_email");
@@ -1232,13 +1238,13 @@ export async function registerRoutes(
 
       req.session.userId = user.id;
       req.session.username = user.username;
-      req.session.role = (user as any).role || "user";
+      req.session.role = user.role || "user";
       if (tokenResponse.accessToken) {
-        (req.session as any).graphAccessToken = tokenResponse.accessToken;
-        (req.session as any).graphTokenExpires = tokenResponse.expiresOn ? new Date(tokenResponse.expiresOn).getTime() : Date.now() + 3600000;
+        req.session.graphAccessToken = tokenResponse.accessToken;
+        req.session.graphTokenExpires = tokenResponse.expiresOn ? new Date(tokenResponse.expiresOn).getTime() : Date.now() + 3600000;
       }
       if (account) {
-        (req.session as any).msalAccountKey = account.homeAccountId;
+        req.session.msalAccountKey = account.homeAccountId;
       }
 
       res.redirect("/");
@@ -1333,31 +1339,8 @@ export async function registerRoutes(
           results[sheetName] = { imported: 0, errors: ["Sheet not found in file"] };
           continue;
         }
-
         try {
-          if (sheetName === "Job Status") {
-            results[sheetName] = await importJobStatus(ws);
-          } else if (sheetName === "Staff SOT") {
-            results[sheetName] = await importStaffSOT(ws);
-          } else if (sheetName === "Resource Plan Opps" || sheetName === "Resource Plan Opps FY25-26") {
-            results[sheetName] = await importPipelineRevenue(ws, sheetName === "Resource Plan Opps", sheetName);
-          } else if (sheetName === "GrossProfit") {
-            results[sheetName] = await importGrossProfit(ws);
-          } else if (sheetName === "Personal Hours - inc non-projec") {
-            results[sheetName] = await importPersonalHours(ws);
-          } else if (sheetName === "Project Hours") {
-            results[sheetName] = await importProjectHours(ws);
-          } else if (sheetName === "CX Master List") {
-            results[sheetName] = await importCxMasterList(ws);
-          } else if (sheetName === "Project Resource Cost") {
-            results[sheetName] = await importProjectResourceCost(ws);
-          } else if (sheetName === "Project Resource Cost A&F") {
-            results[sheetName] = await importProjectResourceCostAF(ws);
-          } else if (sheetName === "query" || sheetName.toLowerCase().startsWith("open op")) {
-            results[sheetName] = await importOpenOpps(ws);
-          } else {
-            results[sheetName] = { imported: 0, errors: ["Import not supported for this sheet"] };
-          }
+          results[sheetName] = await dispatchSheetImport(sheetName, ws);
         } catch (err: any) {
           results[sheetName] = { imported: 0, errors: [err.message || "Unknown import error"] };
         }
@@ -1408,6 +1391,7 @@ export async function registerRoutes(
       });
     }
   } catch (e) {
+    console.error(e);
     console.log("OpenAI not configured - AI insights will be unavailable");
   }
 
@@ -1446,14 +1430,14 @@ Rules:
           const cls = opp.classification || "Unknown";
           const monthRevs = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
             opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
-          const total = monthRevs.reduce((s, v) => s + parseFloat(v || "0"), 0);
+          const total = monthRevs.reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
           classGroups[cls] = (classGroups[cls] || 0) + total;
           const winRate: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
           totalWeighted += total * (winRate[cls] || 0);
 
-          const zeroMonths = monthRevs.filter(v => parseFloat(v || "0") === 0).length;
-          const h1 = monthRevs.slice(0, 6).reduce((s, v) => s + parseFloat(v || "0"), 0);
-          const h2 = monthRevs.slice(6).reduce((s, v) => s + parseFloat(v || "0"), 0);
+          const zeroMonths = monthRevs.filter(v => Number.parseFloat(v || "0") === 0).length;
+          const h1 = monthRevs.slice(0, 6).reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
+          const h2 = monthRevs.slice(6).reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
           oppDetails.push(`  - "${opp.name}" [${cls}] VAT:${opp.vat || "?"} Total:$${total.toLocaleString()} H1:$${h1.toLocaleString()} H2:$${h2.toLocaleString()} ZeroMonths:${zeroMonths}/12`);
         });
 
@@ -1485,18 +1469,18 @@ Identify risks including:
       } else if (type === "projects") {
         const projectSummaries = projects.map(p => {
           const monthly = projectMonthly.filter(m => m.projectId === p.id);
-          const totalRev = monthly.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-          const totalCost = monthly.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const totalRev = monthly.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+          const totalCost = monthly.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
           const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
           const monthlyMargins = monthly.map(m => {
-            const r = parseFloat(m.revenue || "0");
-            const c = parseFloat(m.cost || "0");
+            const r = Number.parseFloat(m.revenue || "0");
+            const c = Number.parseFloat(m.cost || "0");
             return r > 0 ? ((r - c) / r * 100).toFixed(0) : "N/A";
           });
-          const costTrend = monthly.slice(-3).map(m => `$${parseFloat(m.cost || "0").toLocaleString()}`).join(" -> ");
-          const wo = parseFloat(p.workOrderAmount || "0");
-          const actual = parseFloat(p.actualAmount || "0");
-          const balance = parseFloat(p.balanceAmount || "0");
+          const costTrend = monthly.slice(-3).map(m => `$${Number.parseFloat(m.cost || "0").toLocaleString()}`).join(" -> ");
+          const wo = Number.parseFloat(p.workOrderAmount || "0");
+          const actual = Number.parseFloat(p.actualAmount || "0");
+          const balance = Number.parseFloat(p.balanceAmount || "0");
           const burnPct = wo > 0 ? ((actual / wo) * 100).toFixed(0) : "N/A";
           return `  - "${p.name}" [${p.billingCategory || "?"}] VAT:${p.vat || "?"} Status:${p.status} AD:${p.adStatus || "?"}
     Revenue:$${totalRev.toLocaleString()} Cost:$${totalCost.toLocaleString()} Margin:${margin}%
@@ -1521,26 +1505,26 @@ Identify risks including:
       } else if (type === "spending_patterns" || type === "financial_advice" || type === "spending_forecast") {
         const employees = await storage.getEmployees();
         let resourceCosts: any[] = [];
-        try { resourceCosts = await db("resource_costs").select("*"); } catch (e) { /* table may not exist */ }
+        try { resourceCosts = await db("resource_costs").select("*"); } catch (e) { console.error(e); }
 
-        const activeProjects = projects.filter(p => p.status === "active" || (p as any).adStatus === "Active");
-        const permEmployees = employees.filter(e => (e as any).staffType === "Permanent");
+        const activeProjects = projects.filter(p => p.status === "active" || p.adStatus === "Active");
+        const permEmployees = employees.filter(e => e.staffType === "Permanent");
 
         const monthlySpend: Record<string, { revenue: number; cost: number; profit: number }> = {};
         projectMonthly.forEach(m => {
           const key = `${m.fyYear}-M${m.month}`;
           if (!monthlySpend[key]) monthlySpend[key] = { revenue: 0, cost: 0, profit: 0 };
-          monthlySpend[key].revenue += parseFloat(m.revenue || "0");
-          monthlySpend[key].cost += parseFloat(m.cost || "0");
-          monthlySpend[key].profit += parseFloat(m.revenue || "0") - parseFloat(m.cost || "0");
+          monthlySpend[key].revenue += Number.parseFloat(m.revenue || "0");
+          monthlySpend[key].cost += Number.parseFloat(m.cost || "0");
+          monthlySpend[key].profit += Number.parseFloat(m.revenue || "0") - Number.parseFloat(m.cost || "0");
         });
 
         const billingBreakdown: Record<string, { revenue: number; cost: number }> = {};
         projects.forEach(p => {
-          const cat = (p as any).billingCategory || "Other";
+          const cat = p.billingCategory || "Other";
           const pm = projectMonthly.filter(m => m.projectId === p.id);
-          const rev = pm.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-          const cost = pm.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const rev = pm.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+          const cost = pm.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
           if (!billingBreakdown[cat]) billingBreakdown[cat] = { revenue: 0, cost: 0 };
           billingBreakdown[cat].revenue += rev;
           billingBreakdown[cat].cost += cost;
@@ -1548,17 +1532,17 @@ Identify risks including:
 
         const topCostProjects = projects.map(p => {
           const pm = projectMonthly.filter(m => m.projectId === p.id);
-          const totalCost = pm.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
-          const totalRev = pm.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-          const monthCosts = [...pm].sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => parseFloat(m.cost || "0"));
-          return { name: p.name, code: (p as any).projectCode, billing: (p as any).billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
+          const totalCost = pm.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
+          const totalRev = pm.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+          const monthCosts = [...pm].sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => Number.parseFloat(m.cost || "0"));
+          return { name: p.name, code: p.projectCode, billing: p.billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
         }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
 
         const staffCostSummary = resourceCosts.map((rc: any) => ({
           name: rc.employee_name,
           staffType: rc.staff_type,
           phase: rc.cost_phase,
-          total: parseFloat(rc.total_cost || "0"),
+          total: Number.parseFloat(rc.total_cost || "0"),
         }));
         const totalStaffCost = staffCostSummary.reduce((s: number, r: any) => s + r.total, 0);
         const permCost = staffCostSummary.filter((r: any) => r.staffType === "Permanent").reduce((s: number, r: any) => s + r.total, 0);
@@ -1574,7 +1558,10 @@ Identify risks including:
           .join("\n");
 
         const topProjectsStr = topCostProjects
-          .map(p => `  "${p.name}" [${p.billing || "?"}]: Cost $${p.totalCost.toLocaleString()} Rev $${p.totalRev.toLocaleString()} Margin:${p.margin}% Trend:[${p.monthCosts.map(c => `$${c.toLocaleString()}`).join(",")}]`)
+          .map(p => {
+            const trendStr = p.monthCosts.map(c => `$${c.toLocaleString()}`).join(",");
+            return `  "${p.name}" [${p.billing || "?"}]: Cost $${p.totalCost.toLocaleString()} Rev $${p.totalRev.toLocaleString()} Margin:${p.margin}% Trend:[${trendStr}]`;
+          })
           .join("\n");
 
         const dataContext = `Organization Financial Data:
@@ -1640,13 +1627,13 @@ Provide forecasts and predictions on:
 For each prediction, state your confidence level (High/Medium/Low) and the key assumptions. Include best-case and worst-case scenarios where appropriate.`;
         }
       } else {
-        const totalRevenue = kpis.reduce((s, k) => s + parseFloat(k.revenue || "0"), 0);
-        const totalCost = kpis.reduce((s, k) => s + parseFloat(k.grossCost || "0"), 0);
+        const totalRevenue = kpis.reduce((s, k) => s + Number.parseFloat(k.revenue || "0"), 0);
+        const totalCost = kpis.reduce((s, k) => s + Number.parseFloat(k.grossCost || "0"), 0);
         const avgMargin = kpis.length > 0
-          ? (kpis.reduce((s, k) => s + parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1)
+          ? (kpis.reduce((s, k) => s + Number.parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1)
           : "0";
         const avgUtil = kpis.length > 0
-          ? (kpis.reduce((s, k) => s + parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1)
+          ? (kpis.reduce((s, k) => s + Number.parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1)
           : "0";
 
         const classGroups: Record<string, number> = {};
@@ -1654,17 +1641,17 @@ For each prediction, state your confidence level (High/Medium/Low) and the key a
           const cls = opp.classification || "Unknown";
           const total = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
             opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12]
-            .reduce((s, v) => s + parseFloat(v || "0"), 0);
+            .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
           classGroups[cls] = (classGroups[cls] || 0) + total;
         });
 
         const projectRisks = projects.map(p => {
           const monthly = projectMonthly.filter(m => m.projectId === p.id);
-          const totalRev = monthly.reduce((s, m) => s + parseFloat(m.revenue || "0"), 0);
-          const totalCost = monthly.reduce((s, m) => s + parseFloat(m.cost || "0"), 0);
+          const totalRev = monthly.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+          const totalCost = monthly.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
           const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
-          const balance = parseFloat(p.balanceAmount || "0");
-          return { name: p.name, margin: parseFloat(margin), balance, totalRev, status: p.status };
+          const balance = Number.parseFloat(p.balanceAmount || "0");
+          return { name: p.name, margin: Number.parseFloat(margin), balance, totalRev, status: p.status };
         });
 
         const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
@@ -1783,7 +1770,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
 
       const selectedVats: string[] = JSON.parse(req.body.selectedVats || "[]");
       const reportDate: string = req.body.reportDate || "";
-      const username = (req.session as any)?.username || "pptx-import";
+      const username = req.session?.username || "pptx-import";
 
       const { reports } = parsePptxFile(req.file.buffer);
       if (reports.length === 0) {
@@ -2094,15 +2081,15 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
 
       let graphToken: string | null = null;
 
-      const sessionToken = (req.session as any).graphAccessToken;
-      const tokenExpires = (req.session as any).graphTokenExpires;
+      const sessionToken = req.session.graphAccessToken;
+      const tokenExpires = req.session.graphTokenExpires;
       if (sessionToken && tokenExpires && Date.now() < tokenExpires) {
         graphToken = sessionToken;
         console.log("[Planner Sync] Using delegated user token from session");
       }
 
       if (!graphToken) {
-        const accountKey = (req.session as any).msalAccountKey;
+        const accountKey = req.session.msalAccountKey;
         if (accountKey) {
           try {
             const client = await getMsalClient();
@@ -2116,8 +2103,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
                 });
                 if (silentResult?.accessToken) {
                   graphToken = silentResult.accessToken;
-                  (req.session as any).graphAccessToken = silentResult.accessToken;
-                  (req.session as any).graphTokenExpires = silentResult.expiresOn ? new Date(silentResult.expiresOn).getTime() : Date.now() + 3600000;
+                  req.session.graphAccessToken = silentResult.accessToken;
+                  req.session.graphTokenExpires = silentResult.expiresOn ? new Date(silentResult.expiresOn).getTime() : Date.now() + 3600000;
                   console.log("[Planner Sync] Refreshed delegated token via MSAL silent flow");
                 }
               }
@@ -2290,7 +2277,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         if (percentComplete === 100) progress = "Completed";
         else if (percentComplete > 0) progress = "In progress";
         else progress = "Not started";
-        const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
+        const dueDate = pt.dueDateTime?.split("T")[0] ?? "";
         let priority: string;
         if (pt.priority === 1) priority = "Important";
         else if (pt.priority === 5) priority = "Low";
@@ -2324,7 +2311,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
             } else if (pt.completedBy?.user?.displayName) {
               completedByName = pt.completedBy.user.displayName;
             }
-            const completedDate = pt.completedDateTime ? pt.completedDateTime.split("T")[0] : new Date().toISOString().split("T")[0];
+            const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
             newlyCompletedTasks.push({ title: taskName, completedBy: completedByName, completedDate });
           }
           const needsBucketUpdate = existing.bucketName !== bucketName && bucketName;
@@ -2526,7 +2513,7 @@ Rules:
       const pipelineSummary = pipelineOpps.map(o => {
         const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
           o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + parseFloat(v || "0"), 0);
+          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
         return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
       }).join("\n");
 
@@ -2615,7 +2602,7 @@ Your role:
       const pipelineSummary = pipelineOpps.map(o => {
         const totalRev = [o.revenueM1, o.revenueM2, o.revenueM3, o.revenueM4, o.revenueM5, o.revenueM6,
           o.revenueM7, o.revenueM8, o.revenueM9, o.revenueM10, o.revenueM11, o.revenueM12]
-          .reduce((s, v) => s + parseFloat(v || "0"), 0);
+          .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
         return `- ${o.name} (${o.classification}, $${totalRev.toLocaleString()}, status: ${o.status || "open"})`;
       }).join("\n");
 
@@ -2782,7 +2769,7 @@ Return this exact JSON structure:
 
   app.post("/api/feature-requests", requirePermission("feature_requests", "create"), async (req, res) => {
     try {
-      const userId = (req.session as any).userId;
+      const userId = req.session.userId;
       const data = insertFeatureRequestSchema.parse({ ...req.body, submittedBy: userId });
       const result = await storage.createFeatureRequest(data);
       res.json(result);
@@ -2794,7 +2781,7 @@ Return this exact JSON structure:
   app.patch("/api/feature-requests/:id", requirePermission("feature_requests", "edit"), async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const userId = (req.session as any).userId;
+      const userId = req.session.userId;
       const { status, notes, githubBranch } = req.body;
       const updateData: any = {};
       if (status) updateData.status = status;
@@ -2844,14 +2831,14 @@ Return this exact JSON structure:
       if (!createRef.ok) {
         const errData: any = await createRef.json();
         if (errData.message?.includes("Reference already exists")) {
-          await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+          await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: req.session.userId });
           const updated = await storage.getFeatureRequest(id);
           return res.json({ ...updated, message: "Branch already exists, linked to this request" });
         }
         return res.status(500).json({ message: `Failed to create branch: ${errData.message}` });
       }
 
-      await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: (req.session as any).userId });
+      await storage.updateFeatureRequest(id, { status: "in_progress", githubBranch: branchName, reviewedBy: req.session.userId });
       const updated = await storage.getFeatureRequest(id);
       res.json(updated);
     } catch (err: any) {
@@ -2862,45 +2849,141 @@ Return this exact JSON structure:
   return httpServer;
 }
 
-export function excelDateToString(val: any): string | null {
-  if (!val) return null;
-  if (typeof val === "number") {
-    const d = XLSX.SSF.parse_date_code(val);
-    if (!d || !d.y) return null;
-    return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+function deriveFyYear(startDateStr: string | null): string {
+  if (!startDateStr) return "23-24";
+  const yr = Number.parseInt(startDateStr.slice(0, 4));
+  const mo = Number.parseInt(startDateStr.slice(5, 7));
+  const fyStart = mo >= 7 ? yr : yr - 1;
+  return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+}
+
+async function createJobStatusMonthlyData(
+  project: { id: number },
+  r: any[],
+  fyYear: string,
+): Promise<void> {
+  const monthCols = {
+    revenue: [35,36,37,38,39,40,41,42,43,44,45,46],
+    cost: [47,48,49,50,51,52,53,54,55,56,57,58],
+    profit: [59,60,61,62,63,64,65,66,67,68,69,70],
+  };
+  const monthLabels = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+  for (let m = 0; m < 12; m++) {
+    const rev = Number.parseFloat(toNum(r[monthCols.revenue[m]]));
+    const cost = Number.parseFloat(toNum(r[monthCols.cost[m]]));
+    const profit = Number.parseFloat(toNum(r[monthCols.profit[m]]));
+    if (rev !== 0 || cost !== 0 || profit !== 0) {
+      await storage.createProjectMonthly({
+        projectId: project.id,
+        fyYear,
+        month: m + 1,
+        monthLabel: monthLabels[m],
+        revenue: toNum(rev),
+        cost: toNum(cost),
+        profit: toNum(profit),
+      });
+    }
   }
-  const s = String(val).trim();
-  if (!s || s.toLowerCase() === "n/a" || s === "-" || s === "") return null;
+}
+
+function parseMonthlyCosts(r: any[], startCol: number, endCol: number): { costs: string[]; total: number } {
+  let total = 0;
+  const costs: string[] = [];
+  for (let ci = startCol; ci <= endCol; ci++) {
+    const v = Number(r[ci] || 0);
+    costs.push(Number.isNaN(v) ? "0" : v.toFixed(2));
+    total += Number.isNaN(v) ? 0 : v;
+  }
+  return { costs, total };
+}
+
+function cleanVatValue(raw: string | null): string | null {
+  if (!raw) return null;
+  let vat = raw.replaceAll(";#", "").replace(/\|.*$/, "").trim();
+  if (vat.toLowerCase() === "growth") vat = "GROWTH";
+  return vat;
+}
+
+function parseOptionalNumericField(raw: any): string | null {
+  if (raw === "" || raw == null) return null;
+  const num = Number(raw);
+  return Number.isNaN(num) ? null : String(num.toFixed(2));
+}
+
+function parseOptionalMarginField(raw: any): string | null {
+  if (raw === "" || raw == null) return null;
+  const num = Number(raw);
+  return Number.isNaN(num) ? null : String(num.toFixed(3));
+}
+
+async function dispatchSheetImport(sheetName: string, ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
+  if (sheetName === "Job Status") return importJobStatus(ws);
+  if (sheetName === "Staff SOT") return importStaffSOT(ws);
+  if (sheetName === "Resource Plan Opps" || sheetName === "Resource Plan Opps FY25-26") {
+    return importPipelineRevenue(ws, sheetName === "Resource Plan Opps", sheetName);
+  }
+  if (sheetName === "GrossProfit") return importGrossProfit(ws);
+  if (sheetName === "Personal Hours - inc non-projec") return importPersonalHours(ws);
+  if (sheetName === "Project Hours") return importProjectHours(ws);
+  if (sheetName === "CX Master List") return importCxMasterList(ws);
+  if (sheetName === "Project Resource Cost") return importProjectResourceCost(ws);
+  if (sheetName === "Project Resource Cost A&F") return importProjectResourceCostAF(ws);
+  if (sheetName === "query" || sheetName.toLowerCase().startsWith("open op")) return importOpenOpps(ws);
+  return { imported: 0, errors: ["Import not supported for this sheet"] };
+}
+
+function parseExcelNumericDate(val: number): string | null {
+  const d = XLSX.SSF.parse_date_code(val);
+  if (!d || !d.y) return null;
+  return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+}
+
+function isValidYear(yr: number): boolean {
+  return yr >= 1900 && yr <= 2100;
+}
+
+function parseStringDate(s: string): string | null {
+  if (!s || s.toLowerCase() === "n/a" || s === "-") return null;
   const parsed = new Date(s);
   if (!Number.isNaN(parsed.getTime())) {
     const yr = parsed.getFullYear();
-    if (yr < 1900 || yr > 2100) return null;
+    if (!isValidYear(yr)) return null;
     return `${yr}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
   }
+  return parseISOOrAUDate(s);
+}
+
+function parseISOOrAUDate(s: string): string | null {
   const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
   if (isoMatch) {
-    const yr = parseInt(isoMatch[1]);
-    if (yr < 1900 || yr > 2100) return null;
+    const yr = Number.parseInt(isoMatch[1]);
+    if (!isValidYear(yr)) return null;
     return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
   }
   const auMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
   if (auMatch) {
-    const yr = auMatch[3].length === 2 ? 2000 + parseInt(auMatch[3]) : parseInt(auMatch[3]);
-    if (yr < 1900 || yr > 2100) return null;
+    const yr = auMatch[3].length === 2 ? 2000 + Number.parseInt(auMatch[3]) : Number.parseInt(auMatch[3]);
+    if (!isValidYear(yr)) return null;
     return `${yr}-${auMatch[2].padStart(2, "0")}-${auMatch[1].padStart(2, "0")}`;
   }
   return null;
 }
 
+export function excelDateToString(val: any): string | null {
+  if (!val) return null;
+  if (typeof val === "number") return parseExcelNumericDate(val);
+  return parseStringDate(String(val).trim());
+}
+
 export function toNum(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
-  const n = typeof val === "number" ? val : parseFloat(String(val));
+  const n = typeof val === "number" ? val : Number.parseFloat(String(val));
   return Number.isNaN(n) ? "0" : n.toFixed(2);
 }
 
 export function toDecimal(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
-  const n = typeof val === "number" ? val : parseFloat(String(val));
+  const n = typeof val === "number" ? val : Number.parseFloat(String(val));
   return Number.isNaN(n) ? "0" : n.toFixed(4);
 }
 
@@ -2973,16 +3056,16 @@ async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; 
       const startDateStr = excelDateToString(r[7]);
       let fyYear = "23-24";
       if (startDateStr) {
-        const yr = parseInt(startDateStr.slice(0, 4));
-        const mo = parseInt(startDateStr.slice(5, 7));
+        const yr = Number.parseInt(startDateStr.slice(0, 4));
+        const mo = Number.parseInt(startDateStr.slice(5, 7));
         const fyStart = mo >= 7 ? yr : yr - 1;
         fyYear = `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
       }
 
       for (let m = 0; m < 12; m++) {
-        const rev = parseFloat(toNum(r[monthCols.revenue[m]]));
-        const cost = parseFloat(toNum(r[monthCols.cost[m]]));
-        const profit = parseFloat(toNum(r[monthCols.profit[m]]));
+        const rev = Number.parseFloat(toNum(r[monthCols.revenue[m]]));
+        const cost = Number.parseFloat(toNum(r[monthCols.cost[m]]));
+        const profit = Number.parseFloat(toNum(r[monthCols.profit[m]]));
         if (rev !== 0 || cost !== 0 || profit !== 0) {
           await storage.createProjectMonthly({
             projectId: project.id,
@@ -3078,7 +3161,7 @@ async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetN
   const errors: string[] = [];
 
   const fyMatch = /FY(\d{2}-\d{2})/.exec(sheetName);
-  const fyYear = fyMatch ? fyMatch[1] : "23-24";
+  const fyYear = fyMatch?.[1] ?? "23-24";
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -3232,11 +3315,17 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
 
         const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
         const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(origName);
-        let pCode = codeParts ? codeParts[1].replaceAll(/\s+/g, '') : `INT${projCounter++}`;
+        let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
+        let clientName = "Unknown";
+        if (codeParts) {
+          clientName = codeParts[1].replaceAll(/[\d-]/g, '');
+        } else if (isInternal) {
+          clientName = "Internal";
+        }
         const newProj = await storage.createProject({
-          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replaceAll(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: origName.substring(0, 200), client: clientName,
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -3301,11 +3390,17 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
       let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
         const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(projectDesc);
-        let pCode = codeParts ? codeParts[1].replaceAll(/\s+/g, '') : `INT${projCounter++}`;
+        let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
+        let clientName2 = "Unknown";
+        if (codeParts) {
+          clientName2 = codeParts[1].replaceAll(/[\d-]/g, '');
+        } else if (isInternal) {
+          clientName2 = "Internal";
+        }
         match = await storage.createProject({
-          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replaceAll(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: projectDesc.substring(0, 200), client: clientName2,
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -3517,7 +3612,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
 
       const dvfNameCol = 17;
       const dvfName = r[dvfNameCol] ? String(r[dvfNameCol]).trim() : null;
-      if (dvfName && dvfName.toLowerCase() !== "name") {
+      if (dvfName?.toLowerCase() !== "name" && dvfName) {
         const dvfEmployeeId = empMap.get(dvfName.toLowerCase()) || null;
         const dvfStaffType = r[dvfNameCol + 1] ? String(r[dvfNameCol + 1]).trim() : null;
         let totalDVF = 0;

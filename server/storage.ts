@@ -133,7 +133,7 @@ export function sanitizeDateFields(data: Record<string, any>, table?: string): R
       } else if (typeof val === "string") {
         const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
         if (isoMatch) {
-          const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+          const d = new Date(Number.parseInt(isoMatch[1]), Number.parseInt(isoMatch[2]) - 1, Number.parseInt(isoMatch[3]));
           if (!isReasonableDate(d)) {
             data[key] = null;
           } else if (isMSSQL) {
@@ -1035,8 +1035,8 @@ export class DatabaseStorage implements IStorage {
             db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
           );
 
-        const revenue = parseFloat(monthlyData[0]?.total_revenue || "0");
-        const profit = parseFloat(monthlyData[0]?.total_profit || "0");
+        const revenue = Number.parseFloat(monthlyData[0]?.total_revenue || "0");
+        const profit = Number.parseFloat(monthlyData[0]?.total_profit || "0");
         const gmPercent = revenue > 0 ? profit / revenue : 0;
 
         actuals.push({ quarter: qName, revenue, gmContribution: profit, gmPercent });

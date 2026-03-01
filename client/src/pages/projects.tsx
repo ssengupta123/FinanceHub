@@ -57,7 +57,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 function formatCurrency(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "$0";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
@@ -66,13 +66,13 @@ function formatCurrency(val: string | number | null | undefined): string {
 
 function parseNum(val: string | number | null | undefined): number {
   if (val === null || val === undefined) return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return Number.isNaN(n) ? 0 : n;
 }
 
 function formatPercent(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "0%";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "0%";
   if (Math.abs(n) < 1) return `${(n * 100).toFixed(1)}%`;
   return `${n.toFixed(1)}%`;

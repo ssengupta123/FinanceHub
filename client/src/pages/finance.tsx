@@ -26,7 +26,7 @@ import type { Project, ProjectMonthly } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined): string {
   if (!val) return "$0";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
@@ -35,7 +35,7 @@ function formatCurrency(val: string | number | null | undefined): string {
 
 function parseNum(val: string | number | null | undefined): number {
   if (val === null || val === undefined) return 0;
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   return Number.isNaN(n) ? 0 : n;
 }
 

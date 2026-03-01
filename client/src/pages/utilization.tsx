@@ -7,6 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TrendingUp, Target, Users, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Employee, Timesheet, Project, ResourcePlan } from "@shared/schema";
+type ProjectAllocation = { projectId: number; allocPct: number; hours?: number };
+type WeekData = { key: string; date: Date; worked: number; bench: number; utilization: number; isProjected: boolean; projectAllocations: ProjectAllocation[] };
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 
@@ -23,7 +25,7 @@ interface WeeklyUtilData {
 
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
-  const n = parseFloat(val);
+  const n = Number.parseFloat(val);
   return Number.isNaN(n) ? 0 : n;
 }
 
@@ -48,6 +50,220 @@ function getISOWeekKey(dateStr: string | Date): string {
 }
 
 const STANDARD_WEEKLY_HOURS = 40;
+
+function utilTextColor(pct: number): string {
+  if (pct > 100) return "text-red-600 dark:text-red-400";
+  if (pct >= 80) return "text-green-600 dark:text-green-400";
+  if (pct >= 50) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function utilColor(pct: number): string {
+  if (pct > 100) return "bg-red-500";
+  if (pct >= 80) return "bg-green-500";
+  if (pct >= 50) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function utilCellClass(pct: number, isProjected: boolean): string {
+  const opacity = isProjected ? "opacity-70" : "";
+  if (pct > 100) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
+  if (pct >= 80) return `bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 ${opacity}`;
+  if (pct >= 50) return `bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 ${opacity}`;
+  if (pct > 0) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
+  return `bg-muted text-muted-foreground ${opacity}`;
+}
+
+function getBenchColor(benchPct: number): string {
+  if (benchPct <= 15) return "text-green-600 dark:text-green-400";
+  if (benchPct <= 30) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function computeAllocPct(allocatedCount: number, totalCount: number): number {
+  return totalCount > 0 ? (allocatedCount / totalCount) * 100 : 0;
+}
+
+function computeBillableRatio(fyTimesheets: any[], permanentIds: Set<number>): { ratio: number; billHrs: number; totalHrs: number } {
+  const permTimesheets = fyTimesheets.filter((t: any) => permanentIds.has(t.employeeId ?? 0));
+  const totalHrs = permTimesheets.reduce((s: number, t: any) => s + parseNum(t.hoursWorked), 0);
+  const billHrs = permTimesheets.filter((t: any) => t.billable).reduce((s: number, t: any) => s + parseNum(t.hoursWorked), 0);
+  const ratio = totalHrs > 0 ? (billHrs / totalHrs) * 100 : 0;
+  return { ratio, billHrs, totalHrs };
+}
+
+function OverutilisedEmployeeRow({ emp, isExpanded, onToggle }: Readonly<{
+  emp: any;
+  isExpanded: boolean;
+  onToggle: () => void;
+}>) {
+  const empKey = emp.name;
+  return (
+    <Fragment>
+      <TableRow
+        data-testid={`row-overutilised-${empKey}`}
+        className="cursor-pointer hover:bg-muted/50"
+        onClick={onToggle}
+      >
+        <TableCell className="font-medium">
+          <div className="flex items-center gap-1">
+            {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            {emp.name}
+          </div>
+        </TableCell>
+        <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
+        <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
+        <TableCell className="text-right">{emp.projectCount > 0 ? emp.projectCount : "\u2014"}</TableCell>
+        <TableCell className="text-right">
+          <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
+            {emp.pct.toFixed(0)}%
+          </Badge>
+        </TableCell>
+      </TableRow>
+      {isExpanded && emp.projectBreakdown && emp.projectBreakdown.length > 0 && (
+        emp.projectBreakdown.map((proj: any) => (
+          <TableRow key={`${empKey}-proj-${proj.projectName}`} className="bg-muted/30" data-testid={`row-overutil-project-${empKey}-${proj.projectName}`}>
+            <TableCell className="pl-10 text-sm text-muted-foreground">{proj.projectName}</TableCell>
+            <TableCell className="text-sm text-muted-foreground">{proj.client || "\u2014"}</TableCell>
+            <TableCell className="text-right text-sm">{proj.avgHoursPerWeek.toFixed(1)}</TableCell>
+            <TableCell className="text-right"></TableCell>
+            <TableCell className="text-right text-sm">
+              <Badge variant="secondary" className="text-xs">
+                {proj.allocationPct.toFixed(0)}%
+              </Badge>
+            </TableCell>
+          </TableRow>
+        ))
+      )}
+      {isExpanded && (!emp.projectBreakdown || emp.projectBreakdown.length === 0) && (
+        <TableRow key={`${empKey}-no-proj`} className="bg-muted/30">
+          <TableCell colSpan={5} className="pl-10 text-sm text-muted-foreground italic">No project allocation data available</TableCell>
+        </TableRow>
+      )}
+    </Fragment>
+  );
+}
+
+function computeProjectAvgPct(weeks: any[], projId: number): string {
+  const weekAllocs = weeks.map((w: any) => {
+    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
+    return pa ? pa.allocPct : 0;
+  });
+  const nonZero = weekAllocs.filter((v: number) => v > 0);
+  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}%` : "-";
+}
+
+function computeProjectAvgHrs(weeks: any[], projId: number): string {
+  const weekHrs = weeks.map((w: any) => {
+    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
+    return pa ? pa.hours : 0;
+  });
+  const nonZero = weekHrs.filter((v: number) => v > 0);
+  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}h` : "-";
+}
+
+function ProjectWeekCell({ week, projId, weekKey }: Readonly<{ week: any; projId: number; weekKey: string }>) {
+  const pa = (week.projectAllocations || []).find((a: any) => a.projectId === projId);
+  const hours = pa ? pa.hours : 0;
+  const pct = pa ? pa.allocPct : 0;
+  return (
+    <TableCell key={weekKey} className="text-center p-1">
+      <div className="text-[10px] text-muted-foreground leading-tight" title={`${hours.toFixed(1)}h (${pct.toFixed(0)}%)`}>
+        {hours > 0 ? (
+          <>
+            <div>{hours.toFixed(0)}h</div>
+            <div className="opacity-70">{pct.toFixed(0)}%</div>
+          </>
+        ) : "-"}
+      </div>
+    </TableCell>
+  );
+}
+
+function RollingViewRow({ row, weekColumns, expandedRows, setExpandedRows, allActiveProjects, projects }: Readonly<{
+  row: any;
+  weekColumns: { key: string; label: string }[];
+  expandedRows: Set<number>;
+  setExpandedRows: (fn: (prev: Set<number>) => Set<number>) => void;
+  allActiveProjects: Project[];
+  projects: Project[];
+}>) {
+  const isExpanded = expandedRows.has(row.employeeId);
+  const uniqueProjectIds = new Set<number>();
+  for (const w of row.weeks) {
+    for (const pa of (w.projectAllocations || [])) {
+      if (pa.projectId) uniqueProjectIds.add(pa.projectId);
+    }
+  }
+  const hasProjects = uniqueProjectIds.size > 0;
+
+  return (
+    <Fragment>
+      <TableRow
+        data-testid={`row-rolling-${row.employeeId}`}
+        className={hasProjects ? "cursor-pointer hover:bg-muted/50" : ""}
+        onClick={() => {
+          if (!hasProjects) return;
+          setExpandedRows(prev => {
+            const next = new Set(prev);
+            if (next.has(row.employeeId)) next.delete(row.employeeId);
+            else next.add(row.employeeId);
+            return next;
+          });
+        }}
+      >
+        <TableCell className="font-medium sticky left-0 bg-background z-10">
+          <div className="flex items-center gap-2">
+            {hasProjects ? (
+              isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />
+            )}
+            {row.name}
+            {hasProjects && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{uniqueProjectIds.size}p</Badge>}
+          </div>
+        </TableCell>
+        <TableCell className="text-right">
+          <span className={utilTextColor(row.avgUtil)}>
+            {row.avgUtil.toFixed(0)}%
+          </span>
+        </TableCell>
+        <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
+        {row.weeks.map((week: any, wi: number) => (
+          <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
+            <div
+              className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
+              title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
+            >
+              {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
+            </div>
+          </TableCell>
+        ))}
+      </TableRow>
+      {isExpanded && Array.from(uniqueProjectIds).map(projId => {
+        const proj = allActiveProjects.find((p: any) => p.id === projId) || projects.find((p: any) => p.id === projId);
+        const projName = proj ? (proj.projectCode || proj.name) : `Project ${projId}`;
+        const projClient = proj?.client || "";
+        return (
+          <TableRow key={`${row.employeeId}-proj-${projId}`} className="bg-muted/20" data-testid={`row-project-alloc-${row.employeeId}-${projId}`}>
+            <TableCell className="sticky left-0 bg-muted/20 z-10 pl-8">
+              <span className="text-xs text-muted-foreground">{projName}{projClient ? ` (${projClient})` : ""}</span>
+            </TableCell>
+            <TableCell className="text-right text-xs text-muted-foreground">
+              {computeProjectAvgPct(row.weeks, projId)}
+            </TableCell>
+            <TableCell className="text-right text-xs text-muted-foreground">
+              {computeProjectAvgHrs(row.weeks, projId)}
+            </TableCell>
+            {row.weeks.map((week: any, wi: number) => (
+              <ProjectWeekCell key={weekColumns[wi]?.key ?? wi} week={week} projId={projId} weekKey={weekColumns[wi]?.key ?? String(wi)} />
+            ))}
+          </TableRow>
+        );
+      })}
+    </Fragment>
+  );
+}
 
 export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
@@ -74,9 +290,9 @@ export default function UtilizationDashboard() {
 
   const allPermanentEmployees = useMemo(
     () => (employees || []).filter(e => {
-      if ((e as any).staffType !== "Permanent") return false;
+      if (e.staffType !== "Permanent") return false;
       if (e.status === "inactive") return false;
-      const fn = ((e as any).firstName || "").trim();
+      const fn = (e.firstName || "").trim();
       if (fn.startsWith("Perm-") || fn.startsWith("Contractor-") || fn === "Contingency") return false;
       return true;
     }),
@@ -84,12 +300,12 @@ export default function UtilizationDashboard() {
   );
 
   const availableTeams = useMemo(() => {
-    const teams = new Set(allPermanentEmployees.map(e => (e as any).team).filter(Boolean));
-    return (Array.from(teams) as string[]).sort((a, b) => a.localeCompare(b));
+    const teams = new Set(allPermanentEmployees.map(e => e.team).filter(Boolean));
+    return Array.from(teams).sort((a, b) => (a || "").localeCompare(b || ""));
   }, [allPermanentEmployees]);
 
   const permanentEmployees = useMemo(
-    () => selectedTeam === "all" ? allPermanentEmployees : allPermanentEmployees.filter(e => (e as any).team === selectedTeam),
+    () => selectedTeam === "all" ? allPermanentEmployees : allPermanentEmployees.filter(e => e.team === selectedTeam),
     [allPermanentEmployees, selectedTeam]
   );
 
@@ -102,18 +318,24 @@ export default function UtilizationDashboard() {
       return fyTimesheets.some(t => {
         if (t.employeeId !== emp.id) return false;
         const proj = (projects || []).find(p => p.id === t.projectId);
-        return proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || (proj as any).adStatus === "Active");
+        return proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || proj.adStatus === "Active");
       });
     });
   }, [permanentEmployees, fyTimesheets, projects]);
 
   const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects } = useMemo(() => {
-    const emptyResult = {
-      weekColumns: [] as { key: string; label: string }[],
-      rollingView: [] as any[],
+    const emptyResult: {
+      weekColumns: { key: string; label: string }[];
+      rollingView: any[];
+      benchSummary: { totalCapacity: number; totalWorked: number; totalBench: number; benchPct: number; onBenchCount: number };
+      overutilisedList: { name: string; role: string; avgHours: number; pct: number }[];
+      allActiveProjects: Project[];
+    } = {
+      weekColumns: [],
+      rollingView: [],
       benchSummary: { totalCapacity: 0, totalWorked: 0, totalBench: 0, benchPct: 0, onBenchCount: 0 },
-      overutilisedList: [] as { name: string; role: string; avgHours: number; pct: number }[],
-      allActiveProjects: [] as Project[],
+      overutilisedList: [],
+      allActiveProjects: [],
     };
 
     if (!weeklyData || permanentEmployees.length === 0) return emptyResult;
@@ -142,8 +364,8 @@ export default function UtilizationDashboard() {
     const rpByEmpMonth = new Map<string, number>();
     const rpByEmpMonthProjects = new Map<string, { projectId: number; allocPct: number }[]>();
     const hasResourcePlans = (resourcePlans || []).length > 0;
-    (resourcePlans || []).forEach(rp => {
-      if (!rp.employeeId || !rp.month) return;
+    for (const rp of (resourcePlans || [])) {
+      if (!rp.employeeId || !rp.month) continue;
       const monthKey = rp.month.substring(0, 7);
       const mapKey = `${rp.employeeId}-${monthKey}`;
       const existing = rpByEmpMonth.get(mapKey) || 0;
@@ -151,11 +373,11 @@ export default function UtilizationDashboard() {
       const projList = rpByEmpMonthProjects.get(mapKey) || [];
       projList.push({ projectId: rp.projectId ?? 0, allocPct: parseNum(rp.allocationPercent) });
       rpByEmpMonthProjects.set(mapKey, projList);
-    });
+    }
 
     const activeProjects = (projects || []).filter(p => {
       if (p.client === "Internal" || p.client === "RGT") return false;
-      if (p.status !== "active" && (p as any).adStatus !== "Active") return false;
+      if (p.status !== "active" && p.adStatus !== "Active") return false;
       if (p.endDate) {
         const end = new Date(p.endDate);
         if (end < today) return false;
@@ -167,7 +389,7 @@ export default function UtilizationDashboard() {
     recentWindowStart.setDate(recentWindowStart.getDate() - 28);
 
     const empProjectAllocations = new Map<number, { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[]>();
-    permanentEmployees.forEach(emp => {
+    for (const emp of permanentEmployees) {
       const empRecentTimesheets = fyTimesheets.filter(t => {
         if (t.employeeId !== emp.id) return false;
         const d = new Date(t.weekEnding);
@@ -176,10 +398,10 @@ export default function UtilizationDashboard() {
 
       const projectWeekHours = new Map<number, Map<string, number>>();
       const projectLastSeen = new Map<number, Date>();
-      empRecentTimesheets.forEach(t => {
-        if (!t.projectId) return;
+      for (const t of empRecentTimesheets) {
+        if (!t.projectId) continue;
         const proj = activeProjects.find(p => p.id === t.projectId);
-        if (!proj) return;
+        if (!proj) continue;
         const wk = getISOWeekKey(t.weekEnding);
         if (!projectWeekHours.has(t.projectId)) projectWeekHours.set(t.projectId, new Map());
         const weekMap = projectWeekHours.get(t.projectId)!;
@@ -187,20 +409,20 @@ export default function UtilizationDashboard() {
         const tsDate = new Date(t.weekEnding);
         const prev = projectLastSeen.get(t.projectId);
         if (!prev || tsDate > prev) projectLastSeen.set(t.projectId, tsDate);
-      });
+      }
 
       const twoWeeksAgo = new Date(today);
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
       const allocations: { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number }[] = [];
-      projectWeekHours.forEach((weekMap, projId) => {
+      for (const [projId, weekMap] of projectWeekHours) {
         const proj = activeProjects.find(p => p.id === projId);
-        if (!proj) return;
+        if (!proj) continue;
         const lastSeen = projectLastSeen.get(projId);
-        if (!lastSeen || lastSeen < twoWeeksAgo) return;
+        if (!lastSeen || lastSeen < twoWeeksAgo) continue;
         const weekHours = Array.from(weekMap.values());
         const avgPerWeek = weekHours.length > 0 ? weekHours.reduce((s, h) => s + h, 0) / weekHours.length : 0;
-        if (avgPerWeek < 0.5) return;
+        if (avgPerWeek < 0.5) continue;
 
         allocations.push({
           projectId: projId,
@@ -208,13 +430,13 @@ export default function UtilizationDashboard() {
           endDate: proj.endDate ? new Date(proj.endDate) : null,
           avgHoursPerWeek: avgPerWeek,
         });
-      });
+      }
       empProjectAllocations.set(emp.id, allocations);
-    });
+    }
 
     const empRecentAvg = new Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>();
 
-    permanentEmployees.forEach(emp => {
+    for (const emp of permanentEmployees) {
       const empRows = recentData.filter(r => r.employee_id === emp.id);
       const allocations = empProjectAllocations.get(emp.id) || [];
       const isAllocated = allocations.length > 0;
@@ -240,18 +462,18 @@ export default function UtilizationDashboard() {
           isAllocated,
         });
       }
-    });
+    }
 
     const actualDataByEmpWeek = new Map<string, { totalHours: number; billableHours: number }>();
-    weeklyData.forEach(row => {
-      if (!permanentIds.has(row.employee_id)) return;
+    for (const row of weeklyData) {
+      if (!permanentIds.has(row.employee_id)) continue;
       const wk = getISOWeekKey(row.week_ending);
       const mapKey = `${row.employee_id}-${wk}`;
       const existing = actualDataByEmpWeek.get(mapKey) || { totalHours: 0, billableHours: 0 };
       existing.totalHours += parseNum(row.total_hours);
       existing.billableHours += parseNum(row.billable_hours);
       actualDataByEmpWeek.set(mapKey, existing);
-    });
+    }
 
     const rolling = permanentEmployees.map(emp => {
       const recent = empRecentAvg.get(emp.id)!;
@@ -264,7 +486,8 @@ export default function UtilizationDashboard() {
         if (actual && actual.totalHours > 0) {
           const utilPct = (actual.totalHours / STANDARD_WEEKLY_HOURS) * 100;
           const bench = Math.max(STANDARD_WEEKLY_HOURS - actual.totalHours, 0);
-          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0, projectAllocations: [] as { projectId: number; hours: number; allocPct: number }[] };
+          const emptyAllocations: { projectId: number; hours: number; allocPct: number }[] = [];
+          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0, projectAllocations: emptyAllocations };
         }
 
         const weekDate = fw.date;
@@ -306,7 +529,8 @@ export default function UtilizationDashboard() {
           return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length, projectAllocations: projAllocs };
         }
 
-        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: [] as { projectId: number; hours: number; allocPct: number }[] };
+        const noAllocations: { projectId: number; hours: number; allocPct: number }[] = [];
+        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: noAllocations };
       });
 
       const avgUtil = weeks.length > 0
@@ -361,35 +585,9 @@ export default function UtilizationDashboard() {
     };
   }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
 
-  function utilTextColor(pct: number): string {
-    if (pct > 100) return "text-red-600 dark:text-red-400";
-    if (pct >= 80) return "text-green-600 dark:text-green-400";
-    if (pct >= 50) return "text-amber-600 dark:text-amber-400";
-    return "text-red-600 dark:text-red-400";
-  }
-
-  function utilColor(pct: number): string {
-    if (pct > 100) return "bg-red-500";
-    if (pct >= 80) return "bg-green-500";
-    if (pct >= 50) return "bg-amber-500";
-    return "bg-red-500";
-  }
-
-  function ragLabel(pct: number): { text: string; bg: string; fg: string } {
-    if (pct > 100) return { text: "Risk", bg: "bg-red-100 dark:bg-red-900/40", fg: "text-red-700 dark:text-red-300" };
-    if (pct >= 80) return { text: "Good", bg: "bg-green-100 dark:bg-green-900/40", fg: "text-green-700 dark:text-green-300" };
-    if (pct >= 50) return { text: "Fair", bg: "bg-amber-100 dark:bg-amber-900/40", fg: "text-amber-700 dark:text-amber-300" };
-    return { text: "Risk", bg: "bg-red-100 dark:bg-red-900/40", fg: "text-red-700 dark:text-red-300" };
-  }
-
-  function utilCellClass(pct: number, isProjected: boolean): string {
-    const opacity = isProjected ? "opacity-70" : "";
-    if (pct > 100) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
-    if (pct >= 80) return `bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 ${opacity}`;
-    if (pct >= 50) return `bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 ${opacity}`;
-    if (pct > 0) return `bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 ${opacity}`;
-    return `bg-muted text-muted-foreground ${opacity}`;
-  }
+  const allocPct = computeAllocPct(allocatedPermanent.length, permanentEmployees.length);
+  const billableData = computeBillableRatio(fyTimesheets, permanentIds);
+  const benchColor = getBenchColor(benchSummary.benchPct);
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -435,14 +633,9 @@ export default function UtilizationDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              (() => {
-                const allocPct = permanentEmployees.length > 0 ? (allocatedPermanent.length / permanentEmployees.length) * 100 : 0;
-                return (
-                  <div className={`text-2xl font-bold ${utilTextColor(allocPct)}`} data-testid="text-staff-allocation">
-                    {allocPct.toFixed(1)}%
-                  </div>
-                );
-              })()
+              <div className={`text-2xl font-bold ${utilTextColor(allocPct)}`} data-testid="text-staff-allocation">
+                {allocPct.toFixed(1)}%
+              </div>
             )}
             <p className="text-xs text-muted-foreground">{allocatedPermanent.length} / {permanentEmployees.length} perm staff on active projects</p>
           </CardContent>
@@ -473,19 +666,10 @@ export default function UtilizationDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              (() => {
-                const permTimesheets = fyTimesheets.filter(t => permanentIds.has(t.employeeId ?? 0));
-                const totalHrs = permTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
-                const billHrs = permTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
-                const ratio = totalHrs > 0 ? (billHrs / totalHrs) * 100 : 0;
-                const ratioColor = utilTextColor(ratio);
-                return (
-                  <>
-                    <div className={`text-2xl font-bold ${ratioColor}`} data-testid="text-billable-ratio">{ratio.toFixed(1)}%</div>
-                    <p className="text-xs text-muted-foreground">{billHrs.toFixed(0)}h billable of {totalHrs.toFixed(0)}h total (perm only)</p>
-                  </>
-                );
-              })()
+              <>
+                <div className={`text-2xl font-bold ${utilTextColor(billableData.ratio)}`} data-testid="text-billable-ratio">{billableData.ratio.toFixed(1)}%</div>
+                <p className="text-xs text-muted-foreground">{billableData.billHrs.toFixed(0)}h billable of {billableData.totalHrs.toFixed(0)}h total (perm only)</p>
+              </>
             )}
           </CardContent>
         </Card>
@@ -496,13 +680,7 @@ export default function UtilizationDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
-              (() => {
-                let benchColor: string;
-                if (benchSummary.benchPct <= 15) benchColor = "text-green-600 dark:text-green-400";
-                else if (benchSummary.benchPct <= 30) benchColor = "text-amber-600 dark:text-amber-400";
-                else benchColor = "text-red-600 dark:text-red-400";
-                return <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>;
-              })()
+              <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>
             )}
             <p className="text-xs text-muted-foreground">
               {benchSummary.benchPct.toFixed(1)}% capacity | {benchSummary.onBenchCount} on bench (perm only)
@@ -531,61 +709,21 @@ export default function UtilizationDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {overutilisedList.map((emp: any) => {
-                  const empKey = emp.name;
-                  const isExpanded = expandedOverutil.has(empKey);
-                  return (
-                    <Fragment key={empKey}>
-                      <TableRow
-                        data-testid={`row-overutilised-${empKey}`}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => {
-                          setExpandedOverutil(prev => {
-                            const next = new Set(prev);
-                            if (next.has(empKey)) next.delete(empKey);
-                            else next.add(empKey);
-                            return next;
-                          });
-                        }}
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-1">
-                            {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                            {emp.name}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{emp.role || "\u2014"}</TableCell>
-                        <TableCell className="text-right">{emp.avgHours.toFixed(1)}</TableCell>
-                        <TableCell className="text-right">{emp.projectCount > 0 ? emp.projectCount : "\u2014"}</TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-500/50">
-                            {emp.pct.toFixed(0)}%
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded && emp.projectBreakdown && emp.projectBreakdown.length > 0 && (
-                        emp.projectBreakdown.map((proj: any) => (
-                          <TableRow key={`${empKey}-proj-${proj.projectName}`} className="bg-muted/30" data-testid={`row-overutil-project-${empKey}-${proj.projectName}`}>
-                            <TableCell className="pl-10 text-sm text-muted-foreground">{proj.projectName}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">{proj.client || "\u2014"}</TableCell>
-                            <TableCell className="text-right text-sm">{proj.avgHoursPerWeek.toFixed(1)}</TableCell>
-                            <TableCell className="text-right"></TableCell>
-                            <TableCell className="text-right text-sm">
-                              <Badge variant="secondary" className="text-xs">
-                                {proj.allocationPct.toFixed(0)}%
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                      {isExpanded && (!emp.projectBreakdown || emp.projectBreakdown.length === 0) && (
-                        <TableRow key={`${empKey}-no-proj`} className="bg-muted/30">
-                          <TableCell colSpan={5} className="pl-10 text-sm text-muted-foreground italic">No project allocation data available</TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
-                  );
-                })}
+                {overutilisedList.map((emp: any) => (
+                  <OverutilisedEmployeeRow
+                    key={emp.name}
+                    emp={emp}
+                    isExpanded={expandedOverutil.has(emp.name)}
+                    onToggle={() => {
+                      setExpandedOverutil(prev => {
+                        const next = new Set(prev);
+                        if (next.has(emp.name)) next.delete(emp.name);
+                        else next.add(emp.name);
+                        return next;
+                      });
+                    }}
+                  />
+                ))}
               </TableBody>
             </Table>
           </CardContent>
@@ -624,111 +762,17 @@ export default function UtilizationDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rollingView.map(row => {
-                    const isExpanded = expandedRows.has(row.employeeId);
-                    const uniqueProjectIds = new Set<number>();
-                    row.weeks.forEach((w: any) => {
-                      (w.projectAllocations || []).forEach((pa: any) => {
-                        if (pa.projectId) uniqueProjectIds.add(pa.projectId);
-                      });
-                    });
-                    const hasProjects = uniqueProjectIds.size > 0;
-
-                    return (
-                      <Fragment key={row.employeeId}>
-                        <TableRow
-                          data-testid={`row-rolling-${row.employeeId}`}
-                          className={hasProjects ? "cursor-pointer hover:bg-muted/50" : ""}
-                          onClick={() => {
-                            if (!hasProjects) return;
-                            setExpandedRows(prev => {
-                              const next = new Set(prev);
-                              if (next.has(row.employeeId)) next.delete(row.employeeId);
-                              else next.add(row.employeeId);
-                              return next;
-                            });
-                          }}
-                        >
-                          <TableCell className="font-medium sticky left-0 bg-background z-10">
-                            <div className="flex items-center gap-2">
-                              {hasProjects ? (
-                                isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                              ) : (
-                                <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${utilColor(row.avgUtil)}`} />
-                              )}
-                              {row.name}
-                              {hasProjects && <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{uniqueProjectIds.size}p</Badge>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={utilTextColor(row.avgUtil)}>
-                              {row.avgUtil.toFixed(0)}%
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
-                          {row.weeks.map((week: any, wi: number) => (
-                            <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
-                              <div
-                                className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
-                                title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
-                              >
-                                {week.utilization > 0 ? `${week.utilization.toFixed(0)}%` : "-"}
-                              </div>
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                        {isExpanded && Array.from(uniqueProjectIds).map(projId => {
-                          const proj = allActiveProjects.find((p: any) => p.id === projId) || (projects || []).find((p: any) => p.id === projId);
-                          const projName = proj ? (proj.projectCode || proj.name) : `Project ${projId}`;
-                          const projClient = proj?.client || "";
-                          return (
-                            <TableRow key={`${row.employeeId}-proj-${projId}`} className="bg-muted/20" data-testid={`row-project-alloc-${row.employeeId}-${projId}`}>
-                              <TableCell className="sticky left-0 bg-muted/20 z-10 pl-8">
-                                <span className="text-xs text-muted-foreground">{projName}{projClient ? ` (${projClient})` : ""}</span>
-                              </TableCell>
-                              <TableCell className="text-right text-xs text-muted-foreground">
-                                {(() => {
-                                  const weekAllocs = row.weeks.map((w: any) => {
-                                    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
-                                    return pa ? pa.allocPct : 0;
-                                  });
-                                  const nonZero = weekAllocs.filter((v: number) => v > 0);
-                                  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}%` : "-";
-                                })()}
-                              </TableCell>
-                              <TableCell className="text-right text-xs text-muted-foreground">
-                                {(() => {
-                                  const weekHrs = row.weeks.map((w: any) => {
-                                    const pa = (w.projectAllocations || []).find((a: any) => a.projectId === projId);
-                                    return pa ? pa.hours : 0;
-                                  });
-                                  const nonZero = weekHrs.filter((v: number) => v > 0);
-                                  return nonZero.length > 0 ? `${(nonZero.reduce((s: number, v: number) => s + v, 0) / nonZero.length).toFixed(0)}h` : "-";
-                                })()}
-                              </TableCell>
-                              {row.weeks.map((week: any, wi: number) => {
-                                const pa = (week.projectAllocations || []).find((a: any) => a.projectId === projId);
-                                const hours = pa ? pa.hours : 0;
-                                const pct = pa ? pa.allocPct : 0;
-                                return (
-                                  <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
-                                    <div className="text-[10px] text-muted-foreground leading-tight" title={`${hours.toFixed(1)}h (${pct.toFixed(0)}%)`}>
-                                      {hours > 0 ? (
-                                        <>
-                                          <div>{hours.toFixed(0)}h</div>
-                                          <div className="opacity-70">{pct.toFixed(0)}%</div>
-                                        </>
-                                      ) : "-"}
-                                    </div>
-                                  </TableCell>
-                                );
-                              })}
-                            </TableRow>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
+                  {rollingView.map(row => (
+                    <RollingViewRow
+                      key={row.employeeId}
+                      row={row}
+                      weekColumns={weekColumns}
+                      expandedRows={expandedRows}
+                      setExpandedRows={setExpandedRows}
+                      allActiveProjects={allActiveProjects}
+                      projects={projects || []}
+                    />
+                  ))}
                   <TableRow className="font-bold border-t-2">
                     <TableCell className="sticky left-0 bg-background z-10">Total</TableCell>
                     <TableCell className="text-right">

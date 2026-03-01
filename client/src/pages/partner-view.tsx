@@ -137,7 +137,7 @@ export default function PartnerView() {
           if (clean && clean !== "(blank)") {
             if (!map[clean]) map[clean] = { opps: [], totalValue: 0 };
             map[clean].opps.push(o);
-            const val = parseFloat(o.value || "0") || 0;
+            const val = Number.parseFloat(o.value || "0") || 0;
             const partners = o.partner!.split(/[;,#]/).map(x => x.trim()).filter(x => x && x !== "(blank)");
             map[clean].totalValue += partners.length > 0 ? val / partners.length : 0;
           }
@@ -154,7 +154,7 @@ export default function PartnerView() {
   }, [partnerOpps]);
 
   const totalValue = useMemo(() => {
-    return filtered.reduce((sum, o) => sum + (parseFloat(o.value || "0") || 0), 0);
+    return filtered.reduce((sum, o) => sum + (Number.parseFloat(o.value || "0") || 0), 0);
   }, [filtered]);
 
   const byPartnerChart = useMemo(() => {
@@ -162,7 +162,7 @@ export default function PartnerView() {
     filtered.forEach(o => {
       if (o.partner) {
         const partners = o.partner.split(/[;,#]/).map(p => p.trim()).filter(p => p && p !== "(blank)");
-        const val = parseFloat(o.value || "0") || 0;
+        const val = Number.parseFloat(o.value || "0") || 0;
         const share = partners.length > 0 ? val / partners.length : 0;
         partners.forEach(p => { map[p] = (map[p] || 0) + share; });
       }
@@ -176,7 +176,7 @@ export default function PartnerView() {
     const map: Record<string, number> = {};
     filtered.forEach(o => {
       const vat = o.vat || "Other";
-      map[vat] = (map[vat] || 0) + (parseFloat(o.value || "0") || 0);
+      map[vat] = (map[vat] || 0) + (Number.parseFloat(o.value || "0") || 0);
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
@@ -348,7 +348,7 @@ export default function PartnerView() {
                                         <span>{opp.name}</span>
                                         <span className="text-muted-foreground">({opp.vat})</span>
                                       </div>
-                                      <span className="font-medium">{opp.value ? formatDollars(parseFloat(opp.value)) : "-"}</span>
+                                      <span className="font-medium">{opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -542,12 +542,12 @@ export default function PartnerView() {
                     <TableCell className="text-sm">{opp.vat}</TableCell>
                     <TableCell className="text-sm text-right">
                       {opp.marginPercent && opp.marginPercent !== "(blank)"
-                        ? `${(parseFloat(opp.marginPercent) * 100).toFixed(0)}%`
+                        ? `${(Number.parseFloat(opp.marginPercent) * 100).toFixed(0)}%`
                         : "-"}
                     </TableCell>
                     <TableCell className="text-sm">{opp.partner?.replaceAll(";#", ", ") || "-"}</TableCell>
                     <TableCell className="text-sm text-right font-medium">
-                      {opp.value ? formatDollars(parseFloat(opp.value)) : "-"}
+                      {opp.value ? formatDollars(Number.parseFloat(opp.value)) : "-"}
                     </TableCell>
                   </TableRow>
                 ))}

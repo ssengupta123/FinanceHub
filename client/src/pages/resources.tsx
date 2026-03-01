@@ -79,7 +79,7 @@ function statusVariant(status: string): "default" | "secondary" | "outline" {
 
 function formatCurrency(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "--";
-  const num = typeof value === "string" ? parseFloat(value) : value;
+  const num = typeof value === "string" ? Number.parseFloat(value) : value;
   if (Number.isNaN(num)) return "--";
   return `$${Math.round(num).toLocaleString()}`;
 }
@@ -112,7 +112,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
 
 function grossCostRagColor(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "bg-gray-300";
-  const num = typeof value === "string" ? parseFloat(value) : value;
+  const num = typeof value === "string" ? Number.parseFloat(value) : value;
   if (Number.isNaN(num)) return "bg-gray-300";
   if (num < 700) return "bg-green-500";
   if (num <= 800) return "bg-amber-500";
@@ -285,7 +285,7 @@ export default function Resources() {
     const active = employees.filter(e => e.status === "active").length;
     const onBench = employees.filter(e => e.status === "active" && !e.team).length;
     const rates = employees
-      .map(e => parseFloat(e.baseCost || "0"))
+      .map(e => Number.parseFloat(e.baseCost || "0"))
       .filter(r => r > 0);
     const avgDayRate = rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
     return { total: employees.length, active, onBench, avgDayRate };

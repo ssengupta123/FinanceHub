@@ -9,7 +9,7 @@ export function getCurrentFy(): string {
 export function getFyFromDate(dateStr: string | Date | null | undefined): string | null {
   if (!dateStr) return null;
   const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
-  if (isNaN(d.getTime())) return null;
+  if (Number.isNaN(d.getTime())) return null;
   const m = d.getMonth();
   const y = d.getFullYear();
   const fyStart = m >= 6 ? y : y - 1;
@@ -27,7 +27,7 @@ export function getElapsedFyMonths(fy: string): number {
   const now = new Date();
   const parts = fy.split("-");
   if (parts.length !== 2) return 0;
-  const fyStartYear = 2000 + parseInt(parts[0], 10);
+  const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
   const fyStart = new Date(fyStartYear, 6, 1);
   const fyEnd = new Date(fyStartYear + 1, 5, 30, 23, 59, 59);
   if (now < fyStart) return 0;
