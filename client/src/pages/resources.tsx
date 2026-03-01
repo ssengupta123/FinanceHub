@@ -806,11 +806,13 @@ export default function Resources() {
                       {isCol("name") && <TableCell data-testid={`text-employee-name-${emp.id}`} className="whitespace-nowrap">{emp.firstName} {emp.lastName}</TableCell>}
                       {isCol("role") && <TableCell data-testid={`text-employee-role-${emp.id}`}>{emp.role || "--"}</TableCell>}
                       {isCol("appRole") && <TableCell data-testid={`text-employee-approle-${emp.id}`}>
-                        {emp.linkedUserRole ? (
+                        {emp.linkedUserRole && (
                           <LinkedUserPopover emp={emp} linkPopoverId={linkPopoverId} setLinkPopoverId={setLinkPopoverId} isAdmin={isAdmin} can={can} changeRoleMutation={changeRoleMutation} linkUserMutation={linkUserMutation} allUsers={allUsers} linkedUserIds={linkedUserIds} />
-                        ) : can("resources", "edit") ? (
+                        )}
+                        {!emp.linkedUserRole && can("resources", "edit") && (
                           <AssignRolePopover emp={emp} linkPopoverId={linkPopoverId} setLinkPopoverId={setLinkPopoverId} setCreateUserForm={setCreateUserForm} isAdmin={isAdmin} linkUserMutation={linkUserMutation} allUsers={allUsers} linkedUserIds={linkedUserIds} createUserForm={createUserForm} createUserMutation={createUserMutation} />
-                        ) : (
+                        )}
+                        {!emp.linkedUserRole && !can("resources", "edit") && (
                           <span className="text-muted-foreground">--</span>
                         )}
                       </TableCell>}

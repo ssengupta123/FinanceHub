@@ -63,7 +63,6 @@ export default function FeatureRequestsPage() {
   const [category, setCategory] = useState<string>("");
   const [priority, setPriority] = useState<string>("Medium");
   const [area, setArea] = useState<string>("");
-  const [selectedRequest, setSelectedRequest] = useState<FeatureRequest | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
 
   const { data: requests = [], isLoading } = useQuery<FeatureRequest[]>({
@@ -93,7 +92,6 @@ export default function FeatureRequestsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-requests"] });
-      setSelectedRequest(null);
       toast({ title: "Updated", description: "Feature request updated." });
     },
     onError: (err: any) => {
@@ -108,7 +106,6 @@ export default function FeatureRequestsPage() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-requests"] });
-      setSelectedRequest(null);
       toast({ title: "Branch created", description: `Branch ${data.githubBranch} created on GitHub.` });
     },
     onError: (err: any) => {
@@ -359,7 +356,7 @@ export default function FeatureRequestsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => { setSelectedRequest(fr); setAdminNotes(fr.notes || ""); }}
+                            onClick={() => { setAdminNotes(fr.notes || ""); }}
                             data-testid={`button-manage-${fr.id}`}
                           >
                             Manage

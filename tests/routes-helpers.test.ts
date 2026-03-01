@@ -75,6 +75,7 @@ import {
   buildVatChatSystemPrompt,
   parseOptionalTrimmed,
   parseNumericField,
+  findExistingPlannerTask,
 } from "../server/routes";
 
 describe("deriveFyYear", () => {
@@ -2273,5 +2274,45 @@ describe("parseNumericField", () => {
 
   it("handles large decimals", () => {
     expect(parseNumericField(1.999999, 0)).toBe("2");
+  });
+});
+
+describe("findExistingPlannerTask", () => {
+  it("finds by external ID", () => {
+    const byExtId = new Map([["ext-1", { id: 10, taskName: "Task A", externalId: "ext-1" }]]);
+    const withoutExtId: any[] = [];
+    const result = findExistingPlannerTask({ extId: "ext-1", taskName: "Task A" }, byExtId, withoutExtId);
+    expect(result).toEqual({ id: 10, taskName: "Task A", externalId: "ext-1" });
+  });
+
+  it("falls back to name match when no ext ID match", () => {
+    const byExtId = new Map<string, any>();
+    const withoutExtId = [{ id: 20, taskName: "Task B" }, { id: 30, taskName: "Task C" }];
+    const result = findExistingPlannerTask({ extId: "ext-99", taskName: "Task B" }, byExtId, withoutExtId);
+    expect(result).toEqual({ id: 20, taskName: "Task B" });
+    expect(withoutExtId).toHaveLength(1);
+  });
+
+  it("returns null when no match found", () => {
+    const byExtId = new Map<string, any>();
+    const withoutExtId = [{ id: 40, taskName: "Other" }];
+    const result = findExistingPlannerTask({ extId: "ext-99", taskName: "No Match" }, byExtId, withoutExtId);
+    expect(result).toBeNull();
+    expect(withoutExtId).toHaveLength(1);
+  });
+
+  it("removes name-matched task from withoutExtId array", () => {
+    const byExtId = new Map<string, any>();
+    const withoutExtId = [{ id: 50, taskName: "Alpha" }, { id: 60, taskName: "Beta" }, { id: 70, taskName: "Gamma" }];
+    findExistingPlannerTask({ extId: "x", taskName: "Beta" }, byExtId, withoutExtId);
+    expect(withoutExtId.map(t => t.taskName)).toEqual(["Alpha", "Gamma"]);
+  });
+
+  it("prefers ext ID match over name match", () => {
+    const byExtId = new Map([["ext-1", { id: 10, taskName: "Task A", externalId: "ext-1" }]]);
+    const withoutExtId = [{ id: 20, taskName: "Task A" }];
+    const result = findExistingPlannerTask({ extId: "ext-1", taskName: "Task A" }, byExtId, withoutExtId);
+    expect(result!.id).toBe(10);
+    expect(withoutExtId).toHaveLength(1);
   });
 });

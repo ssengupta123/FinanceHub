@@ -750,6 +750,17 @@ export function buildExistingTaskMaps(existingTasks: any[]): { existingByExtId: 
   return { existingByExtId, existingWithoutExtId };
 }
 
+export function findExistingPlannerTask(rec: { extId: string; taskName: string }, existingByExtId: Map<string, any>, existingWithoutExtId: any[]): any {
+  const byExt = existingByExtId.get(rec.extId);
+  if (byExt) return byExt;
+  const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
+  if (nameMatch) {
+    existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
+    return nameMatch;
+  }
+  return null;
+}
+
 export function collectPlannerUserIds(plannerTasks: any[]): Set<string> {
   const allUserIds = new Set<string>();
   for (const pt of plannerTasks) {
@@ -2886,17 +2897,6 @@ Rules:
     }
   }
 
-  function findExistingPlannerTask(rec: any, existingByExtId: Map<string, any>, existingWithoutExtId: any[]): any | null {
-    const byExt = existingByExtId.get(rec.extId);
-    if (byExt) return byExt;
-    const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
-    if (nameMatch) {
-      existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
-      return nameMatch;
-    }
-    return null;
-  }
-
   async function updateExistingPlannerTask(pt: any, rec: any, existing: any, resolveUserName: (uid: string) => string): Promise<{ wasCompleted: boolean; completedInfo?: any; wasUpdated: boolean; changes: string[] }> {
     const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
     if (syncResult.needsUpdate) {
@@ -2948,7 +2948,7 @@ Rules:
 
       if (existing) {
         const result = await updateExistingPlannerTask(pt, rec, existing, resolveUserName);
-        if (result.wasCompleted) { newlyCompletedCount++; newlyCompletedTasks.push(result.completedInfo!); }
+        if (result.wasCompleted) { newlyCompletedCount++; newlyCompletedTasks.push(result.completedInfo); }
         if (result.wasUpdated) { updatedCount++; updatedTasks.push({ title: rec.taskName, changes: result.changes }); }
       } else {
         await createNewPlannerTask(rec, reportId, synced);
