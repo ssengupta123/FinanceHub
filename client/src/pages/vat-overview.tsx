@@ -20,6 +20,10 @@ import {
 } from "recharts";
 import { TrendingUp, DollarSign, Percent, ChevronDown, ChevronUp, Lightbulb } from "lucide-react";
 
+type MetricType = "gm_contribution" | "revenue" | "gm_percent";
+
+type VatInfo = { name: string; displayName: string; order: number };
+
 const QUARTER_LABELS = ["Q1 (Jul-Sep)", "Q2 (Oct-Dec)", "Q3 (Jan-Mar)", "Q4 (Apr-Jun)"];
 const TIER_COLORS = {
   ok: "#ef4444",
@@ -102,7 +106,7 @@ interface WhatIfConfig {
 interface VatCardProps {
   vatData: VatOverviewData;
   displayName: string;
-  selectedMetric: "gm_contribution" | "revenue" | "gm_percent";
+  selectedMetric: MetricType;
   elapsedMonths: number;
   currentQuarterIndex: number;
   pipelineOpps: PipelineOpp[];
@@ -133,7 +137,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
       const value = Number.parseFloat(opp.value || "0");
       if (value <= 0) return;
       const winRate = (whatIf.winRates[opp.classification] || 0) / 100;
-      const margin = Number.parseFloat(opp.marginPercent || "0") || 0.30;
+      const margin = Number.parseFloat(opp.marginPercent || "0") || 0.3;
       totalPipelineRev += value * winRate;
       totalPipelineGm += value * winRate * margin;
       oppCount++;
@@ -386,7 +390,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
                     </div>
                     <div>
                       <span className="text-muted-foreground">Spread across: </span>
-                      <span className="font-medium">{whatIfProjection.remainingQuarters} quarter{whatIfProjection.remainingQuarters !== 1 ? "s" : ""}</span>
+                      <span className="font-medium">{whatIfProjection.remainingQuarters} quarter{whatIfProjection.remainingQuarters === 1 ? "" : "s"}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">From: </span>
@@ -415,13 +419,13 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
 
 export default function VatOverview() {
   const [selectedFy, setSelectedFy] = useState(getCurrentFy());
-  const [selectedMetric, setSelectedMetric] = useState<"gm_contribution" | "revenue" | "gm_percent">("gm_contribution");
+  const [selectedMetric, setSelectedMetric] = useState<MetricType>("gm_contribution");
 
   const fyOptions = getFyOptions([selectedFy]);
   const elapsedMonths = getElapsedFyMonths(selectedFy);
   const currentQuarterIndex = Math.min(Math.floor((elapsedMonths - 1) / 3), 3);
 
-  const { data: vats } = useQuery<{ name: string; displayName: string; order: number }[]>({
+  const { data: vats } = useQuery<VatInfo[]>({
     queryKey: ["/api/vats"],
   });
 
@@ -475,7 +479,7 @@ export default function VatOverview() {
           <p className="text-muted-foreground text-sm">Cumulative YTD performance vs targets by VAT</p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={selectedMetric} onValueChange={(v) => setSelectedMetric(v as "gm_contribution" | "revenue" | "gm_percent")}>
+          <Select value={selectedMetric} onValueChange={(v) => setSelectedMetric(v as MetricType)}>
             <SelectTrigger className="w-[180px]" data-testid="select-metric">
               <SelectValue />
             </SelectTrigger>
@@ -532,8 +536,8 @@ export default function VatOverview() {
 
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={`vat-skeleton-${i}`}>
+          {[1, 2, 3, 4, 5, 6].map(n => (
+            <Card key={`vat-skeleton-${n}`}>
               <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
               <CardContent><Skeleton className="h-[250px] w-full" /></CardContent>
             </Card>

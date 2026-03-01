@@ -70,6 +70,64 @@ function formatDollars(val: number): string {
   return "$" + val.toFixed(0);
 }
 
+function splitPartnerNames(partnerStr: string): string[] {
+  return partnerStr.split(/[;,#]/).map(p => p.trim()).filter(p => p && p !== "(blank)");
+}
+
+function accumulatePartnerDetails(
+  map: Record<string, { opps: PipelineOpp[]; totalValue: number }>,
+  opp: PipelineOpp
+) {
+  if (!opp.partner) return;
+  const partners = splitPartnerNames(opp.partner);
+  const val = Number.parseFloat(opp.value || "0") || 0;
+  const share = partners.length > 0 ? val / partners.length : 0;
+  for (const clean of partners) {
+    if (!map[clean]) map[clean] = { opps: [], totalValue: 0 };
+    map[clean].opps.push(opp);
+    map[clean].totalValue += share;
+  }
+}
+
+function getCertColor(certLower: string): string {
+  if (certLower.includes("servicenow")) return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+  if (certLower.includes("azure") || certLower.includes("power bi")) return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+  if (certLower.includes("aws") || certLower.includes("amazon")) return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+  if (certLower.includes("tech one")) return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+  if (certLower.includes("salesforce")) return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
+  return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
+}
+
+function CertifiedEmployeeRow({ emp }: Readonly<{ emp: Employee }>) {
+  const certs = (emp.certifications ?? "").split(";");
+  return (
+    <TableRow key={emp.id} data-testid={`row-certified-${emp.id}`}>
+      <TableCell className="font-medium text-sm">{emp.firstName} {emp.lastName}</TableCell>
+      <TableCell>
+        <Badge variant={emp.staffType === "Permanent" ? "default" : "outline"} className="text-[10px]">
+          {emp.staffType}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-sm">{emp.role || "-"}</TableCell>
+      <TableCell className="text-sm">{emp.team || "-"}</TableCell>
+      <TableCell className="text-sm">{emp.location || "-"}</TableCell>
+      <TableCell>
+        <div className="flex gap-1 flex-wrap">
+          {certs.map(cert => {
+            const trimmed = cert.trim();
+            const color = getCertColor(trimmed.toLowerCase());
+            return (
+              <span key={trimmed} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
+                {trimmed}
+              </span>
+            );
+          })}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function getPartnerCerts(certifications: string, partnerName: string): string[] {
   const keywords = PARTNER_CERT_KEYWORDS[partnerName];
   if (!keywords) return [];
@@ -117,33 +175,19 @@ export default function PartnerView() {
 
   const uniquePartners = useMemo(() => {
     const set = new Set<string>();
-    partnerOpps.forEach(o => {
+    for (const o of partnerOpps) {
       if (o.partner) {
-        o.partner.split(/[;,#]/).forEach(p => {
-          const clean = p.trim();
-          if (clean && clean !== "(blank)") set.add(clean);
-        });
+        for (const p of splitPartnerNames(o.partner)) {
+          set.add(p);
+        }
       }
-    });
+    }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [partnerOpps]);
 
   const partnerDetails = useMemo(() => {
     const map: Record<string, { opps: PipelineOpp[]; totalValue: number }> = {};
-    partnerOpps.forEach(o => {
-      if (o.partner) {
-        o.partner.split(/[;,#]/).forEach(p => {
-          const clean = p.trim();
-          if (clean && clean !== "(blank)") {
-            if (!map[clean]) map[clean] = { opps: [], totalValue: 0 };
-            map[clean].opps.push(o);
-            const val = Number.parseFloat(o.value || "0") || 0;
-            const partners = o.partner!.split(/[;,#]/).map(x => x.trim()).filter(x => x && x !== "(blank)");
-            map[clean].totalValue += partners.length > 0 ? val / partners.length : 0;
-          }
-        });
-      }
-    });
+    partnerOpps.forEach(o => accumulatePartnerDetails(map, o));
     return map;
   }, [partnerOpps]);
 
@@ -192,7 +236,7 @@ export default function PartnerView() {
     for (const partner of uniquePartners) {
       const matched: Array<{ employee: Employee; certs: string[] }> = [];
       for (const emp of activeEmps) {
-        const certs = getPartnerCerts(emp.certifications!, partner);
+        const certs = getPartnerCerts(emp.certifications ?? "", partner);
         if (certs.length > 0) {
           matched.push({ employee: emp, certs });
         }
@@ -211,7 +255,9 @@ export default function PartnerView() {
       <div className="flex flex-col gap-6 p-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-24" />)}
+          <Skeleton key="skeleton-opps" className="h-24" />
+            <Skeleton key="skeleton-value" className="h-24" />
+            <Skeleton key="skeleton-partners" className="h-24" />
         </div>
         <Skeleton className="h-[300px]" />
       </div>
@@ -463,46 +509,15 @@ export default function PartnerView() {
                 {allEmployees
                   .filter(e => e.status === "active" && e.certifications && (e.staffType === "Permanent" || e.staffType === "Contractor"))
                   .filter(e => {
-                    const certs = e.certifications!.toLowerCase();
+                    const certs = (e.certifications ?? "").toLowerCase();
                     return Object.values(PARTNER_CERT_KEYWORDS).some(keywords =>
                       keywords.some(kw => certs.includes(kw))
                     );
                   })
                   .sort((a, b) => a.lastName.localeCompare(b.lastName))
-                  .map(emp => {
-                    return (
-                      <TableRow key={emp.id} data-testid={`row-certified-${emp.id}`}>
-                        <TableCell className="font-medium text-sm">{emp.firstName} {emp.lastName}</TableCell>
-                        <TableCell>
-                          <Badge variant={emp.staffType === "Permanent" ? "default" : "outline"} className="text-[10px]">
-                            {emp.staffType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">{emp.role || "-"}</TableCell>
-                        <TableCell className="text-sm">{emp.team || "-"}</TableCell>
-                        <TableCell className="text-sm">{emp.location || "-"}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 flex-wrap">
-                            {emp.certifications!.split(";").map(cert => {
-                              const trimmed = cert.trim();
-                              const certLower = trimmed.toLowerCase();
-                              let color = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
-                              if (certLower.includes("servicenow")) color = "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-                              else if (certLower.includes("azure") || certLower.includes("power bi")) color = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-                              else if (certLower.includes("aws") || certLower.includes("amazon")) color = "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
-                              else if (certLower.includes("tech one")) color = "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-                              else if (certLower.includes("salesforce")) color = "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200";
-                              return (
-                                <span key={trimmed} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${color}`}>
-                                  {trimmed}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  .map(emp => (
+                    <CertifiedEmployeeRow key={emp.id} emp={emp} />
+                  ))}
               </TableBody>
             </Table>
           </div>

@@ -85,6 +85,53 @@ export default function Timesheets() {
     });
   }
 
+  const renderTableBody = () => {
+    if (isLoading) {
+      return [1, 2, 3, 4, 5].map(n => (
+        <TableRow key={`skeleton-row-${n}`}>
+          {[1, 2, 3, 4, 5, 6, 7, 8].map(c => (
+            <TableCell key={`skeleton-cell-${c}`}><Skeleton className="h-4 w-16" /></TableCell>
+          ))}
+        </TableRow>
+      ));
+    }
+    if (filteredTimesheets.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+            No timesheet entries found
+          </TableCell>
+        </TableRow>
+      );
+    }
+    return filteredTimesheets.map(ts => {
+      const emp = employeeMap.get(ts.employeeId);
+      const proj = projectMap.get(ts.projectId);
+      return (
+        <TableRow key={ts.id} data-testid={`row-timesheet-${ts.id}`}>
+          <TableCell>{emp ? `${emp.firstName} ${emp.lastName}` : `Employee #${ts.employeeId}`}</TableCell>
+          <TableCell>{proj?.name || `Project #${ts.projectId}`}</TableCell>
+          <TableCell>{ts.weekEnding}</TableCell>
+          <TableCell>{ts.hoursWorked}</TableCell>
+          <TableCell>{ts.daysWorked}</TableCell>
+          <TableCell>
+            {ts.billable ? (
+              <Check className="h-4 w-4 text-green-600" data-testid={`icon-billable-${ts.id}`} />
+            ) : (
+              <X className="h-4 w-4 text-muted-foreground" data-testid={`icon-not-billable-${ts.id}`} />
+            )}
+          </TableCell>
+          <TableCell>
+            <Badge variant="secondary" data-testid={`badge-source-${ts.id}`}>{ts.source}</Badge>
+          </TableCell>
+          <TableCell>
+            <Badge variant="outline" data-testid={`badge-status-${ts.id}`}>{ts.status}</Badge>
+          </TableCell>
+        </TableRow>
+      );
+    });
+  };
+
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -187,48 +234,7 @@ export default function Timesheets() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={`skeleton-row-${i}`}>
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : filteredTimesheets.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No timesheet entries found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredTimesheets.map(ts => {
-                  const emp = employeeMap.get(ts.employeeId);
-                  const proj = projectMap.get(ts.projectId);
-                  return (
-                    <TableRow key={ts.id} data-testid={`row-timesheet-${ts.id}`}>
-                      <TableCell>{emp ? `${emp.firstName} ${emp.lastName}` : `Employee #${ts.employeeId}`}</TableCell>
-                      <TableCell>{proj?.name || `Project #${ts.projectId}`}</TableCell>
-                      <TableCell>{ts.weekEnding}</TableCell>
-                      <TableCell>{ts.hoursWorked}</TableCell>
-                      <TableCell>{ts.daysWorked}</TableCell>
-                      <TableCell>
-                        {ts.billable ? (
-                          <Check className="h-4 w-4 text-green-600" data-testid={`icon-billable-${ts.id}`} />
-                        ) : (
-                          <X className="h-4 w-4 text-muted-foreground" data-testid={`icon-not-billable-${ts.id}`} />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" data-testid={`badge-source-${ts.id}`}>{ts.source}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" data-testid={`badge-status-${ts.id}`}>{ts.status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
+              {renderTableBody()}
             </TableBody>
           </Table>
         </CardContent>

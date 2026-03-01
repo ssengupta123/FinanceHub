@@ -83,7 +83,7 @@ export function resolveVatName(raw: string): string | null {
   return null;
 }
 
-function extractParagraphs(xmlContent: string): string[] {
+export function extractParagraphs(xmlContent: string): string[] {
   const paragraphs: string[] = [];
   const paraRegex = /<a:p(?:\s[^>]*)?>([\s\S]*?)<\/a:p>/g;
   let pm;
@@ -102,30 +102,42 @@ function extractParagraphs(xmlContent: string): string[] {
   return paragraphs;
 }
 
-function extractTables(xmlContent: string): string[][][] {
+export function extractCellText(cellXml: string): string {
+  const texts: string[] = [];
+  const tRegex = /<a:t>([^<]*)<\/a:t>/g;
+  let tr;
+  while ((tr = tRegex.exec(cellXml)) !== null) {
+    texts.push(tr[1]);
+  }
+  return decodeXmlEntities(texts.join(" ").trim());
+}
+
+export function extractRowCells(rowXml: string): string[] {
+  const cells: string[] = [];
+  const cellRegex = /<a:tc\b[^>]*>([\s\S]*?)<\/a:tc>/g;
+  let cm;
+  while ((cm = cellRegex.exec(rowXml)) !== null) {
+    cells.push(extractCellText(cm[1]));
+  }
+  return cells;
+}
+
+export function extractTableRows(tableXml: string): string[][] {
+  const rows: string[][] = [];
+  const rowRegex = /<a:tr\b[^>]*>([\s\S]*?)<\/a:tr>/g;
+  let rm;
+  while ((rm = rowRegex.exec(tableXml)) !== null) {
+    rows.push(extractRowCells(rm[1]));
+  }
+  return rows;
+}
+
+export function extractTables(xmlContent: string): string[][][] {
   const tables: string[][][] = [];
   const tblRegex = /<a:tbl>([\s\S]*?)<\/a:tbl>/g;
   let tm;
   while ((tm = tblRegex.exec(xmlContent)) !== null) {
-    const rows: string[][] = [];
-    const rowRegex = /<a:tr\b[^>]*>([\s\S]*?)<\/a:tr>/g;
-    let rm;
-    while ((rm = rowRegex.exec(tm[1])) !== null) {
-      const cells: string[] = [];
-      const cellRegex = /<a:tc\b[^>]*>([\s\S]*?)<\/a:tc>/g;
-      let cm;
-      while ((cm = cellRegex.exec(rm[1])) !== null) {
-        const texts: string[] = [];
-        const tRegex = /<a:t>([^<]*)<\/a:t>/g;
-        let tr;
-        while ((tr = tRegex.exec(cm[1])) !== null) {
-          texts.push(tr[1]);
-        }
-        cells.push(decodeXmlEntities(texts.join(" ").trim()));
-      }
-      rows.push(cells);
-    }
-    tables.push(rows);
+    tables.push(extractTableRows(tm[1]));
   }
   return tables;
 }
@@ -184,40 +196,48 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
   }
 }
 
-function isTitleSlide(slide: ParsedSlide): boolean {
+export function isTitleSlide(slide: ParsedSlide): boolean {
   return slide.paragraphs.length <= 2 && slide.size < 3000 && slide.tables.length === 0;
 }
 
-function isPlannerSlide(slide: ParsedSlide): boolean {
+export function isPlannerSlide(slide: ParsedSlide): boolean {
   const first = (slide.paragraphs[0] || "").toUpperCase();
   return first.includes("PLANNER STATUS UPDATE") || first.includes("PLANNER STATUS");
 }
 
-function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
+export function tryParseTextDate(text: string): string | null {
+  const dateMatch = /(\d{1,2}\s[A-Za-z]+,?\s\d{4})/.exec(text);
+  if (!dateMatch) return null;
+  try {
+    const d = new Date(dateMatch[1].replace(",", ""));
+    if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function tryParseSlashDate(text: string): string | null {
+  const dateMatch = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
+  if (!dateMatch) return null;
+  const parts = dateMatch[1].split("/");
+  if (parts.length === 3) {
+    const d = new Date(`${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  }
+  return null;
+}
+
+export function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
   const allParas = [...paragraphs.slice(0, 5), ...titleSlideParas];
   for (const p of allParas) {
-    const dateMatch = /(\d{1,2}\s[A-Za-z]+,?\s\d{4})/.exec(p);
-    if (dateMatch) {
-      try {
-        const d = new Date(dateMatch[1].replace(",", ""));
-        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
-      } catch (e) {
-        console.error("[extractReportDate] Date parse error:", (e as Error).message);
-      }
-    }
-    const dateMatch2 = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(p);
-    if (dateMatch2) {
-      const parts = dateMatch2[1].split("/");
-      if (parts.length === 3) {
-        const d = new Date(`${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`);
-        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
-      }
-    }
+    const result = tryParseTextDate(p) || tryParseSlashDate(p);
+    if (result) return result;
   }
   return new Date().toISOString().split("T")[0];
 }
 
-function extractOverallStatusFromTable(table: string[][]): string {
+export function extractOverallStatusFromTable(table: string[][]): string {
   if (table.length === 0) return "";
   const firstRow = table[0];
   const text = (firstRow[0] || "").toUpperCase();
@@ -225,7 +245,65 @@ function extractOverallStatusFromTable(table: string[][]): string {
   return match ? match[1] : "";
 }
 
-function extractStatusSummary(table: string[][]): {
+export function matchSectionLabel(col1Upper: string, sectionLabelToField: Record<string, string>): string | null {
+  for (const [marker, field] of Object.entries(sectionLabelToField)) {
+    if (col1Upper === marker || col1Upper.startsWith(marker)) {
+      return field;
+    }
+  }
+  return null;
+}
+
+export function extractRagFromRow(row: string[]): string | null {
+  const allCols = row.map(c => (c || "").toUpperCase()).join(" ");
+  const ragMatch = /(GREEN|AMBER|RED|N\/A)/.exec(allCols);
+  return ragMatch ? ragMatch[1] : null;
+}
+
+export function appendStatusSummary(existing: string, text: string): string {
+  if (!text) return existing;
+  return existing ? existing + "\n" + text : text;
+}
+
+const STATUS_SECTION_LABELS: Record<string, string> = {
+  "OPEN OPPS": "openOppsStatus",
+  "OPEN OPPS ACTIONS": "openOppsStatus",
+  "BIG PLAYS": "bigPlaysStatus",
+  "BIG PLAY": "bigPlaysStatus",
+  "ACCOUNT GOALS": "accountGoalsStatus",
+  "RELATIONSHIPS": "relationshipsStatus",
+  "RESEARCH": "researchStatus",
+};
+
+export function processStatusRow(
+  row: string[],
+  result: Record<string, string>
+): void {
+  const col0 = (row[0] || "").trim();
+  const col1 = (row[1] || "").trim();
+  const col1Upper = col1.toUpperCase();
+  const col0Upper = col0.toUpperCase();
+
+  if (col0Upper.startsWith("OVERALL STATUS")) return;
+
+  if (col1Upper === "STATUS OVERALL" || col1Upper.startsWith("STATUS OVERALL")) {
+    if (col0) result.statusSummary = col0;
+    return;
+  }
+
+  const matchedField = matchSectionLabel(col1Upper, STATUS_SECTION_LABELS);
+  if (matchedField) {
+    const rag = extractRagFromRow(row);
+    if (rag) result[matchedField] = rag;
+    return;
+  }
+
+  if (col0) {
+    result.statusSummary = appendStatusSummary(result.statusSummary, col0);
+  }
+}
+
+export function extractStatusSummary(table: string[][]): {
   statusSummary: string;
   openOppsStatus: string;
   bigPlaysStatus: string;
@@ -233,7 +311,7 @@ function extractStatusSummary(table: string[][]): {
   relationshipsStatus: string;
   researchStatus: string;
 } {
-  const result = {
+  const result: Record<string, string> = {
     statusSummary: "",
     openOppsStatus: "",
     bigPlaysStatus: "",
@@ -242,90 +320,46 @@ function extractStatusSummary(table: string[][]): {
     researchStatus: "",
   };
 
-  const sectionLabelToField: Record<string, string> = {
-    "OPEN OPPS": "openOppsStatus",
-    "OPEN OPPS ACTIONS": "openOppsStatus",
-    "BIG PLAYS": "bigPlaysStatus",
-    "BIG PLAY": "bigPlaysStatus",
-    "ACCOUNT GOALS": "accountGoalsStatus",
-    "RELATIONSHIPS": "relationshipsStatus",
-    "RESEARCH": "researchStatus",
-  };
-
   for (const row of table) {
-    const col0 = (row[0] || "").trim();
-    const col1 = (row[1] || "").trim();
-    const col2 = (row[2] || "").trim();
-    const col1Upper = col1.toUpperCase();
-    const col0Upper = col0.toUpperCase();
-
-    if (col0Upper.startsWith("OVERALL STATUS")) continue;
-
-    if (col1Upper === "STATUS OVERALL" || col1Upper.startsWith("STATUS OVERALL")) {
-      if (col0) result.statusSummary = col0;
-      continue;
-    }
-
-    let matched = false;
-    for (const [marker, field] of Object.entries(sectionLabelToField)) {
-      if (col1Upper === marker || col1Upper.startsWith(marker)) {
-        const allCols = [col0Upper, col1Upper, col2.toUpperCase()].join(" ");
-        const ragMatch = /(GREEN|AMBER|RED|N\/A)/.exec(allCols);
-        if (ragMatch) {
-          (result as any)[field] = ragMatch[1];
-        }
-        matched = true;
-        break;
-      }
-    }
-
-    if (!matched && col0) {
-      if (result.statusSummary) {
-        result.statusSummary += "\n" + col0;
-      } else {
-        result.statusSummary = col0;
-      }
-    }
+    processStatusRow(row, result);
   }
 
-  return result;
+  return result as any;
 }
 
-function parseRiskTable(table: string[][]): ParsedRisk[] {
-  const risks: ParsedRisk[] = [];
-  if (table.length < 2) return risks;
+export function parseRiskRow(row: string[], riskType: string): ParsedRisk | null {
+  if (row.every(c => !c.trim())) return null;
+  const description = (row[1] || "").trim();
+  if (!description || description.toLowerCase() === "people process") return null;
+  return {
+    raisedBy: (row[0] || "").trim(),
+    description,
+    impact: (row[2] || "").trim(),
+    dateBecomesIssue: (row[3] || "").trim(),
+    status: (row[4] || "").trim(),
+    owner: (row[5] || "").trim(),
+    impactRating: (row[6] || "").trim(),
+    likelihood: (row[7] || "").trim(),
+    mitigation: (row[8] || "").trim(),
+    comments: (row[9] || "").trim(),
+    riskRating: (row[10] || "").trim(),
+    riskType,
+  };
+}
 
+export function parseRiskTable(table: string[][]): ParsedRisk[] {
+  if (table.length < 2) return [];
   const header = table[0].map(c => c.toLowerCase().trim());
-  const isIssueTable = header.some(h => h.includes("issue rating"));
-  const riskType = isIssueTable ? "issue" : "risk";
-
+  const riskType = header.some(h => h.includes("issue rating")) ? "issue" : "risk";
+  const risks: ParsedRisk[] = [];
   for (let i = 1; i < table.length; i++) {
-    const row = table[i];
-    if (row.every(c => !c.trim())) continue;
-
-    const description = (row[1] || "").trim();
-    if (!description || description.toLowerCase() === "people process") continue;
-
-    risks.push({
-      raisedBy: (row[0] || "").trim(),
-      description,
-      impact: (row[2] || "").trim(),
-      dateBecomesIssue: (row[3] || "").trim(),
-      status: (row[4] || "").trim(),
-      owner: (row[5] || "").trim(),
-      impactRating: (row[6] || "").trim(),
-      likelihood: (row[7] || "").trim(),
-      mitigation: (row[8] || "").trim(),
-      comments: (row[9] || "").trim(),
-      riskRating: (row[10] || "").trim(),
-      riskType,
-    });
+    const risk = parseRiskRow(table[i], riskType);
+    if (risk) risks.push(risk);
   }
-
   return risks;
 }
 
-function parsePlannerTable(table: string[][]): ParsedPlannerTask[] {
+export function parsePlannerTable(table: string[][]): ParsedPlannerTask[] {
   const tasks: ParsedPlannerTask[] = [];
   if (table.length < 2) return tasks;
 
@@ -354,7 +388,7 @@ function parsePlannerTable(table: string[][]): ParsedPlannerTask[] {
   return tasks;
 }
 
-type ContentSection = "status" | "openOpps" | "bigPlays" | "accountGoals" | "relationships" | "research" | "approach" | "other";
+export type ContentSection = "status" | "openOpps" | "bigPlays" | "accountGoals" | "relationships" | "research" | "approach" | "other";
 
 interface ParagraphContent {
   statusSummary: string;
@@ -367,7 +401,7 @@ interface ParagraphContent {
   otherActivities: string;
 }
 
-function detectSectionFromParagraph(upper: string): { section: ContentSection; afterHeader: string; original: string } | null {
+export function detectSectionFromParagraph(upper: string): { section: ContentSection; afterHeader: string; original: string } | null {
   const tests: { pattern: RegExp; section: ContentSection; stripPattern?: RegExp }[] = [
     { pattern: /^APPROACH TO\b.*(?:SHORTFALL|TARGET)/i, section: "approach", stripPattern: /^Approach to[^:]*:\s*/i },
     { pattern: /^OTHER VAT\b|^OTHER ACTIVITIES/i, section: "other", stripPattern: /^Other[^:]*:\s*/i },
@@ -386,13 +420,7 @@ function detectSectionFromParagraph(upper: string): { section: ContentSection; a
   return null;
 }
 
-function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
-  const sections: Record<ContentSection, string[]> = {
-    status: [], openOpps: [], bigPlays: [], accountGoals: [],
-    relationships: [], research: [], approach: [], other: [],
-  };
-  let currentSection: ContentSection = "status";
-
+export function computeHeaderSkipCount(paragraphs: string[]): number {
   let skipCount = 0;
   for (let i = 0; i < Math.min(5, paragraphs.length); i++) {
     const upper = paragraphs[i].toUpperCase();
@@ -400,50 +428,52 @@ function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
       skipCount = i + 1;
     }
   }
+  return skipCount;
+}
 
-  const skipMarkers = new Set([
-    "STATUS OVERALL", "RAISED BY", "DESCRIPTION", "IMPACT",
-    "DATE RISK BECOMES ISSUE", "STATUS", "OWNER", "IMPACT RATING",
-    "LIKELIHOOD", "MITIGATION", "COMMENTS", "RISK RATING",
-    "ISSUE RATING", "RISKS", "ISSUES", "RISK", "ISSUE",
-    "PEOPLE", "PROCESS", "PEOPLE PROCESS", "WEEK ENDING",
-  ]);
+const SKIP_MARKERS = new Set([
+  "STATUS OVERALL", "RAISED BY", "DESCRIPTION", "IMPACT",
+  "DATE RISK BECOMES ISSUE", "STATUS", "OWNER", "IMPACT RATING",
+  "LIKELIHOOD", "MITIGATION", "COMMENTS", "RISK RATING",
+  "ISSUE RATING", "RISKS", "ISSUES", "RISK", "ISSUE",
+  "PEOPLE", "PROCESS", "PEOPLE PROCESS", "WEEK ENDING",
+]);
 
-  for (let i = skipCount; i < paragraphs.length; i++) {
-    const p = paragraphs[i].trim();
-    if (!p) continue;
-    const upper = p.toUpperCase();
+export function shouldSkipParagraph(upper: string): boolean {
+  if (upper === "GREEN" || upper === "AMBER" || upper === "RED" || upper === "N/A") return true;
+  if (SKIP_MARKERS.has(upper)) return true;
+  if (/^WEEK ENDING/i.test(upper)) return true;
+  if (upper.includes("VAT REPORT") && upper.length < 30) return true;
+  return false;
+}
 
-    if (upper === "GREEN" || upper === "AMBER" || upper === "RED" || upper === "N/A") continue;
-    if (skipMarkers.has(upper)) continue;
-    if (/^WEEK ENDING/i.test(upper)) continue;
-    if (upper.includes("VAT REPORT") && upper.length < 30) continue;
+const STANDALONE_LABELS = new Set([
+  "OPEN OPPS", "OPEN OPPS ACTIONS", "BIG PLAYS", "BIG PLAY",
+  "ACCOUNT GOALS", "RELATIONSHIPS", "RESEARCH",
+  "STATUS OVERALL",
+]);
 
-    const sectionMatch = detectSectionFromParagraph(upper);
-    if (sectionMatch) {
-      currentSection = sectionMatch.section;
-      const colonIdx = p.indexOf(":");
-      if (colonIdx >= 0 && colonIdx < 40) {
-        const afterColon = p.substring(colonIdx + 1).trim();
-        if (afterColon) {
-          sections[currentSection].push(afterColon);
-        }
-      } else if (p.trim().length > 0) {
-        sections[currentSection].push(p);
-      }
-      continue;
-    }
-
-    const isStandaloneLabel = [
-      "OPEN OPPS", "OPEN OPPS ACTIONS", "BIG PLAYS", "BIG PLAY",
-      "ACCOUNT GOALS", "RELATIONSHIPS", "RESEARCH",
-      "STATUS OVERALL",
-    ].includes(upper);
-    if (isStandaloneLabel) continue;
-
-    sections[currentSection].push(p);
+export function extractSectionContent(p: string): string | null {
+  const colonIdx = p.indexOf(":");
+  if (colonIdx >= 0 && colonIdx < 40) {
+    const afterColon = p.substring(colonIdx + 1).trim();
+    return afterColon || null;
   }
+  return p.trim().length > 0 ? p : null;
+}
 
+export function classifyParagraph(
+  p: string,
+  upper: string
+): { type: "skip" | "section" | "standalone" | "content"; section?: ContentSection } {
+  if (shouldSkipParagraph(upper)) return { type: "skip" };
+  const sectionMatch = detectSectionFromParagraph(upper);
+  if (sectionMatch) return { type: "section", section: sectionMatch.section };
+  if (STANDALONE_LABELS.has(upper)) return { type: "standalone" };
+  return { type: "content" };
+}
+
+export function buildParagraphContent(sections: Record<ContentSection, string[]>): ParagraphContent {
   return {
     statusSummary: sections.status.join("\n").trim(),
     openOppsSummary: sections.openOpps.join("\n").trim(),
@@ -456,27 +486,48 @@ function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
   };
 }
 
+export function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
+  const sections: Record<ContentSection, string[]> = {
+    status: [], openOpps: [], bigPlays: [], accountGoals: [],
+    relationships: [], research: [], approach: [], other: [],
+  };
+  let currentSection: ContentSection = "status";
+  const skipCount = computeHeaderSkipCount(paragraphs);
+
+  for (let i = skipCount; i < paragraphs.length; i++) {
+    const p = paragraphs[i].trim();
+    if (!p) continue;
+    const upper = p.toUpperCase();
+    const classification = classifyParagraph(p, upper);
+
+    if (classification.type === "skip" || classification.type === "standalone") continue;
+
+    if (classification.type === "section" && classification.section) {
+      currentSection = classification.section;
+      const content = extractSectionContent(p);
+      if (content) sections[currentSection].push(content);
+      continue;
+    }
+
+    sections[currentSection].push(p);
+  }
+
+  return buildParagraphContent(sections);
+}
+
 export function debugPptxSlides(buffer: Buffer): { slides: { index: number; paragraphs: string[]; tables: string[][][]; size: number }[] } {
   const slides = extractSlides(buffer);
   return { slides };
 }
 
-export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; summary: string } {
-  const slides = extractSlides(buffer);
-  if (slides.length === 0) {
-    throw new Error("No slides found in the PPTX file.");
-  }
+interface VatGroup {
+  vatName: string;
+  titleSlide: ParsedSlide;
+  contentSlides: ParsedSlide[];
+  plannerSlides: ParsedSlide[];
+}
 
-  const titleParas = slides[0]?.paragraphs || [];
-  const globalDate = extractReportDate(titleParas, []);
-
-  interface VatGroup {
-    vatName: string;
-    titleSlide: ParsedSlide;
-    contentSlides: ParsedSlide[];
-    plannerSlides: ParsedSlide[];
-  }
-
+export function groupSlidesByVat(slides: ParsedSlide[]): VatGroup[] {
   const groups: VatGroup[] = [];
   let currentGroup: VatGroup | null = null;
 
@@ -509,106 +560,128 @@ export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; sum
     }
   }
 
-  const reports: ParsedVatReport[] = [];
+  return groups;
+}
 
-  for (const group of groups) {
-    const report: ParsedVatReport = {
-      vatName: group.vatName,
-      reportDate: globalDate,
-      overallStatus: "",
-      statusSummary: "",
-      openOppsSummary: "",
-      bigPlays: "",
-      accountGoals: "",
-      relationships: "",
-      research: "",
-      approachToShortfall: "",
-      otherActivities: "",
-      openOppsStatus: "",
-      bigPlaysStatus: "",
-      accountGoalsStatus: "",
-      relationshipsStatus: "",
-      researchStatus: "",
-      risks: [],
-      plannerTasks: [],
-    };
+export function processTableForReport(table: string[][], report: ParsedVatReport): void {
+  if (table.length === 0) return;
+  const headerRow = table[0];
+  const colCount = headerRow.length;
 
-    for (const slide of group.contentSlides) {
-      const reportDate = extractReportDate(slide.paragraphs, group.titleSlide.paragraphs);
-      if (reportDate !== new Date().toISOString().split("T")[0]) {
-        report.reportDate = reportDate;
-      }
+  if (colCount === 3 && table.length >= 5) {
+    const overallStatus = extractOverallStatusFromTable(table);
+    if (overallStatus) report.overallStatus = overallStatus;
+    const statuses = extractStatusSummary(table);
+    if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
+    if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
+    if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
+    if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
+    if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
+    if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
+  } else if (colCount === 11 && headerRow.some(h => h.toLowerCase().includes("raised by"))) {
+    report.risks.push(...parseRiskTable(table));
+  } else if (colCount === 7 && headerRow.some(h => h.toLowerCase().includes("bucket"))) {
+    report.plannerTasks.push(...parsePlannerTable(table));
+  }
+}
 
-      for (const table of slide.tables) {
-        if (table.length === 0) continue;
-        const headerRow = table[0];
-        const colCount = headerRow.length;
-
-        if (colCount === 3 && table.length >= 5) {
-          const overallStatus = extractOverallStatusFromTable(table);
-          if (overallStatus) report.overallStatus = overallStatus;
-          const statuses = extractStatusSummary(table);
-          if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
-          if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
-          if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
-          if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
-          if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
-          if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
-        } else if (colCount === 11 && headerRow.some(h => h.toLowerCase().includes("raised by"))) {
-          const risks = parseRiskTable(table);
-          report.risks.push(...risks);
-        } else if (colCount === 7 && headerRow.some(h => h.toLowerCase().includes("bucket"))) {
-          report.plannerTasks.push(...parsePlannerTable(table));
-        }
-      }
-
-      const extraContent = extractContentFromParagraphs(slide.paragraphs);
-      if (extraContent.statusSummary && !report.statusSummary) {
-        report.statusSummary = extraContent.statusSummary;
-      }
-      const appendFields: (keyof typeof extraContent)[] = [
-        "openOppsSummary", "bigPlays", "accountGoals",
-        "relationships", "research", "approachToShortfall", "otherActivities"
-      ];
-      for (const field of appendFields) {
-        if (extraContent[field]) {
-          const key = field as keyof ParsedVatReport;
-          if (report[key]) {
-            (report as any)[key] += "\n" + extraContent[field];
-          } else {
-            (report as any)[key] = extraContent[field];
-          }
-        }
+export function appendContentFields(report: ParsedVatReport, extraContent: ParagraphContent): void {
+  if (extraContent.statusSummary && !report.statusSummary) {
+    report.statusSummary = extraContent.statusSummary;
+  }
+  const appendFields: (keyof ParagraphContent)[] = [
+    "openOppsSummary", "bigPlays", "accountGoals",
+    "relationships", "research", "approachToShortfall", "otherActivities"
+  ];
+  for (const field of appendFields) {
+    if (extraContent[field]) {
+      const key = field as keyof ParsedVatReport;
+      if (report[key]) {
+        (report as any)[key] += "\n" + extraContent[field];
+      } else {
+        (report as any)[key] = extraContent[field];
       }
     }
+  }
+}
 
-    for (const slide of group.plannerSlides) {
-      for (const table of slide.tables) {
-        if (table.length > 0 && table[0].length === 7) {
-          report.plannerTasks.push(...parsePlannerTable(table));
-        }
-      }
+export function findFallbackOverallStatus(contentSlides: ParsedSlide[]): string {
+  for (const slide of contentSlides) {
+    for (const p of slide.paragraphs.slice(0, 5)) {
+      const match = /(GREEN|AMBER|RED|N\/A)/.exec(p.toUpperCase());
+      if (match) return match[1];
+    }
+  }
+  return "";
+}
+
+export function buildReportFromGroup(group: VatGroup, globalDate: string): ParsedVatReport {
+  const report: ParsedVatReport = {
+    vatName: group.vatName,
+    reportDate: globalDate,
+    overallStatus: "",
+    statusSummary: "",
+    openOppsSummary: "",
+    bigPlays: "",
+    accountGoals: "",
+    relationships: "",
+    research: "",
+    approachToShortfall: "",
+    otherActivities: "",
+    openOppsStatus: "",
+    bigPlaysStatus: "",
+    accountGoalsStatus: "",
+    relationshipsStatus: "",
+    researchStatus: "",
+    risks: [],
+    plannerTasks: [],
+  };
+
+  for (const slide of group.contentSlides) {
+    const reportDate = extractReportDate(slide.paragraphs, group.titleSlide.paragraphs);
+    if (reportDate !== new Date().toISOString().split("T")[0]) {
+      report.reportDate = reportDate;
     }
 
-    if (!report.overallStatus) {
-      for (const slide of group.contentSlides) {
-        for (const p of slide.paragraphs.slice(0, 5)) {
-          const match = /(GREEN|AMBER|RED|N\/A)/.exec(p.toUpperCase());
-          if (match) {
-            report.overallStatus = match[1];
-            break;
-          }
-        }
-        if (report.overallStatus) break;
-      }
+    for (const table of slide.tables) {
+      processTableForReport(table, report);
     }
 
-    reports.push(report);
+    appendContentFields(report, extractContentFromParagraphs(slide.paragraphs));
   }
 
-  const summary = reports.map(r =>
+  for (const slide of group.plannerSlides) {
+    for (const table of slide.tables) {
+      if (table.length > 0 && table[0].length === 7) {
+        report.plannerTasks.push(...parsePlannerTable(table));
+      }
+    }
+  }
+
+  if (!report.overallStatus) {
+    report.overallStatus = findFallbackOverallStatus(group.contentSlides);
+  }
+
+  return report;
+}
+
+export function buildReportsSummary(reports: ParsedVatReport[]): string {
+  return reports.map(r =>
     `${r.vatName}: ${r.risks.length} risks, ${r.plannerTasks.length} planner tasks, status: ${r.overallStatus || "not set"}`
   ).join("; ");
+}
+
+export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; summary: string } {
+  const slides = extractSlides(buffer);
+  if (slides.length === 0) {
+    throw new Error("No slides found in the PPTX file.");
+  }
+
+  const titleParas = slides[0]?.paragraphs || [];
+  const globalDate = extractReportDate(titleParas, []);
+  const groups = groupSlidesByVat(slides);
+  const reports = groups.map(group => buildReportFromGroup(group, globalDate));
+  const summary = buildReportsSummary(reports);
 
   return { reports, summary };
 }

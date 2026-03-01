@@ -153,6 +153,72 @@ function processOppForScenario(
   return { rev: clsRev, gp: clsGP, rawRev, rawGP };
 }
 
+function computeScenarioResults(
+  pipeline: PipelineOpportunity[] | undefined,
+  filteredPipeline: PipelineOpportunity[],
+  winRates: Record<string, number>,
+  revenueGoal: number,
+  marginGoal: number,
+  isOpenOpps: boolean,
+) {
+  if (!pipeline) return null;
+
+  const monthlyRevenue = new Array(12).fill(0);
+  const monthlyGP = new Array(12).fill(0);
+  const classBreakdown: Record<string, { revenue: number; gp: number; rawRevenue: number; rawGP: number; count: number }> = {};
+
+  for (const cls of CLASSIFICATIONS) {
+    const rate = (winRates[cls] || 0) / 100;
+    const opps = filteredPipeline.filter(o => o.classification === cls);
+    let clsRev = 0;
+    let clsGP = 0;
+    let rawRev = 0;
+    let rawGP = 0;
+
+    for (const opp of opps) {
+      const result = processOppForScenario(opp, rate, isOpenOpps, monthlyRevenue, monthlyGP);
+      clsRev += result.rev;
+      clsGP += result.gp;
+      rawRev += result.rawRev;
+      rawGP += result.rawGP;
+    }
+
+    classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length };
+  }
+
+  const totalRev = Object.values(classBreakdown).reduce((s, b) => s + b.revenue, 0);
+  const totalGP = Object.values(classBreakdown).reduce((s, b) => s + b.gp, 0);
+  const totalMargin = totalRev > 0 ? (totalGP / totalRev) * 100 : 0;
+
+  const cumulativeRev: number[] = [];
+  monthlyRevenue.forEach((cur, i) => {
+    cumulativeRev[i] = (i > 0 ? cumulativeRev[i - 1] : 0) + cur;
+  });
+
+  return {
+    monthlyRevenue,
+    monthlyGP,
+    cumulativeRev,
+    totalRev,
+    totalGP,
+    totalMargin,
+    classBreakdown,
+    revenueGap: revenueGoal - totalRev,
+    marginGap: marginGoal - totalMargin,
+    meetsRevenueGoal: totalRev >= revenueGoal,
+    meetsMarginGoal: totalMargin >= marginGoal,
+    pipelineCount: filteredPipeline.length,
+  };
+}
+
+function getMarginStatusText(scenarioResults: ReturnType<typeof computeScenarioResults>) {
+  if (scenarioResults?.meetsMarginGoal) {
+    return "Meets margin goal";
+  }
+  const gapText = scenarioResults ? formatPercent(scenarioResults.marginGap) : "0%";
+  return `${gapText} below target`;
+}
+
 export default function Scenarios() {
   const { toast } = useToast();
   const { can } = useAuth();
@@ -200,56 +266,9 @@ export default function Scenarios() {
 
   const isOpenOpps = selectedFY === "open_opps";
 
-  const scenarioResults = useMemo(() => {
-    if (!pipeline) return null;
-
-    const monthlyRevenue = new Array(12).fill(0);
-    const monthlyGP = new Array(12).fill(0);
-    const classBreakdown: Record<string, { revenue: number; gp: number; rawRevenue: number; rawGP: number; count: number }> = {};
-
-    for (const cls of CLASSIFICATIONS) {
-      const rate = (winRates[cls] || 0) / 100;
-      const opps = filteredPipeline.filter(o => o.classification === cls);
-      let clsRev = 0;
-      let clsGP = 0;
-      let rawRev = 0;
-      let rawGP = 0;
-
-      for (const opp of opps) {
-        const result = processOppForScenario(opp, rate, isOpenOpps, monthlyRevenue, monthlyGP);
-        clsRev += result.rev;
-        clsGP += result.gp;
-        rawRev += result.rawRev;
-        rawGP += result.rawGP;
-      }
-
-      classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length };
-    }
-
-    const totalRev = Object.values(classBreakdown).reduce((s, b) => s + b.revenue, 0);
-    const totalGP = Object.values(classBreakdown).reduce((s, b) => s + b.gp, 0);
-    const totalMargin = totalRev > 0 ? (totalGP / totalRev) * 100 : 0;
-
-    const cumulativeRev: number[] = [];
-    monthlyRevenue.forEach((cur, i) => {
-      cumulativeRev[i] = (i > 0 ? cumulativeRev[i - 1] : 0) + cur;
-    });
-
-    return {
-      monthlyRevenue,
-      monthlyGP,
-      cumulativeRev,
-      totalRev,
-      totalGP,
-      totalMargin,
-      classBreakdown,
-      revenueGap: revenueGoal - totalRev,
-      marginGap: marginGoal - totalMargin,
-      meetsRevenueGoal: totalRev >= revenueGoal,
-      meetsMarginGoal: totalMargin >= marginGoal,
-      pipelineCount: filteredPipeline.length,
-    };
-  }, [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps]);
+  const scenarioResults = useMemo(() => computeScenarioResults(
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps,
+  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps]);
 
   const isLoading = loadingPipeline || loadingScenarios;
 
@@ -384,7 +403,7 @@ export default function Scenarios() {
                 {scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">{(() => { if (scenarioResults?.meetsMarginGoal) return "Meets margin goal"; const gapText = scenarioResults ? formatPercent(scenarioResults.marginGap) : "0%"; return `${gapText} below target`; })()}</p>
+            <p className="text-xs text-muted-foreground">{getMarginStatusText(scenarioResults)}</p>
           </CardContent>
         </Card>
       </div>
