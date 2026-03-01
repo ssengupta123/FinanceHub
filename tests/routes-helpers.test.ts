@@ -2316,3 +2316,163 @@ describe("findExistingPlannerTask", () => {
     expect(withoutExtId).toHaveLength(1);
   });
 });
+
+describe("buildOpenOppRecord - extended", () => {
+  it("handles VAT with semicolon-hash delimiters", () => {
+    const row = [null, null, null, 100000, 0.25, "T&M", null, null, ";#SAU;#", "Open", "comment", "lead", "csd", "cat", "partner", "contact", "code"];
+    const result = buildOpenOppRecord(row, "Opp1", "S");
+    expect(result.vat).toBe("SAU");
+  });
+
+  it("normalizes growth VAT to uppercase", () => {
+    const row = [null, null, null, 100000, 0.25, "Fixed", null, null, "growth", "Open", null, null, null, null, null, null, null];
+    const result = buildOpenOppRecord(row, "Opp2", "C");
+    expect(result.vat).toBe("GROWTH");
+  });
+
+  it("handles null/empty fields gracefully", () => {
+    const row = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
+    const result = buildOpenOppRecord(row, "Empty", "P");
+    expect(result.name).toBe("Empty");
+    expect(result.classification).toBe("P");
+    expect(result.value).toBeNull();
+    expect(result.vat).toBeNull();
+    expect(result.fyYear).toBe("open_opps");
+  });
+
+  it("strips pipe suffix from VAT", () => {
+    const row = [null, null, null, 50000, null, null, null, null, "DAFF|extra", null, null, null, null, null, null, null, null];
+    const result = buildOpenOppRecord(row, "Opp3", "S");
+    expect(result.vat).toBe("DAFF");
+  });
+});
+
+describe("parseStaffSOTRow - extended", () => {
+  it("parses full staff row", () => {
+    const row = ["John Smith", "Band 5", "Permanent", "yes", 120000, "active", 150000, "J001", 44927, 45291, "Team A", null, "Sydney"];
+    const result = parseStaffSOTRow(row);
+    expect(result.firstName).toBe("John");
+    expect(result.lastName).toBe("Smith");
+    expect(result.empData.costBandLevel).toBe("Band 5");
+    expect(result.empData.staffType).toBe("Permanent");
+    expect(result.empData.payrollTax).toBe(true);
+    expect(result.empData.baseCost).toBe("120000.00");
+    expect(result.empData.grossCost).toBe("150000.00");
+    expect(result.empData.jid).toBe("J001");
+    expect(result.empData.team).toBe("Team A");
+    expect(result.empData.location).toBe("Sydney");
+    expect(result.empData.status).toBe("active");
+  });
+
+  it("handles virtual bench status", () => {
+    const row = ["Jane Doe", null, null, "no", null, "Virtual Bench", null, null, null, null, null, null, null];
+    const result = parseStaffSOTRow(row);
+    expect(result.empData.status).toBe("bench");
+    expect(result.empData.payrollTax).toBe(false);
+  });
+
+  it("handles single-word name", () => {
+    const row = ["Madonna", null, null, null, null, null, null, null, null, null, null, null, null];
+    const result = parseStaffSOTRow(row);
+    expect(result.firstName).toBe("Madonna");
+    expect(result.lastName).toBe("");
+  });
+
+  it("handles multi-part last name", () => {
+    const row = ["Mary Jane Watson", null, null, null, null, null, null, null, null, null, null, null, null];
+    const result = parseStaffSOTRow(row);
+    expect(result.firstName).toBe("Mary");
+    expect(result.lastName).toBe("Jane Watson");
+  });
+
+  it("truncates long field values", () => {
+    const longVal = "A".repeat(200);
+    const row = ["Test User", longVal, longVal, null, null, null, null, longVal, null, null, longVal, null, longVal];
+    const result = parseStaffSOTRow(row);
+    expect(result.empData.costBandLevel!.length).toBe(50);
+    expect(result.empData.staffType!.length).toBe(50);
+    expect(result.empData.jid!.length).toBe(50);
+    expect(result.empData.team!.length).toBe(100);
+    expect(result.empData.location!.length).toBe(100);
+  });
+});
+
+describe("buildPlannerSyncResult - extended", () => {
+  it("detects completed task", () => {
+    const pt = { percentComplete: 100, assignments: { "uid1": {} }, completedBy: { user: { id: "uid1", displayName: "User 1" } }, completedDateTime: "2025-01-15T10:00:00Z" };
+    const rec = { progress: "Completed", assignedTo: "User 1", taskName: "Task 1", dueDate: "2025-01-01", priority: "high", bucketName: "Bucket A", extId: "ext-1" };
+    const existing = { progress: "In Progress", assignedTo: "User 1", taskName: "Task 1", dueDate: "2025-01-01", priority: "high", bucketName: "Bucket A", externalId: "ext-1" };
+    const result = buildPlannerSyncResult(pt, rec, existing, (uid) => uid === "uid1" ? "User 1" : "Unknown");
+    expect(result.wasCompleted).toBe(true);
+    expect(result.completedInfo).toBeDefined();
+    expect(result.completedInfo!.title).toBe("Task 1");
+    expect(result.completedInfo!.completedDate).toBe("2025-01-15");
+  });
+
+  it("detects multiple field changes", () => {
+    const pt = {};
+    const rec = { progress: "In Progress", assignedTo: "New User", taskName: "New Name", dueDate: "2025-06-01", priority: "high", bucketName: "New Bucket", extId: "ext-2" };
+    const existing = { progress: "Not Started", assignedTo: "Old User", taskName: "Old Name", dueDate: "2025-01-01", priority: "low", bucketName: "Old Bucket", externalId: "ext-2" };
+    const result = buildPlannerSyncResult(pt, rec, existing, () => "X");
+    expect(result.needsUpdate).toBe(true);
+    expect(result.changes.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("detects no changes when fields match", () => {
+    const pt = {};
+    const rec = { progress: "In Progress", assignedTo: "User", taskName: "Task", dueDate: "2025-01-01", priority: "medium", bucketName: "Bucket", extId: "ext-3" };
+    const existing = { progress: "In Progress", assignedTo: "User", taskName: "Task", dueDate: "2025-01-01", priority: "medium", bucketName: "Bucket", externalId: "ext-3" };
+    const result = buildPlannerSyncResult(pt, rec, existing, () => "X");
+    expect(result.needsUpdate).toBe(false);
+    expect(result.changes).toEqual([]);
+    expect(result.wasCompleted).toBe(false);
+  });
+
+  it("marks needsUpdate when externalId is missing on existing", () => {
+    const pt = {};
+    const rec = { progress: "In Progress", assignedTo: "User", taskName: "Task", dueDate: "2025-01-01", priority: "medium", bucketName: "Bucket", extId: "ext-4" };
+    const existing = { progress: "In Progress", assignedTo: "User", taskName: "Task", dueDate: "2025-01-01", priority: "medium", bucketName: "Bucket", externalId: null };
+    const result = buildPlannerSyncResult(pt, rec, existing, () => "X");
+    expect(result.needsUpdate).toBe(true);
+  });
+});
+
+describe("buildPlannerSyncInsights - extended", () => {
+  it("returns up-to-date message when no activity", () => {
+    const result = buildPlannerSyncInsights({
+      newlyCompletedCount: 0, newCount: 0, updatedCount: 0, removedCount: 0,
+      recentCompletedCount: 0,
+    });
+    expect(result).toEqual(["All tasks are up to date"]);
+  });
+
+  it("reports newly completed tasks", () => {
+    const result = buildPlannerSyncInsights({
+      newlyCompletedCount: 1, newCount: 0, updatedCount: 0, removedCount: 0,
+      recentCompletedCount: 0,
+    });
+    expect(result).toContain("1 task newly completed this sync");
+  });
+
+  it("uses plural form for multiple items", () => {
+    const result = buildPlannerSyncInsights({
+      newlyCompletedCount: 3, newCount: 2, updatedCount: 0, removedCount: 0,
+      recentCompletedCount: 0,
+    });
+    expect(result).toContain("3 tasks newly completed this sync");
+    expect(result).toContain("2 new tasks added from Planner");
+  });
+
+  it("reports all activity types together", () => {
+    const result = buildPlannerSyncInsights({
+      newlyCompletedCount: 1, newCount: 2, updatedCount: 1, removedCount: 1,
+      recentCompletedCount: 5,
+    });
+    expect(result.length).toBe(5);
+    expect(result).toContain("1 task newly completed this sync");
+    expect(result).toContain("2 new tasks added from Planner");
+    expect(result).toContain("1 task updated");
+    expect(result).toContain("1 task removed (no longer in Planner)");
+    expect(result).toContain("5 tasks completed in last 4 weeks");
+  });
+});

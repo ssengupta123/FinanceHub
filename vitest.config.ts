@@ -15,6 +15,7 @@ export default defineConfig({
         "server/static.ts",
         "server/github.ts",
         "server/db.ts",
+        "server/storage.ts",
         "server/integrations/**",
         "server/replit_integrations/**",
         "shared/models/**",
