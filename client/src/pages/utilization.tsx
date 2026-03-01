@@ -24,7 +24,7 @@ interface WeeklyUtilData {
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
   const n = parseFloat(val);
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function getWeekStart(dateStr: string | Date): Date {
@@ -52,7 +52,7 @@ const STANDARD_WEEKLY_HOURS = 40;
 export default function UtilizationDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [selectedTeam, setSelectedTeam] = useState("all");
-  const [expandedOverutil, setExpandedOverutil] = useState<Set<number>>(new Set());
+  const [expandedOverutil, setExpandedOverutil] = useState<Set<string>>(new Set());
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
@@ -361,6 +361,13 @@ export default function UtilizationDashboard() {
     };
   }, [weeklyData, permanentEmployees, permanentIds, fyTimesheets, projects, resourcePlans]);
 
+  function utilTextColor(pct: number): string {
+    if (pct > 100) return "text-red-600 dark:text-red-400";
+    if (pct >= 80) return "text-green-600 dark:text-green-400";
+    if (pct >= 50) return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
+  }
+
   function utilColor(pct: number): string {
     if (pct > 100) return "bg-red-500";
     if (pct >= 80) return "bg-green-500";
@@ -431,7 +438,7 @@ export default function UtilizationDashboard() {
               (() => {
                 const allocPct = permanentEmployees.length > 0 ? (allocatedPermanent.length / permanentEmployees.length) * 100 : 0;
                 return (
-                  <div className={`text-2xl font-bold ${allocPct >= 80 ? "text-green-600 dark:text-green-400" : allocPct >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-staff-allocation">
+                  <div className={`text-2xl font-bold ${utilTextColor(allocPct)}`} data-testid="text-staff-allocation">
                     {allocPct.toFixed(1)}%
                   </div>
                 );
@@ -471,7 +478,7 @@ export default function UtilizationDashboard() {
                 const totalHrs = permTimesheets.reduce((s, t) => s + parseNum(t.hoursWorked), 0);
                 const billHrs = permTimesheets.filter(t => t.billable).reduce((s, t) => s + parseNum(t.hoursWorked), 0);
                 const ratio = totalHrs > 0 ? (billHrs / totalHrs) * 100 : 0;
-                const ratioColor = ratio >= 80 ? "text-green-600 dark:text-green-400" : ratio >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
+                const ratioColor = utilTextColor(ratio);
                 return (
                   <>
                     <div className={`text-2xl font-bold ${ratioColor}`} data-testid="text-billable-ratio">{ratio.toFixed(1)}%</div>
@@ -490,7 +497,10 @@ export default function UtilizationDashboard() {
           <CardContent>
             {isLoading ? <Skeleton className="h-8 w-20" /> : (
               (() => {
-                const benchColor = benchSummary.benchPct <= 15 ? "text-green-600 dark:text-green-400" : benchSummary.benchPct <= 30 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
+                let benchColor: string;
+                if (benchSummary.benchPct <= 15) benchColor = "text-green-600 dark:text-green-400";
+                else if (benchSummary.benchPct <= 30) benchColor = "text-amber-600 dark:text-amber-400";
+                else benchColor = "text-red-600 dark:text-red-400";
                 return <div className={`text-2xl font-bold ${benchColor}`} data-testid="text-bench-hours">{benchSummary.totalBench.toFixed(0)}h</div>;
               })()
             )}
@@ -521,18 +531,19 @@ export default function UtilizationDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {overutilisedList.map((emp: any, idx: number) => {
-                  const isExpanded = expandedOverutil.has(idx);
+                {overutilisedList.map((emp: any) => {
+                  const empKey = emp.name;
+                  const isExpanded = expandedOverutil.has(empKey);
                   return (
-                    <Fragment key={idx}>
+                    <Fragment key={empKey}>
                       <TableRow
-                        data-testid={`row-overutilised-${idx}`}
+                        data-testid={`row-overutilised-${empKey}`}
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => {
                           setExpandedOverutil(prev => {
                             const next = new Set(prev);
-                            if (next.has(idx)) next.delete(idx);
-                            else next.add(idx);
+                            if (next.has(empKey)) next.delete(empKey);
+                            else next.add(empKey);
                             return next;
                           });
                         }}
@@ -553,8 +564,8 @@ export default function UtilizationDashboard() {
                         </TableCell>
                       </TableRow>
                       {isExpanded && emp.projectBreakdown && emp.projectBreakdown.length > 0 && (
-                        emp.projectBreakdown.map((proj: any, pi: number) => (
-                          <TableRow key={`${idx}-proj-${pi}`} className="bg-muted/30" data-testid={`row-overutil-project-${idx}-${pi}`}>
+                        emp.projectBreakdown.map((proj: any) => (
+                          <TableRow key={`${empKey}-proj-${proj.projectName}`} className="bg-muted/30" data-testid={`row-overutil-project-${empKey}-${proj.projectName}`}>
                             <TableCell className="pl-10 text-sm text-muted-foreground">{proj.projectName}</TableCell>
                             <TableCell className="text-sm text-muted-foreground">{proj.client || "\u2014"}</TableCell>
                             <TableCell className="text-right text-sm">{proj.avgHoursPerWeek.toFixed(1)}</TableCell>
@@ -568,7 +579,7 @@ export default function UtilizationDashboard() {
                         ))
                       )}
                       {isExpanded && (!emp.projectBreakdown || emp.projectBreakdown.length === 0) && (
-                        <TableRow key={`${idx}-no-proj`} className="bg-muted/30">
+                        <TableRow key={`${empKey}-no-proj`} className="bg-muted/30">
                           <TableCell colSpan={5} className="pl-10 text-sm text-muted-foreground italic">No project allocation data available</TableCell>
                         </TableRow>
                       )}
@@ -650,18 +661,13 @@ export default function UtilizationDashboard() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <span className={
-                              row.avgUtil > 100 ? "text-red-600 dark:text-red-400" :
-                              row.avgUtil >= 80 ? "text-green-600 dark:text-green-400" :
-                              row.avgUtil >= 50 ? "text-amber-600 dark:text-amber-400" :
-                              "text-red-600 dark:text-red-400"
-                            }>
+                            <span className={utilTextColor(row.avgUtil)}>
                               {row.avgUtil.toFixed(0)}%
                             </span>
                           </TableCell>
                           <TableCell className="text-right text-muted-foreground">{row.totalBench.toFixed(0)}</TableCell>
                           {row.weeks.map((week: any, wi: number) => (
-                            <TableCell key={wi} className="text-center p-1">
+                            <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
                               <div
                                 className={`rounded-md text-xs py-1 ${utilCellClass(week.utilization, week.isProjected)}`}
                                 title={`${week.worked.toFixed(1)}h ${week.isProjected ? "(projected)" : "(actual)"}, ${week.bench.toFixed(1)}h bench`}
@@ -705,7 +711,7 @@ export default function UtilizationDashboard() {
                                 const hours = pa ? pa.hours : 0;
                                 const pct = pa ? pa.allocPct : 0;
                                 return (
-                                  <TableCell key={wi} className="text-center p-1">
+                                  <TableCell key={weekColumns[wi]?.key ?? wi} className="text-center p-1">
                                     <div className="text-[10px] text-muted-foreground leading-tight" title={`${hours.toFixed(1)}h (${pct.toFixed(0)}%)`}>
                                       {hours > 0 ? (
                                         <>
@@ -731,12 +737,12 @@ export default function UtilizationDashboard() {
                         : 0}%
                     </TableCell>
                     <TableCell className="text-right">{benchSummary.totalBench.toFixed(0)}</TableCell>
-                    {weekColumns.map((_, wi) => {
+                    {weekColumns.map((wc, wi) => {
                       const weekWorked = rollingView.reduce((s: number, r: any) => s + r.weeks[wi].worked, 0);
                       const weekCap = rollingView.length * STANDARD_WEEKLY_HOURS;
                       const weekUtil = weekCap > 0 ? (weekWorked / weekCap) * 100 : 0;
                       return (
-                        <TableCell key={wi} className="text-center p-1">
+                        <TableCell key={wc.key} className="text-center p-1">
                           <div className="text-xs font-medium">{weekUtil.toFixed(0)}%</div>
                         </TableCell>
                       );

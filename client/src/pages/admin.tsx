@@ -40,7 +40,7 @@ const targetKeyLabels: Record<string, string> = {
 
 const targetKeys = Object.keys(targetKeyLabels);
 
-function FinancialTargetsEditor({ allData, isLoading }: { allData: ReferenceData[]; isLoading: boolean }) {
+function FinancialTargetsEditor({ allData, isLoading }: Readonly<{ allData: ReferenceData[]; isLoading: boolean }>) {
   const { toast } = useToast();
   const currentFy = getCurrentFy();
   const fyOptions = getFyOptions([
@@ -102,11 +102,11 @@ function FinancialTargetsEditor({ allData, isLoading }: { allData: ReferenceData
   const formatDisplay = (key: string, val: string) => {
     if (key === "revenue_target") {
       const n = parseFloat(val);
-      return isNaN(n) ? val : `$${n.toLocaleString()}`;
+      return Number.isNaN(n) ? val : `$${n.toLocaleString()}`;
     }
     if (key === "margin_target" || key === "utilisation_target") {
       const n = parseFloat(val);
-      return isNaN(n) ? val : `${(n * 100).toFixed(0)}%`;
+      return Number.isNaN(n) ? val : `${(n * 100).toFixed(0)}%`;
     }
     return val;
   };
@@ -145,12 +145,13 @@ function FinancialTargetsEditor({ allData, isLoading }: { allData: ReferenceData
             return (
               <div key={key} className="flex items-center gap-3 flex-wrap" data-testid={`row-target-${key}`}>
                 <div className="min-w-[220px]">
-                  <label className="text-sm font-medium">{targetKeyLabels[key]}</label>
+                  <label htmlFor={`input-target-${key}`} className="text-sm font-medium">{targetKeyLabels[key]}</label>
                   {currentVal && !editing && (
                     <p className="text-xs text-muted-foreground">Current: {formatDisplay(key, currentVal)}</p>
                   )}
                 </div>
                 <Input
+                  id={`input-target-${key}`}
                   value={editing ? editValues[key] : currentVal}
                   onChange={(e) => setEditValues(prev => ({ ...prev, [key]: e.target.value }))}
                   onFocus={() => {
@@ -294,7 +295,7 @@ function VatFinancialTargetsEditor() {
 
       const parseVal = (v: string) => {
         const n = parseFloat(v);
-        return isNaN(n) ? null : n;
+        return Number.isNaN(n) ? null : n;
       };
 
       await saveMutation.mutateAsync({
@@ -319,7 +320,7 @@ function VatFinancialTargetsEditor() {
 
   const formatDisplay = (type: string, val: string) => {
     const n = parseFloat(val);
-    if (isNaN(n)) return val;
+    if (Number.isNaN(n)) return val;
     if (type === "dollar") return `$${n.toLocaleString()}`;
     if (type === "percent") return `${(n * 100).toFixed(1)}%`;
     return val;
@@ -362,11 +363,7 @@ function VatFinancialTargetsEditor() {
           <div className="flex justify-center p-4">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
-        ) : !selectedVat ? (
-          <p className="text-sm text-muted-foreground" data-testid="text-vat-select-prompt">
-            Select a VAT to view and edit financial targets.
-          </p>
-        ) : (
+        ) : selectedVat ? (
           <div className="space-y-4">
             <div className="border rounded-md">
               <table className="w-full">
@@ -422,6 +419,10 @@ function VatFinancialTargetsEditor() {
               </Button>
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground" data-testid="text-vat-select-prompt">
+            Select a VAT to view and edit financial targets.
+          </p>
         )}
       </CardContent>
     </Card>
@@ -835,11 +836,13 @@ export default function AdminPage() {
             ))}
           </div>
 
-          {isFinancialTarget ? (
+          {isFinancialTarget && (
         <FinancialTargetsEditor allData={allData} isLoading={isLoading} />
-      ) : isVatFinancialTarget ? (
+      )}
+      {isVatFinancialTarget && (
         <VatFinancialTargetsEditor />
-      ) : (
+      )}
+      {!isFinancialTarget && !isVatFinancialTarget && (
         <Card>
           <CardHeader>
             <CardTitle>{categoryLabels[activeCategory]}</CardTitle>
@@ -900,8 +903,9 @@ export default function AdminPage() {
 
                 <div className="flex gap-2 items-end flex-wrap">
                   <div className="space-y-1">
-                    <label className="text-sm font-medium">Key</label>
+                    <label htmlFor="input-ref-key" className="text-sm font-medium">Key</label>
                     <Input
+                      id="input-ref-key"
                       value={newKey}
                       onChange={(e) => setNewKey(e.target.value)}
                       placeholder="Enter key"
@@ -909,8 +913,9 @@ export default function AdminPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-sm font-medium">Value</label>
+                    <label htmlFor="input-ref-value" className="text-sm font-medium">Value</label>
                     <Input
+                      id="input-ref-value"
                       value={newValue}
                       onChange={(e) => setNewValue(e.target.value)}
                       placeholder="Enter value"

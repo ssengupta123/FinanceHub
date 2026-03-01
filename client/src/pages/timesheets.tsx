@@ -189,13 +189,13 @@ export default function Timesheets() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
+                  <TableRow key={`skeleton-row-${i}`}>
                     {Array.from({ length: 8 }).map((_, j) => (
-                      <TableCell key={j}><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>
                     ))}
                   </TableRow>
                 ))
-              ) : !filteredTimesheets.length ? (
+              ) : filteredTimesheets.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No timesheet entries found

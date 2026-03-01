@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -58,7 +58,7 @@ import { useAuth } from "@/hooks/use-auth";
 function formatCurrency(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "$0";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0";
+  if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return `$${n.toFixed(0)}`;
@@ -67,13 +67,13 @@ function formatCurrency(val: string | number | null | undefined): string {
 function parseNum(val: string | number | null | undefined): number {
   if (val === null || val === undefined) return 0;
   const n = typeof val === "string" ? parseFloat(val) : val;
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function formatPercent(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "0%";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "0%";
+  if (Number.isNaN(n)) return "0%";
   if (Math.abs(n) < 1) return `${(n * 100).toFixed(1)}%`;
   return `${n.toFixed(1)}%`;
 }
@@ -88,7 +88,7 @@ function statusVariant(status: string | null | undefined): "default" | "secondar
   }
 }
 
-function RagDot({ value, greenThreshold, amberThreshold }: { value: number; greenThreshold: number; amberThreshold: number }) {
+function RagDot({ value, greenThreshold, amberThreshold }: Readonly<{ value: number; greenThreshold: number; amberThreshold: number }>) {
   let color = "bg-green-500";
   if (value < amberThreshold) color = "bg-red-500";
   else if (value < greenThreshold) color = "bg-amber-500";
@@ -155,7 +155,7 @@ const initialForm = {
   description: "",
 };
 
-function MonthlyDetail({ projectId }: { projectId: number }) {
+function MonthlyDetail({ projectId }: Readonly<{ projectId: number }>) {
   const { data, isLoading } = useQuery<ProjectMonthly[]>({
     queryKey: [`/api/project-monthly?projectId=${projectId}`],
   });
@@ -593,7 +593,7 @@ export default function ProjectsList() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-12 w-full" />)}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -618,9 +618,8 @@ export default function ProjectsList() {
                 </TableHeader>
                 <TableBody>
                   {filteredProjects.length > 0 ? filteredProjects.map(project => (
-                    <>
+                    <Fragment key={project.id}>
                       <TableRow
-                        key={project.id}
                         className="cursor-pointer"
                         data-testid={`row-project-${project.id}`}
                       >
@@ -755,13 +754,13 @@ export default function ProjectsList() {
                         </TableCell>
                       </TableRow>
                       {expandedId === project.id && (
-                        <TableRow key={`detail-${project.id}`}>
+                        <TableRow>
                           <TableCell colSpan={visibleCount} className="bg-muted/30 p-0">
                             <MonthlyDetail projectId={project.id} />
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   )) : (
                     <TableRow>
                       <TableCell colSpan={visibleCount} className="text-center text-muted-foreground py-8">

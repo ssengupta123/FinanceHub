@@ -80,21 +80,22 @@ function parseSharePointDate(val: string | null | undefined): string | null {
   if (!val) return null;
   try {
     const d = new Date(val);
-    if (isNaN(d.getTime())) return null;
+    if (Number.isNaN(d.getTime())) return null;
     return d.toISOString().split("T")[0];
-  } catch {
+  } catch (e) {
+    console.error("[parseSharePointDate] Date parse error:", (e as Error).message);
     return null;
   }
 }
 
 function cleanMultiValueField(val: string | null | undefined): string | null {
   if (!val) return null;
-  return val.replace(/;#\d+;#/g, "; ").replace(/;#/g, "; ").trim() || null;
+  return val.replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() || null;
 }
 
 function cleanVat(val: string | null | undefined): string | null {
   if (!val) return null;
-  let vat = val.replace(/;#/g, "").replace(/\|.*$/, "").trim();
+  let vat = val.replaceAll(";#", "").replace(/\|.*$/, "").trim();
   if (vat.toLowerCase() === "growth") vat = "GROWTH";
   return vat || null;
 }
@@ -196,13 +197,15 @@ export async function syncSharePointOpenOpps(): Promise<{
 
     try {
       const rawValue = item.Value ?? item.OppValue ?? item.TotalValue;
-      const value = rawValue != null && !isNaN(Number(rawValue))
-        ? String(Number(rawValue).toFixed(2))
+      const numValue = Number(rawValue);
+      const value = rawValue != null && !Number.isNaN(numValue)
+        ? String(numValue.toFixed(2))
         : null;
 
       const rawMargin = item.Margin ?? item.MarginPercent ?? item.OppMargin;
-      const marginPercent = rawMargin != null && !isNaN(Number(rawMargin))
-        ? String(Number(rawMargin).toFixed(3))
+      const numMargin = Number(rawMargin);
+      const marginPercent = rawMargin != null && !Number.isNaN(numMargin)
+        ? String(numMargin.toFixed(3))
         : null;
 
       const workType = item.WorkType || item.OppWorkType || null;

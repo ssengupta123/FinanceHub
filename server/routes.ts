@@ -92,7 +92,7 @@ export async function registerRoutes(
     const employeeId = Number(req.params.id);
     const { userId } = req.body;
     if (userId !== null && userId !== undefined) {
-      if (typeof userId !== "number" || isNaN(userId)) {
+      if (typeof userId !== "number" || Number.isNaN(userId)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
       const userExists = await db("users").where("id", userId).first();
@@ -226,7 +226,7 @@ export async function registerRoutes(
       const fySet = new Set<string>();
       for (const r of rows) {
         const d = r.week_ending instanceof Date ? r.week_ending : new Date(r.week_ending);
-        if (isNaN(d.getTime())) continue;
+        if (Number.isNaN(d.getTime())) continue;
         const m = d.getMonth();
         const y = d.getFullYear();
         const fyStart = m >= 6 ? y : y - 1;
@@ -1222,7 +1222,7 @@ export async function registerRoutes(
         const bcrypt = await import("bcryptjs");
         const randomPassword = await bcrypt.hash(Math.random().toString(36) + Date.now().toString(36), 10);
         user = await storage.createUser({
-          username: email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "_"),
+          username: email.split("@")[0].replaceAll(/[^a-zA-Z0-9]/g, "_"),
           password: randomPassword,
           email,
           displayName,
@@ -2250,7 +2250,9 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
                 } else {
                   console.warn(`[Planner Sync] User lookup failed for ${uid}: status ${userRes.status}`);
                 }
-              } catch {}
+              } catch (e) {
+                console.warn(`[Planner Sync] User lookup error for ${uid}:`, (e as Error).message);
+              }
               return { uid, name: uid };
             })
           );
@@ -2284,9 +2286,15 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         const taskName = pt.title || "Untitled";
         const bucketName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "") || "";
         const percentComplete = pt.percentComplete || 0;
-        const progress = percentComplete === 100 ? "Completed" : percentComplete > 0 ? "In progress" : "Not started";
+        let progress: string;
+        if (percentComplete === 100) progress = "Completed";
+        else if (percentComplete > 0) progress = "In progress";
+        else progress = "Not started";
         const dueDate = pt.dueDateTime ? pt.dueDateTime.split("T")[0] : "";
-        const priority = pt.priority === 1 ? "Important" : pt.priority === 5 ? "Low" : "Medium";
+        let priority: string;
+        if (pt.priority === 1) priority = "Important";
+        else if (pt.priority === 5) priority = "Low";
+        else priority = "Medium";
         const assignedToIds = pt.assignments ? Object.keys(pt.assignments) : [];
         const assignedTo = assignedToIds.map(uid => resolveUserName(uid)).join(", ");
         seenExtIds.add(extId);
@@ -2697,7 +2705,8 @@ Return this exact JSON structure:
       try {
         const parsed = JSON.parse(content);
         res.json({ fields: parsed });
-      } catch {
+      } catch (e) {
+        console.error("AI returned invalid JSON:", (e as Error).message);
         res.status(500).json({ message: "AI returned invalid JSON" });
       }
     } catch (error: any) {
@@ -2808,7 +2817,7 @@ Return this exact JSON structure:
       const fr = await storage.getFeatureRequest(id);
       if (!fr) return res.status(404).json({ message: "Feature request not found" });
 
-      const branchName = `feature/fr-${id}-${fr.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+      const branchName = `feature/fr-${id}-${fr.title.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
 
       const pat = process.env.GITHUB_PAT;
       if (!pat) return res.status(500).json({ message: "GitHub PAT not configured" });
@@ -2863,18 +2872,18 @@ export function excelDateToString(val: any): string | null {
   const s = String(val).trim();
   if (!s || s.toLowerCase() === "n/a" || s === "-" || s === "") return null;
   const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) {
+  if (!Number.isNaN(parsed.getTime())) {
     const yr = parsed.getFullYear();
     if (yr < 1900 || yr > 2100) return null;
     return `${yr}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
   }
-  const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const isoMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
   if (isoMatch) {
     const yr = parseInt(isoMatch[1]);
     if (yr < 1900 || yr > 2100) return null;
     return `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
   }
-  const auMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const auMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
   if (auMatch) {
     const yr = auMatch[3].length === 2 ? 2000 + parseInt(auMatch[3]) : parseInt(auMatch[3]);
     if (yr < 1900 || yr > 2100) return null;
@@ -2886,13 +2895,13 @@ export function excelDateToString(val: any): string | null {
 export function toNum(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
   const n = typeof val === "number" ? val : parseFloat(String(val));
-  return isNaN(n) ? "0" : n.toFixed(2);
+  return Number.isNaN(n) ? "0" : n.toFixed(2);
 }
 
 export function toDecimal(val: any): string {
   if (val === null || val === undefined || val === "") return "0";
   const n = typeof val === "number" ? val : parseFloat(String(val));
-  return isNaN(n) ? "0" : n.toFixed(4);
+  return Number.isNaN(n) ? "0" : n.toFixed(4);
 }
 
 async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; errors: string[] }> {
@@ -3068,7 +3077,7 @@ async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetN
   let imported = 0;
   const errors: string[] = [];
 
-  const fyMatch = sheetName.match(/FY(\d{2}-\d{2})/);
+  const fyMatch = /FY(\d{2}-\d{2})/.exec(sheetName);
   const fyYear = fyMatch ? fyMatch[1] : "23-24";
 
   for (let i = 1; i < rows.length; i++) {
@@ -3222,12 +3231,12 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
         const origName = String(r[9]).trim();
 
         const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        const codeParts = isInternal ? null : origName.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
-        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
+        const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(origName);
+        let pCode = codeParts ? codeParts[1].replaceAll(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         const newProj = await storage.createProject({
-          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: origName.substring(0, 200), client: codeParts ? codeParts[1].replaceAll(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -3291,12 +3300,12 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
 
       let match = projMap.get(projectDesc.toLowerCase());
       if (!match) {
-        const codeParts = isInternal ? null : projectDesc.match(/^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i);
-        let pCode = codeParts ? codeParts[1].replace(/\s+/g, '') : `INT${projCounter++}`;
+        const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(projectDesc);
+        let pCode = codeParts ? codeParts[1].replaceAll(/\s+/g, '') : `INT${projCounter++}`;
         while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
         projCodes.add(pCode);
         match = await storage.createProject({
-          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replace(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
+          projectCode: pCode, name: projectDesc.substring(0, 200), client: codeParts ? codeParts[1].replaceAll(/[\d-]/g, '') : (isInternal ? "Internal" : "Unknown"),
           clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
           contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
           recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
@@ -3343,7 +3352,7 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   for (const p of allProjects) {
     projByName.set(p.name.toLowerCase(), p.id);
     if (p.projectCode) projByName.set(p.projectCode.toLowerCase(), p.id);
-    const baseMatch = p.name.match(/^([A-Z]{2,6}\d{2,4})/i);
+    const baseMatch = /^([A-Z]{2,6}\d{2,4})/i.exec(p.name);
     if (baseMatch) {
       const baseCode = baseMatch[1].toLowerCase();
       if (!projByBaseCode.has(baseCode)) projByBaseCode.set(baseCode, p.id);
@@ -3371,7 +3380,7 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
         projectId = exactMatch;
       }
       if (!projectId) {
-        const codePart = engagementName.match(/^([A-Z]{2,6}\d{2,4})/i);
+        const codePart = /^([A-Z]{2,6}\d{2,4})/i.exec(engagementName);
         if (codePart) {
           projectId = projByBaseCode.get(codePart[1].toLowerCase()) || null;
         }
@@ -3400,7 +3409,7 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
         employeeId,
         engagementName,
         checkPointDate,
-        cxRating: isNaN(cxRating as number) ? null : cxRating,
+        cxRating: Number.isNaN(cxRating as number) ? null : cxRating,
         resourceName,
         isClientManager: String(r[4] || "").toUpperCase() === "Y",
         isDeliveryManager: String(r[5] || "").toUpperCase() === "Y",
@@ -3439,8 +3448,8 @@ async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported
       const monthlyCosts: string[] = [];
       for (let ci = 2; ci <= 13; ci++) {
         const v = Number(r[ci] || 0);
-        monthlyCosts.push(isNaN(v) ? "0" : v.toFixed(2));
-        total += isNaN(v) ? 0 : v;
+        monthlyCosts.push(Number.isNaN(v) ? "0" : v.toFixed(2));
+        total += Number.isNaN(v) ? 0 : v;
       }
 
       await storage.createResourceCost({
@@ -3488,8 +3497,8 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
       const costC: string[] = [];
       for (let ci = 2; ci <= 13; ci++) {
         const v = Number(r[ci] || 0);
-        costC.push(isNaN(v) ? "0" : v.toFixed(2));
-        totalC += isNaN(v) ? 0 : v;
+        costC.push(Number.isNaN(v) ? "0" : v.toFixed(2));
+        totalC += Number.isNaN(v) ? 0 : v;
       }
 
       await storage.createResourceCost({
@@ -3515,8 +3524,8 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
         const costDVF: string[] = [];
         for (let ci = 19; ci <= 30; ci++) {
           const v = Number(r[ci] || 0);
-          costDVF.push(isNaN(v) ? "0" : v.toFixed(2));
-          totalDVF += isNaN(v) ? 0 : v;
+          costDVF.push(Number.isNaN(v) ? "0" : v.toFixed(2));
+          totalDVF += Number.isNaN(v) ? 0 : v;
         }
 
         await storage.createResourceCost({
@@ -3543,7 +3552,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
 export function excelDateToISOString(serial: any): string | null {
   if (!serial || serial === "") return null;
   const num = Number(serial);
-  if (isNaN(num)) {
+  if (Number.isNaN(num)) {
     if (typeof serial === "string" && serial.includes("-")) return serial;
     return null;
   }
@@ -3581,25 +3590,27 @@ async function importOpenOpps(ws: XLSX.WorkSheet): Promise<{ imported: number; e
     try {
       const classification = phaseToClassification[phase];
       const rawValue = r[3];
-      const value = rawValue !== "" && rawValue != null && !isNaN(Number(rawValue)) ? String(Number(rawValue).toFixed(2)) : null;
+      const numRawValue = Number(rawValue);
+      const value = rawValue !== "" && rawValue != null && !Number.isNaN(numRawValue) ? String(numRawValue.toFixed(2)) : null;
       const rawMargin = r[4];
-      const marginPercent = rawMargin !== "" && rawMargin != null && !isNaN(Number(rawMargin)) ? String(Number(rawMargin).toFixed(3)) : null;
+      const numRawMargin = Number(rawMargin);
+      const marginPercent = rawMargin !== "" && rawMargin != null && !Number.isNaN(numRawMargin) ? String(numRawMargin.toFixed(3)) : null;
       const workType = r[5] ? String(r[5]).trim() : null;
       const startDate = excelDateToISOString(r[6]);
       const expiryDate = excelDateToISOString(r[7]);
 
       let vat = r[8] ? String(r[8]).trim() : null;
       if (vat) {
-        vat = vat.replace(/;#/g, "").replace(/\|.*$/, "").trim();
+        vat = vat.replaceAll(";#", "").replace(/\|.*$/, "").trim();
         if (vat.toLowerCase() === "growth") vat = "GROWTH";
       }
 
       const status = r[9] ? String(r[9]).trim() : null;
       const comment = r[10] ? String(r[10]).trim() : null;
       const casLead = r[11] ? String(r[11]).trim() : null;
-      const csdLead = r[12] ? String(r[12]).replace(/;#\d+;#/g, "; ").replace(/;#/g, "; ").trim() : null;
-      const category = r[13] ? String(r[13]).replace(/;#/g, ", ").trim() : null;
-      const partner = r[14] ? String(r[14]).replace(/;#/g, ", ").trim() : null;
+      const csdLead = r[12] ? String(r[12]).replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() : null;
+      const category = r[13] ? String(r[13]).replaceAll(";#", ", ").trim() : null;
+      const partner = r[14] ? String(r[14]).replaceAll(";#", ", ").trim() : null;
       const clientContact = r[15] ? String(r[15]).trim() : null;
       const clientCode = r[16] ? String(r[16]).trim() : null;
       const dueDate = excelDateToISOString(r[2]);

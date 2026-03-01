@@ -31,13 +31,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(globalThis.window.location.search);
     const authToken = params.get("auth_token");
     if (authToken) {
       setAuthToken(authToken);
       params.delete("auth_token");
-      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
-      window.history.replaceState({}, "", newUrl);
+      const newUrl = globalThis.window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+      globalThis.window.history.replaceState({}, "", newUrl);
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     }
   }, []);

@@ -21,7 +21,7 @@ import type { Forecast, Project, ProjectMonthly } from "@shared/schema";
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0";
+  if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
   return `$${n.toFixed(0)}`;
@@ -30,7 +30,7 @@ function formatCurrency(val: string | number | null | undefined) {
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
   const n = parseFloat(val);
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 type VarianceRow = {
@@ -336,11 +336,10 @@ export default function Forecasts() {
               <CardTitle className="text-base">Forecast vs Actual by Project</CardTitle>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-60 w-full" />
-              ) : varianceData.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No variance data available. Add forecasts and ensure project monthly actuals exist.</p>
-              ) : (
+              {(() => {
+                if (isLoading) return <Skeleton className="h-60 w-full" />;
+                if (varianceData.length === 0) return <p className="text-sm text-muted-foreground">No variance data available. Add forecasts and ensure project monthly actuals exist.</p>;
+                return (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -411,7 +410,8 @@ export default function Forecasts() {
                     </TableBody>
                   </Table>
                 </div>
-              )}
+                );
+              })()}
             </CardContent>
           </Card>
         </>
@@ -423,11 +423,14 @@ export default function Forecasts() {
             <CardTitle className="text-base">All Forecasts</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full mb-2" />)
-            ) : !forecasts || forecasts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No forecasts available</p>
-            ) : (
+            {(() => {
+              if (isLoading) {
+                return Array.from({ length: 4 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-10 w-full mb-2" />);
+              }
+              if (!forecasts || forecasts.length === 0) {
+                return <p className="text-sm text-muted-foreground">No forecasts available</p>;
+              }
+              return (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -458,7 +461,8 @@ export default function Forecasts() {
                     ))}
                 </TableBody>
               </Table>
-            )}
+              );
+            })()}
           </CardContent>
         </Card>
       )}

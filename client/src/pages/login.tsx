@@ -21,7 +21,7 @@ export default function LoginPage() {
   const ssoAttempted = useRef(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(globalThis.window.location.search);
     const ssoError = params.get("sso_error");
     if (ssoError) {
       const messages: Record<string, string> = {
@@ -35,7 +35,7 @@ export default function LoginPage() {
         description: messages[ssoError] || "An unknown error occurred.",
         variant: "destructive",
       });
-      window.history.replaceState({}, "", "/");
+      globalThis.window.history.replaceState({}, "", "/");
       setShowManualLogin(true);
       return;
     }
@@ -43,7 +43,7 @@ export default function LoginPage() {
     if (ssoAttempted.current) return;
     ssoAttempted.current = true;
 
-    const isAzure = window.location.hostname.includes("azurewebsites.net");
+    const isAzure = globalThis.window.location.hostname.includes("azurewebsites.net");
     if (!isAzure) return;
 
     setSsoLoading(true);
@@ -53,7 +53,7 @@ export default function LoginPage() {
         const res = await apiRequest("GET", "/api/auth/sso/login");
         const data = await res.json();
         if (data.authUrl) {
-          window.location.href = data.authUrl;
+          globalThis.window.location.href = data.authUrl;
         } else {
           setSsoLoading(false);
         }
@@ -89,11 +89,11 @@ export default function LoginPage() {
             {ssoLoading ? "Signing you in..." : isRegister ? "Create Account" : "Sign In"}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            {ssoLoading
-              ? "Redirecting to Microsoft for authentication"
-              : isRegister
-                ? "Create an account to access FinanceHub"
-                : "Sign in to FinanceHub"}
+            {(() => {
+              if (ssoLoading) return "Redirecting to Microsoft for authentication";
+              if (isRegister) return "Create an account to access FinanceHub";
+              return "Sign in to FinanceHub";
+            })()}
           </p>
         </CardHeader>
         <CardContent>

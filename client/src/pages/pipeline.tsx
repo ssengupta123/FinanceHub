@@ -64,7 +64,7 @@ const CLASSIFICATIONS = [
   { value: "A", label: "Activity (A)" },
 ];
 
-const WIN_RATES: Record<string, number> = { C: 1.0, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
+const WIN_RATES: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
 
 const STATUS_COLORS: Record<string, string> = {
   Good: "bg-green-500",
@@ -91,12 +91,12 @@ function classificationColor(c: string): "default" | "secondary" | "outline" | "
 
 function getOppValue(opp: PipelineOpportunity): number {
   const v = parseFloat(opp.value || "0");
-  return isNaN(v) ? 0 : v;
+  return Number.isNaN(v) ? 0 : v;
 }
 
 function getOppMargin(opp: PipelineOpportunity): number {
   const m = parseFloat(opp.marginPercent || "0");
-  return isNaN(m) ? 0 : m;
+  return Number.isNaN(m) ? 0 : m;
 }
 
 function getOppGP(opp: PipelineOpportunity): number {
@@ -135,7 +135,7 @@ export default function Pipeline() {
   const getDueDateFY = (dueDate: string | null | undefined): string | null => {
     if (!dueDate) return null;
     const d = new Date(dueDate);
-    if (isNaN(d.getTime())) return null;
+    if (Number.isNaN(d.getTime())) return null;
     const m = d.getMonth();
     const y = d.getFullYear();
     const fyStart = m >= 6 ? y : y - 1;
@@ -598,7 +598,11 @@ export default function Pipeline() {
                         {isCol("margin") && (
                           <TableCell className="text-right text-sm">
                             {margin > 0 ? (
-                              <span className={margin >= 0.3 ? "text-green-600 dark:text-green-400" : margin >= 0.2 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
+                              <span className={(() => {
+                                if (margin >= 0.3) return "text-green-600 dark:text-green-400";
+                                if (margin >= 0.2) return "text-amber-600 dark:text-amber-400";
+                                return "text-red-600 dark:text-red-400";
+                              })()}>
                                 {(margin * 100).toFixed(1)}%
                               </span>
                             ) : "-"}

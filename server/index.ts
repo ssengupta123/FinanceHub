@@ -112,7 +112,7 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
       const bcrypt = await import("bcryptjs");
       const randomPassword = await bcrypt.hash(Math.random().toString(36) + Date.now().toString(36), 10);
       user = await storage.createUser({
-        username: email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "_"),
+        username: email.split("@")[0].replaceAll(/[^a-zA-Z0-9]/g, "_"),
         password: randomPassword,
         email,
         displayName: payload.name || email.split("@")[0],
@@ -162,7 +162,9 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
     (req.session as any).userId = payload.userId;
     (req.session as any).username = payload.username;
     (req.session as any).role = payload.role;
-  } catch {}
+  } catch (e) {
+    console.error("[Bearer Auth] Token verification failed:", (e as Error).message);
+  }
 
   next();
 });

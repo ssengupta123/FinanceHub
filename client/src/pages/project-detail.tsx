@@ -164,7 +164,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingKpis ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`kpi-skeleton-${i}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -207,7 +207,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingCosts ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`cost-skeleton-${i}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -248,7 +248,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingMilestones ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`ms-skeleton-${i}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>
@@ -289,7 +289,7 @@ export default function ProjectDetail() {
             <CardContent className="p-0">
               {loadingResources ? (
                 <div className="p-6 space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`rp-skeleton-${i}`} className="h-10 w-full" />)}
                 </div>
               ) : (
                 <Table>

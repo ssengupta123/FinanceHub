@@ -10,10 +10,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
-import { Handshake, DollarSign, TrendingUp, Users, Filter, Award, ChevronDown, ChevronRight } from "lucide-react";
+import { Handshake, DollarSign, Users, Filter, Award, ChevronDown, ChevronRight } from "lucide-react";
 
 interface PipelineOpp {
   id: number;
@@ -198,7 +198,7 @@ export default function PartnerView() {
         }
       }
       if (matched.length > 0) {
-        result[partner] = matched.sort((a, b) =>
+        result[partner] = matched.toSorted((a, b) =>
           (a.employee.lastName).localeCompare(b.employee.lastName)
         );
       }
@@ -211,7 +211,7 @@ export default function PartnerView() {
       <div className="flex flex-col gap-6 p-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-24" />)}
         </div>
         <Skeleton className="h-[300px]" />
       </div>
@@ -314,7 +314,7 @@ export default function PartnerView() {
                   const details = partnerDetails[partner];
                   const certStaff = certifiedEmployeesByPartner[partner] || [];
                   const isExpanded = expandedPartner === partner;
-                  const partnerSlug = partner.replace(/\s+/g, "-").toLowerCase();
+                  const partnerSlug = partner.replaceAll(/\s+/g, "-").toLowerCase();
                   return (
                     <Fragment key={partner}>
                       <TableRow
@@ -329,7 +329,7 @@ export default function PartnerView() {
                         <TableCell className="text-right">{details?.opps.length || 0}</TableCell>
                         <TableCell className="text-right font-medium">{formatDollars(details?.totalValue || 0)}</TableCell>
                         <TableCell className="text-right">
-                          <Badge variant={certStaff.length > 0 ? "default" : "secondary"} data-testid={`badge-cert-count-${partner.replace(/\s+/g, "-").toLowerCase()}`}>
+                          <Badge variant={certStaff.length > 0 ? "default" : "secondary"} data-testid={`badge-cert-count-${partner.replaceAll(/\s+/g, "-").toLowerCase()}`}>
                             {certStaff.length}
                           </Badge>
                         </TableCell>
@@ -428,8 +428,8 @@ export default function PartnerView() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={byVatChart} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, value }) => `${name}: ${formatDollars(value)}`}>
-                    {byVatChart.map((_, i) => (
-                      <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    {byVatChart.map((entry, i) => (
+                      <Cell key={`cell-${entry.name}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(v: number) => formatDollars(v)} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
@@ -470,12 +470,6 @@ export default function PartnerView() {
                   })
                   .sort((a, b) => a.lastName.localeCompare(b.lastName))
                   .map(emp => {
-                    const matchedPartners: string[] = [];
-                    for (const [partner, keywords] of Object.entries(PARTNER_CERT_KEYWORDS)) {
-                      if (keywords.some(kw => emp.certifications!.toLowerCase().includes(kw))) {
-                        matchedPartners.push(partner);
-                      }
-                    }
                     return (
                       <TableRow key={emp.id} data-testid={`row-certified-${emp.id}`}>
                         <TableCell className="font-medium text-sm">{emp.firstName} {emp.lastName}</TableCell>
@@ -551,7 +545,7 @@ export default function PartnerView() {
                         ? `${(parseFloat(opp.marginPercent) * 100).toFixed(0)}%`
                         : "-"}
                     </TableCell>
-                    <TableCell className="text-sm">{opp.partner?.replace(/;#/g, ", ") || "-"}</TableCell>
+                    <TableCell className="text-sm">{opp.partner?.replaceAll(";#", ", ") || "-"}</TableCell>
                     <TableCell className="text-sm text-right font-medium">
                       {opp.value ? formatDollars(parseFloat(opp.value)) : "-"}
                     </TableCell>
