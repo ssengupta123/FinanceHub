@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems } from "../server/sharepoint-sync";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems, getSharePointConfig } from "../server/sharepoint-sync";
 
 describe("transformSharePointItem", () => {
   it("transforms a valid SharePoint item", () => {
@@ -276,5 +276,54 @@ describe("stageSharePointItems", () => {
     ];
     const result = stageSharePointItems(items);
     expect(result.staged.length).toBe(1);
+  });
+});
+
+describe("getSharePointConfig", () => {
+  const origEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...origEnv };
+  });
+
+  afterEach(() => {
+    process.env = origEnv;
+  });
+
+  it("throws when SHAREPOINT_DOMAIN is missing", () => {
+    delete process.env.SHAREPOINT_DOMAIN;
+    process.env.SHAREPOINT_SITE_PATH = "/sites/Finance";
+    expect(() => getSharePointConfig()).toThrow("Missing SharePoint config");
+  });
+
+  it("throws when SHAREPOINT_SITE_PATH is missing", () => {
+    process.env.SHAREPOINT_DOMAIN = "example.sharepoint.com";
+    delete process.env.SHAREPOINT_SITE_PATH;
+    expect(() => getSharePointConfig()).toThrow("Missing SharePoint config");
+  });
+
+  it("returns config with defaults", () => {
+    process.env.SHAREPOINT_DOMAIN = "example.sharepoint.com";
+    process.env.SHAREPOINT_SITE_PATH = "/sites/Finance";
+    delete process.env.SHAREPOINT_LIST_NAME;
+    const cfg = getSharePointConfig();
+    expect(cfg.domain).toBe("example.sharepoint.com");
+    expect(cfg.sitePath).toBe("/sites/Finance");
+    expect(cfg.listName).toBe("Open Opps");
+  });
+
+  it("prepends slash to sitePath if missing", () => {
+    process.env.SHAREPOINT_DOMAIN = "example.sharepoint.com";
+    process.env.SHAREPOINT_SITE_PATH = "sites/Finance";
+    const cfg = getSharePointConfig();
+    expect(cfg.sitePath).toBe("/sites/Finance");
+  });
+
+  it("uses custom list name", () => {
+    process.env.SHAREPOINT_DOMAIN = "example.sharepoint.com";
+    process.env.SHAREPOINT_SITE_PATH = "/sites/Finance";
+    process.env.SHAREPOINT_LIST_NAME = "Custom List";
+    const cfg = getSharePointConfig();
+    expect(cfg.listName).toBe("Custom List");
   });
 });
