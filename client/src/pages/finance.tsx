@@ -219,6 +219,19 @@ function computeFinanceSummary(clientRows: ClientRow[], loading: boolean) {
   };
 }
 
+const STATUS_ORDER: Record<string, number> = { active: 0, closed: 2, completed: 2 };
+
+function getStatusOrder(s: string): number {
+  return STATUS_ORDER[s?.toLowerCase() || ""] ?? 1;
+}
+
+function toggleColumnInSet(prev: Set<FinanceColumnKey>, key: FinanceColumnKey): Set<FinanceColumnKey> {
+  const next = new Set(prev);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
 export default function FinanceDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [visibleColumns, setVisibleColumns] = useState<Set<FinanceColumnKey>>(
@@ -258,12 +271,7 @@ export default function FinanceDashboard() {
   }, [monthlyData, selectedFY]);
 
   const toggleColumn = (key: FinanceColumnKey) => {
-    setVisibleColumns(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setVisibleColumns(prev => toggleColumnInSet(prev, key));
   };
 
   const isCol = (key: FinanceColumnKey) => visibleColumns.has(key);
@@ -279,13 +287,7 @@ export default function FinanceDashboard() {
 
   const clientRows = buildClientRows(fyProjects, monthlyByProject, elapsedMonths);
 
-  const statusOrder = (s: string) => {
-    const lower = s?.toLowerCase() || "";
-    if (lower === "active") return 0;
-    if (lower === "closed" || lower === "completed") return 2;
-    return 1;
-  };
-  clientRows.sort((a, b) => statusOrder(a.status) - statusOrder(b.status) || a.client.localeCompare(b.client));
+  clientRows.sort((a, b) => getStatusOrder(a.status) - getStatusOrder(b.status) || a.client.localeCompare(b.client));
 
   const financeSummary = computeFinanceSummary(clientRows, isLoading);
 
