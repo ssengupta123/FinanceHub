@@ -2818,30 +2818,32 @@ Rules:
     return { plannerTasks, bucketNameCache };
   }
 
+  async function fetchGroupMemberNames(planId: string, token: string, cache: Map<string, string>): Promise<void> {
+    const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!planRes.ok) return;
+    const planData = await planRes.json() as { owner?: string };
+    if (!planData.owner) return;
+    const membersRes = await fetch(`https://graph.microsoft.com/v1.0/groups/${planData.owner}/members?$select=id,displayName,mail&$top=999`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!membersRes.ok) {
+      console.warn(`[Planner Sync] Could not fetch group members (status ${membersRes.status}), falling back to individual lookups`);
+      return;
+    }
+    const membersData = await membersRes.json() as { value: { id: string; displayName?: string; mail?: string }[] };
+    for (const m of membersData.value || []) {
+      if (m.id && m.displayName) cache.set(m.id, m.displayName);
+    }
+    console.log(`[Planner Sync] Resolved ${membersData.value?.length || 0} group members for user name lookups`);
+  }
+
   async function resolveUserNames(plannerTasks: any[], planId: string, token: string): Promise<Map<string, string>> {
     const userIdCache = extractInitialUserCache(plannerTasks);
 
     try {
-      const planRes = await fetch(`https://graph.microsoft.com/v1.0/planner/plans/${planId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (planRes.ok) {
-        const planData = await planRes.json() as { owner?: string };
-        if (planData.owner) {
-          const membersRes = await fetch(`https://graph.microsoft.com/v1.0/groups/${planData.owner}/members?$select=id,displayName,mail&$top=999`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (membersRes.ok) {
-            const membersData = await membersRes.json() as { value: { id: string; displayName?: string; mail?: string }[] };
-            for (const m of membersData.value || []) {
-              if (m.id && m.displayName) userIdCache.set(m.id, m.displayName);
-            }
-            console.log(`[Planner Sync] Resolved ${membersData.value?.length || 0} group members for user name lookups`);
-          } else {
-            console.warn(`[Planner Sync] Could not fetch group members (status ${membersRes.status}), falling back to individual lookups`);
-          }
-        }
-      }
+      await fetchGroupMemberNames(planId, token, userIdCache);
     } catch (groupErr: any) {
       console.warn("[Planner Sync] Group members lookup failed:", groupErr.message);
     }
@@ -2884,6 +2886,40 @@ Rules:
     }
   }
 
+  function findExistingPlannerTask(rec: any, existingByExtId: Map<string, any>, existingWithoutExtId: any[]): any | null {
+    const byExt = existingByExtId.get(rec.extId);
+    if (byExt) return byExt;
+    const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
+    if (nameMatch) {
+      existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
+      return nameMatch;
+    }
+    return null;
+  }
+
+  async function updateExistingPlannerTask(pt: any, rec: any, existing: any, resolveUserName: (uid: string) => string): Promise<{ wasCompleted: boolean; completedInfo?: any; wasUpdated: boolean; changes: string[] }> {
+    const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
+    if (syncResult.needsUpdate) {
+      await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
+    }
+    return { wasCompleted: syncResult.wasCompleted, completedInfo: syncResult.completedInfo, wasUpdated: syncResult.needsUpdate && syncResult.changes.length > 0, changes: syncResult.changes };
+  }
+
+  async function createNewPlannerTask(rec: any, reportId: number, sortOrder: number): Promise<void> {
+    await storage.createVatPlannerTask({
+      vatReportId: reportId,
+      bucketName: rec.bucketName,
+      taskName: rec.taskName,
+      progress: rec.progress,
+      dueDate: rec.dueDate,
+      priority: rec.priority,
+      assignedTo: rec.assignedTo,
+      labels: rec.progress === "Completed" ? "GREEN" : "AMBER",
+      sortOrder,
+      externalId: rec.extId,
+    });
+  }
+
   async function syncPlannerTasks(
     plannerTasks: any[],
     reportId: number,
@@ -2908,41 +2944,14 @@ Rules:
       const rec = buildPlannerTaskRecord(pt, bucketNameCache, resolveUserName);
       seenExtIds.add(rec.extId);
 
-      let existing = existingByExtId.get(rec.extId);
-      if (!existing) {
-        const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
-        if (nameMatch) {
-          existing = nameMatch;
-          existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
-        }
-      }
+      const existing = findExistingPlannerTask(rec, existingByExtId, existingWithoutExtId);
 
       if (existing) {
-        const syncResult = buildPlannerSyncResult(pt, rec, existing, resolveUserName);
-        if (syncResult.wasCompleted) {
-          newlyCompletedCount++;
-          newlyCompletedTasks.push(syncResult.completedInfo!);
-        }
-        if (syncResult.needsUpdate) {
-          await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
-          if (syncResult.changes.length > 0) {
-            updatedCount++;
-            updatedTasks.push({ title: rec.taskName, changes: syncResult.changes });
-          }
-        }
+        const result = await updateExistingPlannerTask(pt, rec, existing, resolveUserName);
+        if (result.wasCompleted) { newlyCompletedCount++; newlyCompletedTasks.push(result.completedInfo!); }
+        if (result.wasUpdated) { updatedCount++; updatedTasks.push({ title: rec.taskName, changes: result.changes }); }
       } else {
-        await storage.createVatPlannerTask({
-          vatReportId: reportId,
-          bucketName: rec.bucketName,
-          taskName: rec.taskName,
-          progress: rec.progress,
-          dueDate: rec.dueDate,
-          priority: rec.priority,
-          assignedTo: rec.assignedTo,
-          labels: rec.progress === "Completed" ? "GREEN" : "AMBER",
-          sortOrder: synced,
-          externalId: rec.extId,
-        });
+        await createNewPlannerTask(rec, reportId, synced);
         newCount++;
         newTasks.push({ title: rec.taskName, dueDate: rec.dueDate });
       }
@@ -2992,6 +3001,28 @@ Rules:
     }
   }
 
+  async function buildEmployeeNameMap(): Promise<Map<string, string>> {
+    const allEmployees = await storage.getEmployees();
+    const map = new Map<string, string>();
+    for (const emp of allEmployees) {
+      const fullName = `${emp.firstName} ${emp.lastName}`.trim();
+      if (fullName) map.set(fullName.toLowerCase(), fullName);
+    }
+    return map;
+  }
+
+  async function removeOrphanedTasks(existingByExtId: Map<string, any>, seenExtIds: Set<string>): Promise<{ removedCount: number; removedTasks: string[] }> {
+    let removedCount = 0;
+    const removedTasks: string[] = [];
+    for (const [extId, task] of Array.from(existingByExtId.entries())) {
+      if (seenExtIds.has(extId)) continue;
+      removedTasks.push(task.taskName || "Untitled");
+      await storage.deleteVatPlannerTask(task.id);
+      removedCount++;
+    }
+    return { removedCount, removedTasks };
+  }
+
   // ─── Microsoft Planner Sync ───
   app.post("/api/vat-reports/:reportId/planner/sync", requirePermission("vat_reports", "edit"), async (req, res) => {
     try {
@@ -3021,21 +3052,13 @@ Rules:
 
       const userIdCache = await resolveUserNames(plannerTasks, planId, graphToken);
 
-      const allEmployees = await storage.getEmployees();
-      const employeeByName = new Map<string, string>();
-      for (const emp of allEmployees) {
-        const fullName = `${emp.firstName} ${emp.lastName}`.trim();
-        if (fullName) employeeByName.set(fullName.toLowerCase(), fullName);
-      }
+      const employeeByName = await buildEmployeeNameMap();
 
       const resolveUserName = (userId: string): string => {
         if (!userId) return "Unknown";
         const cached = userIdCache.get(userId);
-        if (cached && cached !== userId) {
-          const empMatch = employeeByName.get(cached.toLowerCase());
-          return empMatch || cached;
-        }
-        return cached || userId;
+        if (!cached || cached === userId) return cached || userId;
+        return employeeByName.get(cached.toLowerCase()) || cached;
       };
 
       const syncResult = await syncPlannerTasks(plannerTasks, reportId, bucketNameCache, resolveUserName, existingByExtId, existingWithoutExtId);
@@ -3044,15 +3067,7 @@ Rules:
       fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
       const recentCompletedInLast4Weeks = findRecentlyCompletedTasks(plannerTasks, fourWeeksAgo, resolveUserName);
 
-      let removedCount = 0;
-      const removedTasks: string[] = [];
-      for (const [extId, task] of Array.from(existingByExtId.entries())) {
-        if (!syncResult.seenExtIds.has(extId)) {
-          removedTasks.push(task.taskName || "Untitled");
-          await storage.deleteVatPlannerTask(task.id);
-          removedCount++;
-        }
-      }
+      const { removedCount, removedTasks } = await removeOrphanedTasks(existingByExtId, syncResult.seenExtIds);
 
       const insights = buildPlannerSyncInsights({
         newlyCompletedCount: syncResult.newlyCompletedCount,
@@ -3063,7 +3078,8 @@ Rules:
       });
 
       let aiSummary = "";
-      const hasChanges = syncResult.newCount > 0 || syncResult.updatedCount > 0 || syncResult.newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0;
+      const changeCounts = [syncResult.newCount, syncResult.updatedCount, syncResult.newlyCompletedCount, removedCount, recentCompletedInLast4Weeks.length];
+      const hasChanges = changeCounts.some(c => c > 0);
       if (hasChanges) {
         const bucketGroups = buildPlannerBucketGroups(plannerTasks, bucketNameCache, resolveUserName);
         aiSummary = await generatePlannerAiSummary({

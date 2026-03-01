@@ -219,12 +219,26 @@ function getMarginStatusText(scenarioResults: ReturnType<typeof computeScenarioR
   return `${gapText} below target`;
 }
 
+function ScenarioMetricValue({ isLoading, value, fallback, testId, className, skeletonWidth = "w-24" }: Readonly<{
+  isLoading: boolean;
+  value: string;
+  fallback: string;
+  testId: string;
+  className?: string;
+  skeletonWidth?: string;
+}>) {
+  if (isLoading) return <Skeleton className={`h-8 ${skeletonWidth}`} />;
+  return <div className={`text-2xl font-bold ${className || ""}`} data-testid={testId}>{value || fallback}</div>;
+}
+
 function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginGoal }: Readonly<{
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   isLoading: boolean;
   revenueGoal: number;
   marginGoal: number;
 }>) {
+  const meetsGoal = scenarioResults?.meetsRevenueGoal;
+  const gapClass = meetsGoal ? "text-green-600 dark:text-green-400" : "";
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <Card>
@@ -233,11 +247,7 @@ function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginG
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-8 w-24" /> : (
-            <div className="text-2xl font-bold" data-testid="text-weighted-revenue">
-              {scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}
-            </div>
-          )}
+          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.totalRev) : ""} fallback="$0" testId="text-weighted-revenue" />
           <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
         </CardContent>
       </Card>
@@ -247,26 +257,18 @@ function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginG
           <Target className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-8 w-16" /> : (
-            <div className="text-2xl font-bold" data-testid="text-weighted-margin">
-              {scenarioResults ? formatPercent(scenarioResults.totalMargin) : "0%"}
-            </div>
-          )}
+          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatPercent(scenarioResults.totalMargin) : ""} fallback="0%" testId="text-weighted-margin" skeletonWidth="w-16" />
           <p className="text-xs text-muted-foreground">Goal: {marginGoal}%</p>
         </CardContent>
       </Card>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Revenue Gap</CardTitle>
-          {scenarioResults?.meetsRevenueGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
+          {meetsGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-8 w-24" /> : (
-            <div className={`text-2xl font-bold ${scenarioResults?.meetsRevenueGoal ? "text-green-600 dark:text-green-400" : ""}`} data-testid="text-revenue-gap">
-              {scenarioResults ? formatCurrency(scenarioResults.revenueGap) : "$0"}
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">{scenarioResults?.meetsRevenueGoal ? "Exceeds goal" : "Below target"}</p>
+          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.revenueGap) : ""} fallback="$0" testId="text-revenue-gap" className={gapClass} />
+          <p className="text-xs text-muted-foreground">{meetsGoal ? "Exceeds goal" : "Below target"}</p>
         </CardContent>
       </Card>
       <Card>
@@ -275,11 +277,7 @@ function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginG
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-8 w-24" /> : (
-            <div className="text-2xl font-bold" data-testid="text-gross-profit">
-              {scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}
-            </div>
-          )}
+          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.totalGP) : ""} fallback="$0" testId="text-gross-profit" />
           <p className="text-xs text-muted-foreground">{getMarginStatusText(scenarioResults)}</p>
         </CardContent>
       </Card>
@@ -344,6 +342,178 @@ function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marg
   );
 }
 
+function formatFyLabel(fy: string): string {
+  return fy === "open_opps" ? "Open Opps" : `FY ${fy}`;
+}
+
+function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading }: Readonly<{
+  scenarioResults: ReturnType<typeof computeScenarioResults>;
+  winRates: Record<string, number>;
+  isLoading: boolean;
+}>) {
+  if (isLoading) return <Skeleton className="h-60 w-full" />;
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Classification</TableHead>
+            <TableHead>Risk</TableHead>
+            <TableHead className="text-right">Opps</TableHead>
+            <TableHead className="text-right">Win Rate</TableHead>
+            <TableHead className="text-right">Raw Revenue</TableHead>
+            <TableHead className="text-right">Weighted Revenue</TableHead>
+            <TableHead className="text-right">Weighted GP</TableHead>
+            <TableHead className="text-right">GM %</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {CLASSIFICATIONS.map(cls => {
+            const b = scenarioResults?.classBreakdown[cls];
+            const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
+            return (
+              <TableRow key={cls} data-testid={`row-scenario-${cls}`}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{cls}</Badge>
+                    <span className="text-sm">{CLASS_LABELS[cls]}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
+                </TableCell>
+                <TableCell className="text-right">{b?.count || 0}</TableCell>
+                <TableCell className="text-right">{winRates[cls]}%</TableCell>
+                <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
+                <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
+                <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
+                <TableCell className="text-right">{formatPercent(margin)}</TableCell>
+              </TableRow>
+            );
+          })}
+          <TableRow className="font-bold border-t-2">
+            <TableCell>Total</TableCell>
+            <TableCell />
+            <TableCell className="text-right">{scenarioResults?.pipelineCount || 0}</TableCell>
+            <TableCell />
+            <TableCell className="text-right text-muted-foreground">
+              {scenarioResults ? formatCurrency(Object.values(scenarioResults.classBreakdown).reduce((s, b) => s + b.rawRevenue, 0)) : "$0"}
+            </TableCell>
+            <TableCell className="text-right">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
+            <TableCell className="text-right">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
+            <TableCell className="text-right">{scenarioResults ? formatPercent(scenarioResults.totalMargin) : "0%"}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function MonthlyForecastTable({ scenarioResults, revenueGoal, selectedFY, isLoading }: Readonly<{
+  scenarioResults: ReturnType<typeof computeScenarioResults>;
+  revenueGoal: number;
+  selectedFY: string;
+  isLoading: boolean;
+}>) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Monthly Forecast — {formatFyLabel(selectedFY)} (Cumulative Weighted Revenue)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? <Skeleton className="h-40 w-full" /> : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[140px]">Measure</TableHead>
+                  {FY_MONTHS.map(m => (
+                    <TableHead key={m} className="text-right min-w-[80px]">{m}</TableHead>
+                  ))}
+                  <TableHead className="text-right min-w-[90px]">FY Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="font-medium">Monthly Revenue</TableCell>
+                  {scenarioResults?.monthlyRevenue.map((v, i) => (
+                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Cumulative Revenue</TableCell>
+                  {scenarioResults?.cumulativeRev.map((v, i) => (
+                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Monthly GP</TableCell>
+                  {scenarioResults?.monthlyGP.map((v, i) => (
+                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
+                </TableRow>
+                <TableRow className="border-t">
+                  <TableCell className="font-medium">Goal</TableCell>
+                  {FY_MONTHS.map((month, i) => (
+                    <TableCell key={month} className="text-right text-sm text-muted-foreground">{formatCurrency(revenueGoal / 12 * (i + 1))}</TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium text-muted-foreground">{formatCurrency(revenueGoal)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SavedScenariosTable({ scenarios }: Readonly<{ scenarios: Scenario[] }>) {
+  if (scenarios.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Saved Scenarios</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>FY</TableHead>
+              <TableHead className="text-right">Revenue Goal</TableHead>
+              <TableHead className="text-right">Margin Goal</TableHead>
+              <TableHead className="text-right">Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {scenarios.map(s => (
+              <TableRow key={s.id} data-testid={`row-scenario-saved-${s.id}`}>
+                <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell>{s.fyYear}</TableCell>
+                <TableCell className="text-right">{s.revenueGoal ? formatCurrency(Number.parseFloat(s.revenueGoal)) : "-"}</TableCell>
+                <TableCell className="text-right">{s.marginGoalPercent ? `${s.marginGoalPercent}%` : "-"}</TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">
+                  {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "-"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const WIN_RATE_PRESETS: Record<string, Record<string, number>> = {
+  conservative: { C: 100, S: 60, DVF: 30, DF: 15, Q: 5, A: 0 },
+  base: { ...DEFAULT_WIN_RATES },
+  optimistic: { C: 100, S: 90, DVF: 70, DF: 50, Q: 30, A: 10 },
+};
+
 export default function Scenarios() {
   const { toast } = useToast();
   const { can } = useAuth();
@@ -378,7 +548,6 @@ export default function Scenarios() {
 
   const filteredPipeline = useMemo(() => {
     if (!pipeline) return [];
-    if (selectedFY === "open_opps") return pipeline.filter(o => o.fyYear === "open_opps");
     return pipeline.filter(o => o.fyYear === selectedFY);
   }, [pipeline, selectedFY]);
 
@@ -398,17 +567,8 @@ export default function Scenarios() {
   const isLoading = loadingPipeline || loadingScenarios;
 
   const applyPreset = (preset: string) => {
-    switch (preset) {
-      case "conservative":
-        setWinRates({ C: 100, S: 60, DVF: 30, DF: 15, Q: 5, A: 0 });
-        break;
-      case "base":
-        setWinRates({ ...DEFAULT_WIN_RATES });
-        break;
-      case "optimistic":
-        setWinRates({ C: 100, S: 90, DVF: 70, DF: 50, Q: 30, A: 10 });
-        break;
-    }
+    const rates = WIN_RATE_PRESETS[preset];
+    if (rates) setWinRates({ ...rates });
   };
 
   return (
@@ -418,7 +578,7 @@ export default function Scenarios() {
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
             Sales Pipeline Financial Forecast
-            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${selectedFY === "open_opps" ? "Open Opps" : "FY ".concat(selectedFY)}`}
+            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${formatFyLabel(selectedFY)}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -430,7 +590,7 @@ export default function Scenarios() {
               </SelectTrigger>
               <SelectContent>
                 {availableFYs.map(fy => (
-                  <SelectItem key={fy} value={fy}>{fy === "open_opps" ? "Open Opps" : `FY ${fy}`}</SelectItem>
+                  <SelectItem key={fy} value={fy}>{formatFyLabel(fy)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -484,155 +644,14 @@ export default function Scenarios() {
             <CardTitle className="text-base">What-If by Risk Rating</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-60 w-full" />
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Classification</TableHead>
-                      <TableHead>Risk</TableHead>
-                      <TableHead className="text-right">Opps</TableHead>
-                      <TableHead className="text-right">Win Rate</TableHead>
-                      <TableHead className="text-right">Raw Revenue</TableHead>
-                      <TableHead className="text-right">Weighted Revenue</TableHead>
-                      <TableHead className="text-right">Weighted GP</TableHead>
-                      <TableHead className="text-right">GM %</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {CLASSIFICATIONS.map(cls => {
-                      const b = scenarioResults?.classBreakdown[cls];
-                      const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
-                      return (
-                        <TableRow key={cls} data-testid={`row-scenario-${cls}`}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">{cls}</Badge>
-                              <span className="text-sm">{CLASS_LABELS[cls]}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
-                          </TableCell>
-                          <TableCell className="text-right">{b?.count || 0}</TableCell>
-                          <TableCell className="text-right">{winRates[cls]}%</TableCell>
-                          <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
-                          <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
-                          <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
-                          <TableCell className="text-right">{formatPercent(margin)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    <TableRow className="font-bold border-t-2">
-                      <TableCell>Total</TableCell>
-                      <TableCell />
-                      <TableCell className="text-right">{scenarioResults?.pipelineCount || 0}</TableCell>
-                      <TableCell />
-                      <TableCell className="text-right text-muted-foreground">
-                        {scenarioResults ? formatCurrency(Object.values(scenarioResults.classBreakdown).reduce((s, b) => s + b.rawRevenue, 0)) : "$0"}
-                      </TableCell>
-                      <TableCell className="text-right">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
-                      <TableCell className="text-right">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
-                      <TableCell className="text-right">{scenarioResults ? formatPercent(scenarioResults.totalMargin) : "0%"}</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} />
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Monthly Forecast — {selectedFY === "open_opps" ? "Open Opps" : `FY ${selectedFY}`} (Cumulative Weighted Revenue)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[140px]">Measure</TableHead>
-                    {FY_MONTHS.map(m => (
-                      <TableHead key={m} className="text-right min-w-[80px]">{m}</TableHead>
-                    ))}
-                    <TableHead className="text-right min-w-[90px]">FY Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium">Monthly Revenue</TableCell>
-                    {scenarioResults?.monthlyRevenue.map((v, i) => (
-                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
-                    ))}
-                    <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium">Cumulative Revenue</TableCell>
-                    {scenarioResults?.cumulativeRev.map((v, i) => (
-                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
-                    ))}
-                    <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium">Monthly GP</TableCell>
-                    {scenarioResults?.monthlyGP.map((v, i) => (
-                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
-                    ))}
-                    <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
-                  </TableRow>
-                  <TableRow className="border-t">
-                    <TableCell className="font-medium">Goal</TableCell>
-                    {FY_MONTHS.map((month, i) => (
-                      <TableCell key={month} className="text-right text-sm text-muted-foreground">{formatCurrency(revenueGoal / 12 * (i + 1))}</TableCell>
-                    ))}
-                    <TableCell className="text-right font-medium text-muted-foreground">{formatCurrency(revenueGoal)}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <MonthlyForecastTable scenarioResults={scenarioResults} revenueGoal={revenueGoal} selectedFY={selectedFY} isLoading={isLoading} />
 
-      {scenarios && scenarios.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Saved Scenarios</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>FY</TableHead>
-                  <TableHead className="text-right">Revenue Goal</TableHead>
-                  <TableHead className="text-right">Margin Goal</TableHead>
-                  <TableHead className="text-right">Created</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {scenarios.map(s => (
-                  <TableRow key={s.id} data-testid={`row-scenario-saved-${s.id}`}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell>{s.fyYear}</TableCell>
-                    <TableCell className="text-right">{s.revenueGoal ? formatCurrency(Number.parseFloat(s.revenueGoal)) : "-"}</TableCell>
-                    <TableCell className="text-right">{s.marginGoalPercent ? `${s.marginGoalPercent}%` : "-"}</TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">
-                      {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      {scenarios && <SavedScenariosTable scenarios={scenarios} />}
     </div>
   );
 }

@@ -197,6 +197,137 @@ function CreateUserAccountForm({ emp, createUserForm, setCreateUserForm, createU
   );
 }
 
+function LinkedUserPopover({ emp, linkPopoverId, setLinkPopoverId, isAdmin, can, changeRoleMutation, linkUserMutation, allUsers, linkedUserIds }: Readonly<{
+  emp: Employee;
+  linkPopoverId: number | null;
+  setLinkPopoverId: (id: number | null) => void;
+  isAdmin: boolean;
+  can: (resource: string, action: string) => boolean;
+  changeRoleMutation: { mutate: (data: { userId: number; role: string }) => void };
+  linkUserMutation: { mutate: (data: { employeeId: number; userId: number | null }) => void };
+  allUsers: any[] | undefined;
+  linkedUserIds: Set<number>;
+}>) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => setLinkPopoverId(open ? emp.id : null)}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="gap-1 px-2" data-testid={`button-edit-link-${emp.id}`}>
+            <Badge variant="outline" className="capitalize" data-testid={`badge-approle-${emp.id}`}>{(emp.linkedUserRole && ROLE_LABELS[emp.linkedUserRole]) || emp.linkedUserRole}</Badge>
+            {can("resources", "edit") && <Link2 className="h-3 w-3 text-muted-foreground" />}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-3" align="start">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium">Linked Account</p>
+              <p className="text-xs text-muted-foreground">{emp.linkedUserName}</p>
+            </div>
+            {isAdmin && (
+              <div className="space-y-1">
+                <Label className="text-xs">Change Role</Label>
+                <Select
+                  value={emp.linkedUserRole || "employee"}
+                  onValueChange={(v) => {
+                    if (emp.userId) changeRoleMutation.mutate({ userId: emp.userId, role: v });
+                  }}
+                >
+                  <SelectTrigger data-testid={`select-change-role-${emp.id}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {APP_ROLES.map(r => (
+                      <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {can("resources", "edit") && (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-xs">Switch User</Label>
+                  <Select
+                    value={String(emp.userId || "")}
+                    onValueChange={(v) => {
+                      linkUserMutation.mutate({ employeeId: emp.id, userId: v ? Number(v) : null });
+                    }}
+                  >
+                    <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
+                      <SelectValue placeholder="Select user" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allUsers?.filter(u => u.id === emp.userId || !linkedUserIds.has(u.id)).map(u => (
+                        <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({ROLE_LABELS[u.role] || u.role})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button variant="destructive" size="sm" className="w-full" onClick={() => linkUserMutation.mutate({ employeeId: emp.id, userId: null })} data-testid={`button-unlink-${emp.id}`}>
+                  <Unlink className="h-3 w-3 mr-1" /> Unlink User
+                </Button>
+              </>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function AssignRolePopover({ emp, linkPopoverId, setLinkPopoverId, setCreateUserForm, isAdmin, linkUserMutation, allUsers, linkedUserIds, createUserForm, createUserMutation }: Readonly<{
+  emp: Employee;
+  linkPopoverId: number | null;
+  setLinkPopoverId: (id: number | null) => void;
+  setCreateUserForm: (fn: (prev: { username: string; role: string }) => { username: string; role: string }) => void;
+  isAdmin: boolean;
+  linkUserMutation: { mutate: (data: { employeeId: number; userId: number | null }) => void };
+  allUsers: any[] | undefined;
+  linkedUserIds: Set<number>;
+  createUserForm: { username: string; role: string };
+  createUserMutation: { mutate: (data: { employeeId: number; username: string; role: string }) => void; isPending: boolean };
+}>) {
+  return (
+    <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => {
+      setLinkPopoverId(open ? emp.id : null);
+      if (open) setCreateUserForm(() => ({ username: `${emp.firstName}.${emp.lastName}`.toLowerCase().replaceAll(/\s/g, ""), role: "employee" }));
+    }}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid={`button-link-user-${emp.id}`}>
+          <Link2 className="h-3 w-3 mr-1" /> Assign Role
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-3" align="start">
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Assign User Account</p>
+          {allUsers?.some(u => !linkedUserIds.has(u.id)) && (
+            <div className="space-y-1">
+              <Label className="text-xs">Link Existing User</Label>
+              <Select
+                onValueChange={(v) => {
+                  linkUserMutation.mutate({ employeeId: emp.id, userId: Number(v) });
+                }}
+              >
+                <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
+                  <SelectValue placeholder="Select existing user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allUsers.filter(u => !linkedUserIds.has(u.id)).map(u => (
+                    <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({ROLE_LABELS[u.role] || u.role})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {isAdmin && (
+            <CreateUserAccountForm emp={emp} createUserForm={createUserForm} setCreateUserForm={setCreateUserForm} createUserMutation={createUserMutation} />
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function Resources() {
   const { toast } = useToast();
   const { can, isAdmin } = useAuth();
@@ -675,117 +806,13 @@ export default function Resources() {
                       {isCol("name") && <TableCell data-testid={`text-employee-name-${emp.id}`} className="whitespace-nowrap">{emp.firstName} {emp.lastName}</TableCell>}
                       {isCol("role") && <TableCell data-testid={`text-employee-role-${emp.id}`}>{emp.role || "--"}</TableCell>}
                       {isCol("appRole") && <TableCell data-testid={`text-employee-approle-${emp.id}`}>
-                        {(() => {
-                          if (emp.linkedUserRole) {
-                            return (
-                              <div className="flex items-center gap-1.5">
-                                <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => setLinkPopoverId(open ? emp.id : null)}>
-                                  <PopoverTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="gap-1 px-2" data-testid={`button-edit-link-${emp.id}`}>
-                                      <Badge variant="outline" className="capitalize" data-testid={`badge-approle-${emp.id}`}>{ROLE_LABELS[emp.linkedUserRole] || emp.linkedUserRole}</Badge>
-                                      {can("resources", "edit") && <Link2 className="h-3 w-3 text-muted-foreground" />}
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-72 p-3" align="start">
-                                    <div className="space-y-3">
-                                      <div>
-                                        <p className="text-sm font-medium">Linked Account</p>
-                                        <p className="text-xs text-muted-foreground">{emp.linkedUserName}</p>
-                                      </div>
-                                      {isAdmin && (
-                                        <div className="space-y-1">
-                                          <Label className="text-xs">Change Role</Label>
-                                          <Select
-                                            value={emp.linkedUserRole || "employee"}
-                                            onValueChange={(v) => {
-                                              if (emp.userId) changeRoleMutation.mutate({ userId: emp.userId, role: v });
-                                            }}
-                                          >
-                                            <SelectTrigger data-testid={`select-change-role-${emp.id}`}>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {APP_ROLES.map(r => (
-                                                <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                      )}
-                                      {can("resources", "edit") && (
-                                        <>
-                                          <div className="space-y-1">
-                                            <Label className="text-xs">Switch User</Label>
-                                            <Select
-                                              value={String(emp.userId || "")}
-                                              onValueChange={(v) => {
-                                                linkUserMutation.mutate({ employeeId: emp.id, userId: v ? Number(v) : null });
-                                              }}
-                                            >
-                                              <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
-                                                <SelectValue placeholder="Select user" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {allUsers?.filter(u => u.id === emp.userId || !linkedUserIds.has(u.id)).map(u => (
-                                                  <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({ROLE_LABELS[u.role] || u.role})</SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <Button variant="destructive" size="sm" className="w-full" onClick={() => linkUserMutation.mutate({ employeeId: emp.id, userId: null })} data-testid={`button-unlink-${emp.id}`}>
-                                            <Unlink className="h-3 w-3 mr-1" /> Unlink User
-                                          </Button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            );
-                          }
-                          if (can("resources", "edit")) {
-                            return (
-                              <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => {
-                                setLinkPopoverId(open ? emp.id : null);
-                                if (open) setCreateUserForm({ username: `${emp.firstName}.${emp.lastName}`.toLowerCase().replaceAll(/\s/g, ""), role: "employee" });
-                              }}>
-                                <PopoverTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid={`button-link-user-${emp.id}`}>
-                                    <Link2 className="h-3 w-3 mr-1" /> Assign Role
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-72 p-3" align="start">
-                                  <div className="space-y-3">
-                                    <p className="text-sm font-medium">Assign User Account</p>
-                                    {allUsers?.some(u => !linkedUserIds.has(u.id)) && (
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Link Existing User</Label>
-                                        <Select
-                                          onValueChange={(v) => {
-                                            linkUserMutation.mutate({ employeeId: emp.id, userId: Number(v) });
-                                          }}
-                                        >
-                                          <SelectTrigger data-testid={`select-link-user-${emp.id}`}>
-                                            <SelectValue placeholder="Select existing user" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {allUsers.filter(u => !linkedUserIds.has(u.id)).map(u => (
-                                              <SelectItem key={u.id} value={String(u.id)}>{u.displayName || u.username} ({ROLE_LABELS[u.role] || u.role})</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    )}
-                                    {isAdmin && (
-                                      <CreateUserAccountForm emp={emp} createUserForm={createUserForm} setCreateUserForm={setCreateUserForm} createUserMutation={createUserMutation} />
-                                    )}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                            );
-                          }
-                          return <span className="text-muted-foreground">--</span>;
-                        })()}
+                        {emp.linkedUserRole ? (
+                          <LinkedUserPopover emp={emp} linkPopoverId={linkPopoverId} setLinkPopoverId={setLinkPopoverId} isAdmin={isAdmin} can={can} changeRoleMutation={changeRoleMutation} linkUserMutation={linkUserMutation} allUsers={allUsers} linkedUserIds={linkedUserIds} />
+                        ) : can("resources", "edit") ? (
+                          <AssignRolePopover emp={emp} linkPopoverId={linkPopoverId} setLinkPopoverId={setLinkPopoverId} setCreateUserForm={setCreateUserForm} isAdmin={isAdmin} linkUserMutation={linkUserMutation} allUsers={allUsers} linkedUserIds={linkedUserIds} createUserForm={createUserForm} createUserMutation={createUserMutation} />
+                        ) : (
+                          <span className="text-muted-foreground">--</span>
+                        )}
                       </TableCell>}
                       {isCol("costBand") && <TableCell data-testid={`text-employee-costband-${emp.id}`}>{emp.costBandLevel || "--"}</TableCell>}
                       {isCol("staffType") && <TableCell data-testid={`text-employee-stafftype-${emp.id}`}>{emp.staffType || "--"}</TableCell>}

@@ -189,27 +189,33 @@ function computeBillingBreakdown(rows: ClientRow[]) {
   };
 }
 
+function computeGpPercent(revenue: number, cost: number): number {
+  const gp = revenue - cost;
+  return revenue > 0 ? (gp / revenue) * 100 : 0;
+}
+
+function computeRevenueBorder(loading: boolean, totalRevenue: number): string {
+  if (loading) return "";
+  return totalRevenue > 0 ? "border-green-500/50" : "border-red-500/50";
+}
+
 function computeFinanceSummary(clientRows: ClientRow[], loading: boolean) {
   const totalRevenue = clientRows.reduce((s, r) => s + r.ytdRevenue, 0);
   const totalCost = clientRows.reduce((s, r) => s + r.ytdCost, 0);
   const totalGP = totalRevenue - totalCost;
-  const totalGPPercent = totalRevenue > 0 ? (totalGP / totalRevenue) * 100 : 0;
+  const totalGPPercent = computeGpPercent(totalRevenue, totalCost);
   const totalQ1 = clientRows.reduce((s, r) => s + r.q1Rev, 0);
   const totalQ2 = clientRows.reduce((s, r) => s + r.q2Rev, 0);
   const totalQ3 = clientRows.reduce((s, r) => s + r.q3Rev, 0);
   const totalQ4 = clientRows.reduce((s, r) => s + r.q4Rev, 0);
 
-  const vatBreakdown = computeVatBreakdown(clientRows, totalRevenue);
-  const billing = computeBillingBreakdown(clientRows);
-  const revenueCardBorder = loading ? "" : (totalRevenue > 0 ? "border-green-500/50" : "border-red-500/50");
-  const gpMarginCardBorder = computeGpMarginBorder(loading, totalGPPercent);
-
   return {
     totalRevenue, totalCost, totalGP, totalGPPercent,
     totalQ1, totalQ2, totalQ3, totalQ4,
-    vatBreakdown,
-    ...billing,
-    revenueCardBorder, gpMarginCardBorder,
+    vatBreakdown: computeVatBreakdown(clientRows, totalRevenue),
+    ...computeBillingBreakdown(clientRows),
+    revenueCardBorder: computeRevenueBorder(loading, totalRevenue),
+    gpMarginCardBorder: computeGpMarginBorder(loading, totalGPPercent),
   };
 }
 
