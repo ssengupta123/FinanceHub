@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,14 +30,14 @@ interface CostSummary {
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0.00";
+  if (Number.isNaN(n)) return "$0.00";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
 }
 
 function parseNum(val: string | number | null | undefined): number {
   if (!val) return 0;
   const n = typeof val === "string" ? parseFloat(val) : val;
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function categoryVariant(cat: string): "default" | "secondary" | "outline" | "destructive" {
@@ -69,8 +69,8 @@ export default function Costs() {
   const [sortField, setSortField] = useState<SortField>("total_cost");
   const [sortAsc, setSortAsc] = useState(false);
 
-  const { data: costSummary, isLoading: loadingSummary } = useQuery<CostSummary[]>({ queryKey: ["/api/costs/summary"] });
-  const { data: manualCosts, isLoading: loadingManual } = useQuery<Cost[]>({ queryKey: ["/api/costs"] });
+  const { data: costSummary, isLoading } = useQuery<CostSummary[]>({ queryKey: ["/api/costs/summary"] });
+  const { data: manualCosts } = useQuery<Cost[]>({ queryKey: ["/api/costs"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
@@ -80,7 +80,7 @@ export default function Costs() {
     const [yearStr, monStr] = yyyyMm.split("-");
     const year = parseInt(yearStr);
     const mon = parseInt(monStr);
-    if (isNaN(year) || isNaN(mon)) return null;
+    if (Number.isNaN(year) || Number.isNaN(mon)) return null;
     const fyStart = mon >= 7 ? year : year - 1;
     return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
   };
@@ -172,8 +172,6 @@ export default function Costs() {
   function handleSort(field: SortField) {
     if (sortField === field) { setSortAsc(!sortAsc); } else { setSortField(field); setSortAsc(false); }
   }
-
-  const isLoading = loadingSummary;
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -353,9 +351,9 @@ export default function Costs() {
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 8 }).map((_, j) => (<TableCell key={j}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
+                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 8 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-16" /></TableCell>))}</TableRow>
                   ))
-                ) : !filteredSummary.length ? (
+                ) : filteredSummary.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No cost data available. Upload timesheet data first.</TableCell>
                   </TableRow>
@@ -377,7 +375,7 @@ export default function Costs() {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={marginPct >= 20 ? "text-green-600 dark:text-green-400" : marginPct >= 0 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}>
+                          <span className={(() => { if (marginPct >= 20) return "text-green-600 dark:text-green-400"; if (marginPct >= 0) return "text-amber-600 dark:text-amber-400"; return "text-red-600 dark:text-red-400"; })()}>
                             {marginPct.toFixed(1)}%
                           </span>
                         </TableCell>

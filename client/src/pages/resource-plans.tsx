@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Users, Clock, DollarSign, ArrowUpDown } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -32,14 +31,14 @@ interface ResourceAllocation {
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0.00";
+  if (Number.isNaN(n)) return "$0.00";
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(n);
 }
 
 function parseNum(val: string | number | null | undefined): number {
   if (!val) return 0;
   const n = typeof val === "string" ? parseFloat(val) : val;
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 type SortField = "employee_name" | "project_name" | "month" | "total_hours" | "total_cost";
@@ -61,7 +60,7 @@ export default function ResourcePlans() {
   const [sortAsc, setSortAsc] = useState(false);
 
   const { data: allocations, isLoading: loadingAllocations } = useQuery<ResourceAllocation[]>({ queryKey: ["/api/resource-allocations"] });
-  const { data: manualPlans, isLoading: loadingManual } = useQuery<ResourcePlan[]>({ queryKey: ["/api/resource-plans"] });
+  const { data: manualPlans } = useQuery<ResourcePlan[]>({ queryKey: ["/api/resource-plans"] });
   const { data: employees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
@@ -70,7 +69,7 @@ export default function ResourcePlans() {
 
   const availableMonths = useMemo(() => {
     const months = new Set((allocations || []).map(r => r.month));
-    return Array.from(months).sort((a, b) => (a ?? 0) - (b ?? 0)).reverse();
+    return Array.from(months).sort((a, b) => a.localeCompare(b)).reverse();
   }, [allocations]);
 
   const uniqueEmployees = useMemo(() => {
@@ -302,9 +301,9 @@ export default function ResourcePlans() {
               <TableBody>
                 {loadingAllocations ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
+                    <TableRow key={`skeleton-row-${i}`}>{Array.from({ length: 7 }).map((_, j) => (<TableCell key={`skeleton-cell-${j}`}><Skeleton className="h-4 w-20" /></TableCell>))}</TableRow>
                   ))
-                ) : !filtered.length ? (
+                ) : filtered.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No resource allocation data available. Upload timesheet data first.</TableCell>
                   </TableRow>

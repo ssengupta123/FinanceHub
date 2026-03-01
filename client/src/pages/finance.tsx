@@ -27,7 +27,7 @@ import type { Project, ProjectMonthly } from "@shared/schema";
 function formatCurrency(val: string | number | null | undefined): string {
   if (!val) return "$0";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0";
+  if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
   return `$${n.toFixed(0)}`;
@@ -36,7 +36,7 @@ function formatCurrency(val: string | number | null | undefined): string {
 function parseNum(val: string | number | null | undefined): number {
   if (val === null || val === undefined) return 0;
   const n = typeof val === "string" ? parseFloat(val) : val;
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function statusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
@@ -61,6 +61,18 @@ function gpRagColor(gpPercent: number): string {
   if (gpPercent >= 20) return "bg-green-500";
   if (gpPercent >= 10) return "bg-amber-500";
   return "bg-red-500";
+}
+
+function gmColorClass(gm: number): string {
+  if (gm >= 20) return "text-green-600 dark:text-green-400";
+  if (gm >= 10) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function gpPercentColorClass(gpPercent: number): string {
+  if (gpPercent >= 40) return "text-green-600 dark:text-green-400";
+  if (gpPercent >= 20) return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
 }
 
 interface ClientRow {
@@ -237,14 +249,17 @@ export default function FinanceDashboard() {
   const tmRevenue = clientRows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdRevenue, 0);
   const tmCost = clientRows.filter((r) => r.billing === "T&M").reduce((s, r) => s + r.ytdCost, 0);
 
-  const revenueCardBorder = !isLoading && totalRevenue > 0 ? "border-green-500/50" : !isLoading ? "border-red-500/50" : "";
-  const gpMarginCardBorder = !isLoading
-    ? totalGPPercent >= 20
-      ? "border-green-500/50"
-      : totalGPPercent >= 10
-        ? "border-amber-500/50"
-        : "border-red-500/50"
-    : "";
+  let revenueCardBorder = "";
+  if (!isLoading) {
+    revenueCardBorder = totalRevenue > 0 ? "border-green-500/50" : "border-red-500/50";
+  }
+
+  let gpMarginCardBorder = "";
+  if (!isLoading) {
+    if (totalGPPercent >= 20) gpMarginCardBorder = "border-green-500/50";
+    else if (totalGPPercent >= 10) gpMarginCardBorder = "border-amber-500/50";
+    else gpMarginCardBorder = "border-red-500/50";
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -298,7 +313,7 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
 
-          <Card className={!isLoading ? (totalGP > 0 ? "border-green-500/50" : "border-red-500/50") : ""}>
+          <Card className={isLoading ? "" : totalGP > 0 ? "border-green-500/50" : "border-red-500/50"}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -356,21 +371,21 @@ export default function FinanceDashboard() {
                     <TableRow>
                       <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Revenue</TableCell>
                       {monthlySnapshot.map((d, i) => (
-                        <TableCell key={i} className="text-right text-xs">{formatCurrency(d.revenue)}</TableCell>
+                        <TableCell key={FY_MONTHS[i]} className="text-right text-xs">{formatCurrency(d.revenue)}</TableCell>
                       ))}
                       <TableCell className="text-right text-xs font-bold">{formatCurrency(monthlySnapshot.reduce((s, d) => s + d.revenue, 0))}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Cost</TableCell>
                       {monthlySnapshot.map((d, i) => (
-                        <TableCell key={i} className="text-right text-xs">{formatCurrency(d.cost)}</TableCell>
+                        <TableCell key={FY_MONTHS[i]} className="text-right text-xs">{formatCurrency(d.cost)}</TableCell>
                       ))}
                       <TableCell className="text-right text-xs font-bold">{formatCurrency(monthlySnapshot.reduce((s, d) => s + d.cost, 0))}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">Profit</TableCell>
                       {monthlySnapshot.map((d, i) => (
-                        <TableCell key={i} className={`text-right text-xs font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
+                        <TableCell key={FY_MONTHS[i]} className={`text-right text-xs font-medium ${d.profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(d.profit)}</TableCell>
                       ))}
                       {(() => { const tot = monthlySnapshot.reduce((s, d) => s + d.profit, 0); return (
                         <TableCell className={`text-right text-xs font-bold ${tot >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{formatCurrency(tot)}</TableCell>
@@ -379,7 +394,7 @@ export default function FinanceDashboard() {
                     <TableRow>
                       <TableCell className="font-medium text-xs sticky left-0 bg-background z-10">GM%</TableCell>
                       {monthlySnapshot.map((d, i) => (
-                        <TableCell key={i} className={`text-right text-xs font-medium ${d.gm >= 20 ? "text-green-600 dark:text-green-400" : d.gm >= 10 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>{d.revenue > 0 ? `${d.gm.toFixed(1)}%` : "-"}</TableCell>
+                        <TableCell key={FY_MONTHS[i]} className={`text-right text-xs font-medium ${gmColorClass(d.gm)}`}>{d.revenue > 0 ? `${d.gm.toFixed(1)}%` : "-"}</TableCell>
                       ))}
                       <TableCell className="text-right text-xs font-bold">{totalGPPercent.toFixed(1)}%</TableCell>
                     </TableRow>
@@ -398,8 +413,8 @@ export default function FinanceDashboard() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                Array.from({ length: 6 }, (_, i) => (
+                  <Skeleton key={`skel-vat-${String(i)}`} className="h-8 w-full mb-2" />
                 ))
               ) : (
                 <div className="space-y-3">
@@ -444,8 +459,8 @@ export default function FinanceDashboard() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-8 w-full mb-2" />
+                Array.from({ length: 4 }, (_, i) => (
+                  <Skeleton key={`skel-billing-${String(i)}`} className="h-8 w-full mb-2" />
                 ))
               ) : (
                 <div className="space-y-4">
@@ -549,8 +564,8 @@ export default function FinanceDashboard() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full mb-2" />
+              Array.from({ length: 5 }, (_, i) => (
+                <Skeleton key={`skel-client-${String(i)}`} className="h-10 w-full mb-2" />
               ))
             ) : clientRows.length === 0 ? (
               <p className="text-sm text-muted-foreground" data-testid="text-no-data">
@@ -654,7 +669,7 @@ export default function FinanceDashboard() {
                         )}
                         {isCol("gpPercent") && (
                           <TableCell
-                            className={`text-right font-medium ${row.gpPercent >= 40 ? "text-green-600 dark:text-green-400" : row.gpPercent >= 20 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}
+                            className={`text-right font-medium ${gpPercentColorClass(row.gpPercent)}`}
                             data-testid={`text-gp-percent-${row.projectId}`}
                           >
                             <span className="inline-flex items-center gap-1.5 justify-end">

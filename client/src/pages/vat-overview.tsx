@@ -108,7 +108,7 @@ interface VatCardProps {
   pipelineOpps: PipelineOpp[];
 }
 
-function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQuarterIndex, pipelineOpps }: VatCardProps) {
+function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQuarterIndex, pipelineOpps }: Readonly<VatCardProps>) {
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [whatIf, setWhatIf] = useState<WhatIfConfig>({
     enabled: { DVF: false, Q: false, A: false },
@@ -308,7 +308,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
 
         <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
           {vatData.actuals.map((q, i) => (
-            <div key={i} className={`p-2 rounded ${i <= currentQuarterIndex ? "bg-muted" : "bg-muted/30 opacity-60"}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
+            <div key={q.quarter} className={`p-2 rounded ${i <= currentQuarterIndex ? "bg-muted" : "bg-muted/30 opacity-60"}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
               <div className="font-medium">{QUARTER_LABELS[i]?.split(" ")[0]}</div>
               <div>Rev: {formatDollars(q.revenue)}</div>
               <div>GM: {formatDollars(q.gmContribution)}</div>
@@ -475,7 +475,7 @@ export default function VatOverview() {
           <p className="text-muted-foreground text-sm">Cumulative YTD performance vs targets by VAT</p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={selectedMetric} onValueChange={(v) => setSelectedMetric(v as any)}>
+          <Select value={selectedMetric} onValueChange={(v) => setSelectedMetric(v as "gm_contribution" | "revenue" | "gm_percent")}>
             <SelectTrigger className="w-[180px]" data-testid="select-metric">
               <SelectValue />
             </SelectTrigger>
@@ -533,7 +533,7 @@ export default function VatOverview() {
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i}>
+            <Card key={`vat-skeleton-${i}`}>
               <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
               <CardContent><Skeleton className="h-[250px] w-full" /></CardContent>
             </Card>

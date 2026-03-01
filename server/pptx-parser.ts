@@ -1,7 +1,7 @@
-import { execSync } from "child_process";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
+import { execSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 
 interface ParsedSlide {
   index: number;
@@ -70,11 +70,11 @@ const VAT_NAME_MAP: Record<string, string> = {
 };
 
 export function decodeXmlEntities(s: string): string {
-  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/\u2011/g, "-").replace(/\u2013/g, "–").replace(/\u2014/g, "—");
+  return s.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&apos;", "'").replaceAll("&quot;", '"').replaceAll("\u2011", "-").replaceAll("\u2013", "–").replaceAll("\u2014", "—");
 }
 
 export function resolveVatName(raw: string): string | null {
-  const cleaned = decodeXmlEntities(raw).replace(/\s*VAT\s*/gi, " ").trim().toUpperCase();
+  const cleaned = decodeXmlEntities(raw).replaceAll(/\s*VAT\s*/gi, " ").trim().toUpperCase();
   for (const [key, val] of Object.entries(VAT_NAME_MAP)) {
     if (cleaned === key.toUpperCase() || cleaned.includes(key.toUpperCase())) {
       return val;
@@ -133,7 +133,9 @@ function extractTables(xmlContent: string): string[][][] {
 function cleanupDir(dir: string) {
   try {
     execSync(`rm -rf "${dir}"`, { stdio: "pipe" });
-  } catch { }
+  } catch (e) {
+    console.error("[cleanupDir] Failed to clean up:", (e as Error).message);
+  }
 }
 
 function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
@@ -145,7 +147,8 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
 
     try {
       execSync(`unzip -o "${pptxPath}" "ppt/slides/*.xml" -d "${tmpDir}"`, { stdio: "pipe" });
-    } catch {
+    } catch (e) {
+      console.error("[extractSlides] PPTX extraction failed:", (e as Error).message);
       throw new Error("Failed to extract PPTX file. Make sure it's a valid PowerPoint file.");
     }
 
@@ -155,8 +158,8 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
     }
 
     const slideFiles = fs.readdirSync(slidesDir)
-      .filter(f => f.match(/^slide\d+\.xml$/))
-      .sort((a, b) => parseInt(a.match(/\d+/)![0]) - parseInt(b.match(/\d+/)![0]));
+      .filter(f => /^slide\d+\.xml$/.test(f))
+      .sort((a, b) => parseInt(/\d+/.exec(a)![0]) - parseInt(/\d+/.exec(b)![0]));
 
     const resolvedTmpDir = fs.realpathSync(tmpDir);
     const slides: ParsedSlide[] = slideFiles.map(sf => {
@@ -166,7 +169,7 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
         throw new Error("Zip Slip detected: entry resolves outside extraction directory.");
       }
       const content = fs.readFileSync(resolvedPath, "utf8");
-      const idx = parseInt(sf.match(/\d+/)![0]);
+      const idx = parseInt(/\d+/.exec(sf)![0]);
       return {
         index: idx,
         paragraphs: extractParagraphs(content),
@@ -193,19 +196,21 @@ function isPlannerSlide(slide: ParsedSlide): boolean {
 function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
   const allParas = [...paragraphs.slice(0, 5), ...titleSlideParas];
   for (const p of allParas) {
-    const dateMatch = p.match(/(\d{1,2}\s[A-Za-z]+,?\s\d{4})/);
+    const dateMatch = /(\d{1,2}\s[A-Za-z]+,?\s\d{4})/.exec(p);
     if (dateMatch) {
       try {
         const d = new Date(dateMatch[1].replace(",", ""));
-        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
-      } catch { }
+        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
+      } catch (e) {
+        console.error("[extractReportDate] Date parse error:", (e as Error).message);
+      }
     }
-    const dateMatch2 = p.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+    const dateMatch2 = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(p);
     if (dateMatch2) {
       const parts = dateMatch2[1].split("/");
       if (parts.length === 3) {
         const d = new Date(`${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`);
-        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
       }
     }
   }
@@ -216,7 +221,7 @@ function extractOverallStatusFromTable(table: string[][]): string {
   if (table.length === 0) return "";
   const firstRow = table[0];
   const text = (firstRow[0] || "").toUpperCase();
-  const match = text.match(/(GREEN|AMBER|RED|N\/A)/);
+  const match = /(GREEN|AMBER|RED|N\/A)/.exec(text);
   return match ? match[1] : "";
 }
 
@@ -265,7 +270,7 @@ function extractStatusSummary(table: string[][]): {
     for (const [marker, field] of Object.entries(sectionLabelToField)) {
       if (col1Upper === marker || col1Upper.startsWith(marker)) {
         const allCols = [col0Upper, col1Upper, col2.toUpperCase()].join(" ");
-        const ragMatch = allCols.match(/(GREEN|AMBER|RED|N\/A)/);
+        const ragMatch = /(GREEN|AMBER|RED|N\/A)/.exec(allCols);
         if (ragMatch) {
           (result as any)[field] = ragMatch[1];
         }
@@ -588,7 +593,7 @@ export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; sum
     if (!report.overallStatus) {
       for (const slide of group.contentSlides) {
         for (const p of slide.paragraphs.slice(0, 5)) {
-          const match = p.toUpperCase().match(/(GREEN|AMBER|RED|N\/A)/);
+          const match = /(GREEN|AMBER|RED|N\/A)/.exec(p.toUpperCase());
           if (match) {
             report.overallStatus = match[1];
             break;

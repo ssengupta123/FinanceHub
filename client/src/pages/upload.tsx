@@ -252,7 +252,7 @@ export default function UploadPage() {
                 .filter(([, count]) => count > 0)
                 .map(([table, count]) => (
                   <div key={table} className="flex items-center justify-between gap-2 p-2 rounded-md border text-sm">
-                    <span className="truncate">{table.replace(/_/g, " ")}</span>
+                    <span className="truncate">{table.replaceAll("_", " ")}</span>
                     <Badge variant="secondary">{count}</Badge>
                   </div>
                 ))}
@@ -273,12 +273,10 @@ export default function UploadPage() {
         </CardHeader>
         <CardContent>
           {!file ? (
-            <div
-              className="border-2 border-dashed rounded-md p-12 text-center cursor-pointer hover-elevate"
+            <button
+              type="button"
+              className="w-full border-2 border-dashed rounded-md p-12 text-center cursor-pointer hover-elevate bg-transparent"
               onClick={() => fileInputRef.current?.click()}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
-              role="button"
-              tabIndex={0}
               data-testid="drop-zone"
             >
               <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
@@ -292,7 +290,7 @@ export default function UploadPage() {
                 onChange={handleFileSelect}
                 data-testid="input-file"
               />
-            </div>
+            </button>
           ) : (
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-3">
@@ -336,24 +334,22 @@ export default function UploadPage() {
                   const result = results?.[sheet.name];
 
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={sheet.name}
-                      className={`flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer ${isSelected ? "bg-primary/5 border-primary/30" : ""} ${!isImportable ? "opacity-50" : "hover-elevate"}`}
+                      className={`w-full flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer bg-transparent ${isSelected ? "bg-primary/5 border-primary/30" : ""} ${isImportable ? "hover-elevate" : "opacity-50"}`}
                       onClick={() => {
                         if (isImportable) toggleSheet(sheet.name);
                         setPreviewSheet(sheet.name);
                       }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { if (isImportable) toggleSheet(sheet.name); setPreviewSheet(sheet.name); } }}
-                      role="button"
-                      tabIndex={0}
-                      data-testid={`sheet-row-${sheet.name.replace(/\s+/g, "-").toLowerCase()}`}
+                      data-testid={`sheet-row-${sheet.name.replaceAll(/\s+/g, "-").toLowerCase()}`}
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {isImportable && (
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={() => toggleSheet(sheet.name)}
-                            data-testid={`checkbox-sheet-${sheet.name.replace(/\s+/g, "-").toLowerCase()}`}
+                            data-testid={`checkbox-sheet-${sheet.name.replaceAll(/\s+/g, "-").toLowerCase()}`}
                           />
                         )}
                         <div className="min-w-0">
@@ -368,7 +364,7 @@ export default function UploadPage() {
                         {result && (
                           <>
                             {result.imported > 0 && (
-                              <Badge variant="default" data-testid={`badge-imported-${sheet.name.replace(/\s+/g, "-").toLowerCase()}`}>
+                              <Badge variant="default" data-testid={`badge-imported-${sheet.name.replaceAll(/\s+/g, "-").toLowerCase()}`}>
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 {result.imported} imported
                               </Badge>
@@ -385,7 +381,7 @@ export default function UploadPage() {
                           <Badge variant="secondary">Preview only</Badge>
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -432,8 +428,8 @@ export default function UploadPage() {
                       </div>
                       {result.errors.length > 0 && (
                         <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                          {result.errors.slice(0, 10).map((err, idx) => (
-                            <p key={idx} className="text-xs text-destructive">{err}</p>
+                          {result.errors.slice(0, 10).map((err) => (
+                            <p key={err} className="text-xs text-destructive">{err}</p>
                           ))}
                           {result.errors.length > 10 && (
                             <p className="text-xs text-muted-foreground">...and {result.errors.length - 10} more errors</p>
@@ -458,7 +454,7 @@ export default function UploadPage() {
                     <TableHeader>
                       <TableRow>
                         {currentPreview.preview[0]?.map((cell: any, idx: number) => (
-                          <TableHead key={idx} className="whitespace-nowrap text-xs">
+                          <TableHead key={`header-${String(cell ?? idx)}`} className="whitespace-nowrap text-xs">
                             {cell !== null && cell !== undefined ? String(cell) : ""}
                           </TableHead>
                         ))}
@@ -466,14 +462,17 @@ export default function UploadPage() {
                     </TableHeader>
                     <TableBody>
                       {currentPreview.preview.slice(1).map((row: any[], rowIdx: number) => (
-                        <TableRow key={rowIdx}>
+                        <TableRow key={`row-${String(row[0] ?? rowIdx)}`}>
                           {currentPreview.preview[0]?.map((_: any, colIdx: number) => (
-                            <TableCell key={colIdx} className="whitespace-nowrap text-xs">
-                              {row[colIdx] !== null && row[colIdx] !== undefined
-                                ? typeof row[colIdx] === "number"
-                                  ? Number.isInteger(row[colIdx]) ? row[colIdx] : Number(row[colIdx]).toFixed(2)
-                                  : String(row[colIdx])
-                                : ""}
+                            <TableCell key={`cell-${String(_ ?? colIdx)}`} className="whitespace-nowrap text-xs">
+                              {(() => {
+                                const cellVal = row[colIdx];
+                                if (cellVal === null || cellVal === undefined) return "";
+                                if (typeof cellVal === "number") {
+                                  return Number.isInteger(cellVal) ? cellVal : Number(cellVal).toFixed(2);
+                                }
+                                return String(cellVal);
+                              })()}
                             </TableCell>
                           ))}
                         </TableRow>
@@ -516,7 +515,7 @@ export default function UploadPage() {
   );
 }
 
-function SingleSheetUpload({ title, description, sheetType }: { title: string; description: string; sheetType: string }) {
+function SingleSheetUpload({ title, description, sheetType }: Readonly<{ title: string; description: string; sheetType: string }>) {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -564,7 +563,7 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
   }
 
   return (
-    <Card data-testid={`card-upload-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}>
+    <Card data-testid={`card-upload-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <FileSpreadsheet className="h-4 w-4" />
@@ -574,13 +573,11 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
       </CardHeader>
       <CardContent>
         {!file ? (
-          <div
-            className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate"
+          <button
+            type="button"
+            className="w-full border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate bg-transparent"
             onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
-            role="button"
-            tabIndex={0}
-            data-testid={`drop-zone-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+            data-testid={`drop-zone-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
           >
             <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
             <p className="text-sm font-medium">Click to select file</p>
@@ -594,9 +591,9 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
                 const f = e.target.files?.[0];
                 if (f) { setFile(f); setResult(null); }
               }}
-              data-testid={`input-file-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+              data-testid={`input-file-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
             />
-          </div>
+          </button>
         ) : (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -604,7 +601,7 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
                 <FileSpreadsheet className="h-5 w-5 text-green-600 flex-shrink-0" />
                 <p className="text-sm font-medium truncate">{file.name}</p>
               </div>
-              <Button variant="ghost" size="sm" onClick={clearFile} data-testid={`button-clear-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}>
+              <Button variant="ghost" size="sm" onClick={clearFile} data-testid={`button-clear-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}>
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -614,7 +611,7 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
                 disabled={importing}
                 className="w-full"
                 size="sm"
-                data-testid={`button-import-${sheetType.replace(/\s+/g, "-").toLowerCase()}`}
+                data-testid={`button-import-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
               >
                 {importing ? "Importing..." : `Import ${title}`}
               </Button>
@@ -629,8 +626,8 @@ function SingleSheetUpload({ title, description, sheetType }: { title: string; d
                 )}
                 {result.errors.length > 0 && (
                   <div className="mt-1 space-y-0.5">
-                    {result.errors.slice(0, 5).map((err, idx) => (
-                      <p key={idx} className="text-xs text-destructive">{err}</p>
+                    {result.errors.slice(0, 5).map((err) => (
+                      <p key={err} className="text-xs text-destructive">{err}</p>
                     ))}
                     {result.errors.length > 5 && (
                       <p className="text-xs text-muted-foreground">...and {result.errors.length - 5} more</p>
@@ -846,12 +843,10 @@ function VatPptxUpload() {
           ) : null}
 
           {!pptxFile ? (
-            <div
-              className="border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate"
+            <button
+              type="button"
+              className="w-full border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate bg-transparent"
               onClick={() => pptxInputRef.current?.click()}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") pptxInputRef.current?.click(); }}
-              role="button"
-              tabIndex={0}
               data-testid="drop-zone-pptx"
             >
               <Presentation className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
@@ -865,7 +860,7 @@ function VatPptxUpload() {
                 onChange={handlePptxSelect}
                 data-testid="input-pptx-file"
               />
-            </div>
+            </button>
           ) : (
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-3">
@@ -901,8 +896,9 @@ function VatPptxUpload() {
           </CardHeader>
           <CardContent>
             <div className="mb-4">
-              <label className="text-sm font-medium block mb-1">Report Date (override)</label>
+              <label htmlFor="pptx-report-date" className="text-sm font-medium block mb-1">Report Date (override)</label>
               <Input
+                id="pptx-report-date"
                 type="date"
                 value={reportDate}
                 onChange={(e) => setReportDate(e.target.value)}
@@ -917,20 +913,18 @@ function VatPptxUpload() {
                 const result = results?.[report.vatName];
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={report.vatName}
-                    className={`flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer hover-elevate ${isSelected ? "bg-primary/5 border-primary/30" : ""}`}
+                    className={`w-full flex items-center justify-between gap-4 p-3 rounded-md border cursor-pointer hover-elevate bg-transparent ${isSelected ? "bg-primary/5 border-primary/30" : ""}`}
                     onClick={() => toggleVat(report.vatName)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") toggleVat(report.vatName); }}
-                    role="button"
-                    tabIndex={0}
-                    data-testid={`pptx-vat-row-${report.vatName.toLowerCase().replace(/[&\s]/g, "-")}`}
+                    data-testid={`pptx-vat-row-${report.vatName.toLowerCase().replaceAll(/[&\s]/g, "-")}`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => toggleVat(report.vatName)}
-                        data-testid={`checkbox-pptx-${report.vatName.toLowerCase().replace(/[&\s]/g, "-")}`}
+                        data-testid={`checkbox-pptx-${report.vatName.toLowerCase().replaceAll(/[&\s]/g, "-")}`}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -963,7 +957,7 @@ function VatPptxUpload() {
                         </Badge>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -1017,8 +1011,8 @@ function VatPptxUpload() {
                   </div>
                   {result.errors.length > 0 && (
                     <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
-                      {result.errors.slice(0, 5).map((err, idx) => (
-                        <p key={idx} className="text-xs text-destructive">{err}</p>
+                      {result.errors.slice(0, 5).map((err) => (
+                        <p key={err} className="text-xs text-destructive">{err}</p>
                       ))}
                       {result.errors.length > 5 && (
                         <p className="text-xs text-muted-foreground">...and {result.errors.length - 5} more errors</p>

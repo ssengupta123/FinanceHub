@@ -5,13 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DollarSign, FolderOpen, TrendingUp, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import {
   PieChart as RechartsPie, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Bar, XAxis, YAxis, CartesianGrid,
   AreaChart, Area, ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import type { Project, Employee, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
+import type { Project, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
 import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths } from "@/lib/fy-utils";
 
@@ -25,7 +25,7 @@ const CLASSIFICATION_COLORS: Record<string, string> = {
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0";
   const n = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(n)) return "$0";
+  if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
   return `$${n.toFixed(0)}`;
@@ -48,7 +48,7 @@ function ragBg(actual: number, target: number, warningThreshold = 0.8): string {
   return "bg-red-500/15 border-red-500/30";
 }
 
-function RagDot({ actual, target, warningThreshold = 0.8 }: { actual: number; target: number; warningThreshold?: number }) {
+function RagDot({ actual, target, warningThreshold = 0.8 }: Readonly<{ actual: number; target: number; warningThreshold?: number }>) {
   let color = "bg-green-500";
   if (actual < target * warningThreshold) color = "bg-red-500";
   else if (actual < target) color = "bg-amber-500";
@@ -76,7 +76,7 @@ export default function Dashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
-  const { data: employees, isLoading: loadingEmployees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
+  const { isLoading: loadingEmployees } = useQuery({ queryKey: ["/api/employees"] });
   const { data: utilizationData, isLoading: loadingUtil } = useQuery<{ totalPermanent: number; allocatedPermanent: number; utilization: number }>({ queryKey: ["/api/dashboard/utilization", selectedFY], queryFn: () => fetch(`/api/dashboard/utilization?fy=${selectedFY}`).then(r => r.json()) });
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
@@ -127,7 +127,6 @@ export default function Dashboard() {
   }, [fyProjectMonthly, elapsedMonths]);
 
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
-  const activeEmployees = employees?.filter(e => e.status === "active") || [];
 
   const totalContracted = fyProjects.reduce((sum, p) => sum + parseFloat(p.contractValue || "0"), 0);
   const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + parseFloat(m.revenue || "0"), 0);
@@ -168,21 +167,22 @@ export default function Dashboard() {
   const tmCost = billingBreakdown["T&M"]?.cost || 0;
 
   const classificationOrder = ["C", "S", "DVF", "DF", "Q", "A"];
-  const WIN_RATES: Record<string, number> = { C: 1.0, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
   const pipelineByClass = classificationOrder.map(cls => {
     const opps = fyPipeline.filter(o => o.classification === cls);
     const totalRev = opps.reduce((s, o) => {
+      const oRecord = o as unknown as Record<string, string>;
       let monthlyTotal = 0;
-      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`revenueM${i}`] || "0");
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat(oRecord[`revenueM${i}`] || "0");
       if (monthlyTotal > 0) return s + monthlyTotal;
-      return s + parseFloat((o as any).value || "0");
+      return s + parseFloat(oRecord.value || "0");
     }, 0);
     const totalGP = opps.reduce((s, o) => {
+      const oRecord = o as unknown as Record<string, string>;
       let monthlyTotal = 0;
-      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat((o as any)[`grossProfitM${i}`] || "0");
+      for (let i = 1; i <= 12; i++) monthlyTotal += parseFloat(oRecord[`grossProfitM${i}`] || "0");
       if (monthlyTotal > 0) return s + monthlyTotal;
-      const val = parseFloat((o as any).value || "0");
-      const margin = parseFloat((o as any).marginPercent || "0");
+      const val = parseFloat(oRecord.value || "0");
+      const margin = parseFloat(oRecord.marginPercent || "0");
       return s + (val * margin);
     }, 0);
     return { classification: cls, name: classificationLabel(cls), count: opps.length, revenue: totalRev, grossProfit: totalGP };
@@ -312,8 +312,8 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={260} data-testid="chart-billing-pie">
                 <RechartsPie>
                   <Pie data={billingPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} innerRadius={35} paddingAngle={3} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
-                    {billingPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    {billingPieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
@@ -350,8 +350,8 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height={260} data-testid="chart-classification-pie">
                 <RechartsPie>
                   <Pie data={classificationPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} paddingAngle={2} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine>
-                    {classificationPieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    {classificationPieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip formatter={customTooltipFormatter} />
@@ -403,7 +403,7 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={40} />
                   <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={55} />
-                  <Tooltip formatter={(value: any) => value !== null ? formatCurrency(value) : "—"} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
                   <Legend wrapperStyle={{ fontSize: "11px" }} />
                   <Line type="monotone" dataKey="cumTarget" name="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls />
                   <Area type="monotone" dataKey="cumRevenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} connectNulls />
@@ -429,7 +429,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-2 sm:space-y-3 p-3 sm:p-6 pt-0">
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 sm:h-14 w-full" />)
+              [1, 2, 3].map(n => <Skeleton key={`skeleton-project-${n}`} className="h-12 sm:h-14 w-full" />)
             ) : activeProjects.length === 0 ? (
               <p className="text-sm text-muted-foreground">No active projects</p>
             ) : (

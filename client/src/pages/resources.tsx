@@ -80,14 +80,14 @@ function statusVariant(status: string): "default" | "secondary" | "outline" {
 function formatCurrency(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "--";
   const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return "--";
+  if (Number.isNaN(num)) return "--";
   return `$${Math.round(num).toLocaleString()}`;
 }
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "--";
   const d = new Date(value);
-  if (isNaN(d.getTime())) return "--";
+  if (Number.isNaN(d.getTime())) return "--";
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" });
 }
 
@@ -113,7 +113,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
 function grossCostRagColor(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "bg-gray-300";
   const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return "bg-gray-300";
+  if (Number.isNaN(num)) return "bg-gray-300";
   if (num < 700) return "bg-green-500";
   if (num <= 800) return "bg-amber-500";
   return "bg-red-500";
@@ -122,7 +122,7 @@ function grossCostRagColor(value: string | number | null | undefined): string {
 function scheduleEndRagColor(value: string | null | undefined): string {
   if (!value) return "bg-red-500";
   const end = new Date(value);
-  if (isNaN(end.getTime())) return "bg-red-500";
+  if (Number.isNaN(end.getTime())) return "bg-red-500";
   const now = new Date();
   if (end < now) return "bg-red-500";
   const threeMonths = new Date();
@@ -190,7 +190,7 @@ export default function Resources() {
 
   const linkedUserIds = useMemo(() => {
     if (!employees) return new Set<number>();
-    return new Set(employees.filter(e => e.userId).map(e => e.userId as number));
+    return new Set(employees.filter(e => e.userId).map(e => e.userId!));
   }, [employees]);
 
   const [createUserForm, setCreateUserForm] = useState<{ username: string; role: string }>({ username: "", role: "employee" });
@@ -272,7 +272,7 @@ export default function Resources() {
       const nameMatch = searchQuery === "" ||
         `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.employeeCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (emp.jid && emp.jid.toLowerCase().includes(searchQuery.toLowerCase()));
+        emp.jid?.toLowerCase().includes(searchQuery.toLowerCase());
       const typeMatch = filterStaffType === "all" || emp.staffType === filterStaffType;
       const teamMatch = filterTeam === "all" || emp.team === filterTeam;
       const statusMatch = filterStatus === "all" || emp.status === filterStatus;
@@ -599,7 +599,7 @@ export default function Resources() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-12 w-full" />)}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -698,7 +698,7 @@ export default function Resources() {
                           can("resources", "edit") ? (
                             <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => {
                               setLinkPopoverId(open ? emp.id : null);
-                              if (open) setCreateUserForm({ username: `${emp.firstName}.${emp.lastName}`.toLowerCase().replace(/\s/g, ""), role: "employee" });
+                              if (open) setCreateUserForm({ username: `${emp.firstName}.${emp.lastName}`.toLowerCase().replaceAll(/\s/g, ""), role: "employee" });
                             }}>
                               <PopoverTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" data-testid={`button-link-user-${emp.id}`}>
@@ -708,7 +708,7 @@ export default function Resources() {
                               <PopoverContent className="w-72 p-3" align="start">
                                 <div className="space-y-3">
                                   <p className="text-sm font-medium">Assign User Account</p>
-                                  {allUsers && allUsers.filter(u => !linkedUserIds.has(u.id)).length > 0 && (
+                                  {allUsers && allUsers.some(u => !linkedUserIds.has(u.id)) && (
                                     <div className="space-y-1">
                                       <Label className="text-xs">Link Existing User</Label>
                                       <Select

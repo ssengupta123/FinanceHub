@@ -67,7 +67,7 @@ export function toSnakeCase(obj: Record<string, any>, table?: string): Record<st
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
     const mappedKey = fieldMap[key];
-    const snakeKey = mappedKey || key.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+    const snakeKey = mappedKey || key.replaceAll(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
     result[snakeKey] = value;
   }
   return result;
@@ -77,7 +77,7 @@ export function toCamelCase(obj: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
     const mappedKey = EMPLOYEE_FIELD_MAP_FROM_DB[key];
-    const camelKey = mappedKey || key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const camelKey = mappedKey || key.replaceAll(/_([a-z])/g, (_, c) => c.toUpperCase());
     result[camelKey] = value === null ? null : value;
   }
   return result;
@@ -131,7 +131,7 @@ export function sanitizeDateFields(data: Record<string, any>, table?: string): R
           data[key] = null;
         }
       } else if (typeof val === "string") {
-        const isoMatch = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
         if (isoMatch) {
           const d = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
           if (!isReasonableDate(d)) {
@@ -141,7 +141,7 @@ export function sanitizeDateFields(data: Record<string, any>, table?: string): R
           }
         } else {
           const d = new Date(val);
-          if (!isNaN(d.getTime()) && isReasonableDate(d)) {
+          if (!Number.isNaN(d.getTime()) && isReasonableDate(d)) {
             if (isMSSQL) {
               data[key] = d;
             } else {

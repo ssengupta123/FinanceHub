@@ -26,7 +26,7 @@ function formatCurrency(val: string | number | null | undefined) {
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
   const n = parseFloat(val);
-  return isNaN(n) ? 0 : n;
+  return Number.isNaN(n) ? 0 : n;
 }
 
 function statusVariant(status: string): "default" | "outline" | "destructive" {
@@ -471,7 +471,7 @@ export default function Milestones() {
         <Card>
           <CardContent className="p-4 space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
+              <Skeleton key={`skeleton-${i}`} className="h-10 w-full" />
             ))}
           </CardContent>
         </Card>
