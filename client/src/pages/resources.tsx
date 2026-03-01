@@ -152,6 +152,51 @@ const initialForm = {
   scheduleEnd: "",
 };
 
+function CreateUserAccountForm({ emp, createUserForm, setCreateUserForm, createUserMutation }: Readonly<{
+  emp: Employee;
+  createUserForm: { username: string; role: string };
+  setCreateUserForm: (fn: (prev: { username: string; role: string }) => { username: string; role: string }) => void;
+  createUserMutation: { mutate: (data: { employeeId: number; username: string; role: string }) => void; isPending: boolean };
+}>) {
+  return (
+    <div className="border-t pt-2 space-y-2">
+      <Label className="text-xs font-medium">Or Create New Account</Label>
+      <div className="space-y-1">
+        <Label className="text-xs">Username</Label>
+        <Input
+          data-testid={`input-new-username-${emp.id}`}
+          value={createUserForm.username}
+          onChange={(e) => setCreateUserForm(prev => ({ ...prev, username: e.target.value }))}
+          placeholder="username"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Role</Label>
+        <Select value={createUserForm.role} onValueChange={(v) => setCreateUserForm(prev => ({ ...prev, role: v }))}>
+          <SelectTrigger data-testid={`select-new-role-${emp.id}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {APP_ROLES.map(r => (
+              <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Button
+        size="sm"
+        className="w-full"
+        disabled={createUserMutation.isPending || !createUserForm.username.trim()}
+        onClick={() => createUserMutation.mutate({ employeeId: emp.id, username: createUserForm.username, role: createUserForm.role })}
+        data-testid={`button-create-user-${emp.id}`}
+      >
+        <Plus className="h-3 w-3 mr-1" /> {createUserMutation.isPending ? "Creating..." : "Create & Link Account"}
+      </Button>
+      <p className="text-xs text-muted-foreground">User will log in via SSO. No password needed.</p>
+    </div>
+  );
+}
+
 export default function Resources() {
   const { toast } = useToast();
   const { can, isAdmin } = useAuth();
@@ -732,41 +777,7 @@ export default function Resources() {
                                       </div>
                                     )}
                                     {isAdmin && (
-                                      <div className="border-t pt-2 space-y-2">
-                                        <Label className="text-xs font-medium">Or Create New Account</Label>
-                                        <div className="space-y-1">
-                                          <Label className="text-xs">Username</Label>
-                                          <Input
-                                            data-testid={`input-new-username-${emp.id}`}
-                                            value={createUserForm.username}
-                                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, username: e.target.value }))}
-                                            placeholder="username"
-                                          />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <Label className="text-xs">Role</Label>
-                                          <Select value={createUserForm.role} onValueChange={(v) => setCreateUserForm(prev => ({ ...prev, role: v }))}>
-                                            <SelectTrigger data-testid={`select-new-role-${emp.id}`}>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {APP_ROLES.map(r => (
-                                                <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                        <Button
-                                          size="sm"
-                                          className="w-full"
-                                          disabled={createUserMutation.isPending || !createUserForm.username.trim()}
-                                          onClick={() => createUserMutation.mutate({ employeeId: emp.id, username: createUserForm.username, role: createUserForm.role })}
-                                          data-testid={`button-create-user-${emp.id}`}
-                                        >
-                                          <Plus className="h-3 w-3 mr-1" /> {createUserMutation.isPending ? "Creating..." : "Create & Link Account"}
-                                        </Button>
-                                        <p className="text-xs text-muted-foreground">User will log in via SSO. No password needed.</p>
-                                      </div>
+                                      <CreateUserAccountForm emp={emp} createUserForm={createUserForm} setCreateUserForm={setCreateUserForm} createUserMutation={createUserMutation} />
                                     )}
                                   </div>
                                 </PopoverContent>

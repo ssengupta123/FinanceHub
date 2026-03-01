@@ -73,6 +73,8 @@ import {
   extractInitialUserCache,
   buildVatAiSuggestFieldsPrompt,
   buildVatChatSystemPrompt,
+  parseOptionalTrimmed,
+  parseNumericField,
 } from "../server/routes";
 
 describe("deriveFyYear", () => {
@@ -1088,7 +1090,7 @@ describe("buildCxRatingRecord", () => {
 describe("buildResourceCostRecord", () => {
   it("builds resource cost record", () => {
     const costs = Array.from({length: 12}, (_, i) => String((i + 1) * 100));
-    const result = buildResourceCostRecord(5, "John Doe", "Permanent", "Total", "23-24", costs, "7800.00", "Excel Import");
+    const result = buildResourceCostRecord({ employeeId: 5, name: "John Doe", staffType: "Permanent", costPhase: "Total", fyYear: "23-24", monthlyCosts: costs, totalCost: "7800.00", source: "Excel Import" });
     expect(result.employeeId).toBe(5);
     expect(result.employeeName).toBe("John Doe");
     expect(result.staffType).toBe("Permanent");
@@ -1407,7 +1409,7 @@ describe("buildCxRatingRecord - extended", () => {
 describe("buildResourceCostRecord - extended", () => {
   it("builds record with all fields", () => {
     const monthlyCosts = ["100", "200", "300", "400", "500", "600", "700", "800", "900", "1000", "1100", "1200"];
-    const result = buildResourceCostRecord(1, "John Doe", "Permanent", "Phase 1", "24-25", monthlyCosts, "7800", "Manual");
+    const result = buildResourceCostRecord({ employeeId: 1, name: "John Doe", staffType: "Permanent", costPhase: "Phase 1", fyYear: "24-25", monthlyCosts, totalCost: "7800", source: "Manual" });
     expect(result.employeeId).toBe(1);
     expect(result.staffType).toBe("Permanent");
     expect(result.fyYear).toBe("24-25");
@@ -1417,7 +1419,7 @@ describe("buildResourceCostRecord - extended", () => {
 
   it("handles null employee", () => {
     const monthlyCosts = ["0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0"];
-    const result = buildResourceCostRecord(null, "Unknown", null, "Phase 1", "24-25", monthlyCosts, "0", "Import");
+    const result = buildResourceCostRecord({ employeeId: null, name: "Unknown", staffType: null, costPhase: "Phase 1", fyYear: "24-25", monthlyCosts, totalCost: "0", source: "Import" });
     expect(result.employeeId).toBeNull();
     expect(result.staffType).toBeNull();
   });
@@ -2171,26 +2173,26 @@ describe("extractInitialUserCache", () => {
 
 describe("buildVatAiSuggestFieldsPrompt", () => {
   it("includes vatName and pipeline data", () => {
-    const result = buildVatAiSuggestFieldsPrompt("DAFF", "Pipeline info", "", "", "", "", "", undefined);
+    const result = buildVatAiSuggestFieldsPrompt({ vatName: "DAFF", pipelineSummary: "Pipeline info", riskSummary: "", completedActionsSummary: "", openActionsSummary: "", plannerSummary: "", reportContext: "", userActionNotes: undefined });
     expect(result).toContain("DAFF");
     expect(result).toContain("Pipeline info");
     expect(result).toContain("statusSummary");
   });
 
   it("includes risk summary when provided", () => {
-    const result = buildVatAiSuggestFieldsPrompt("SAU", "", "Risk data here", "", "", "", "", undefined);
+    const result = buildVatAiSuggestFieldsPrompt({ vatName: "SAU", pipelineSummary: "", riskSummary: "Risk data here", completedActionsSummary: "", openActionsSummary: "", plannerSummary: "", reportContext: "", userActionNotes: undefined });
     expect(result).toContain("CURRENT RISKS");
     expect(result).toContain("Risk data here");
   });
 
   it("includes user notes", () => {
-    const result = buildVatAiSuggestFieldsPrompt("V", "", "", "", "", "", "", "My notes");
+    const result = buildVatAiSuggestFieldsPrompt({ vatName: "V", pipelineSummary: "", riskSummary: "", completedActionsSummary: "", openActionsSummary: "", plannerSummary: "", reportContext: "", userActionNotes: "My notes" });
     expect(result).toContain("USER NOTES");
     expect(result).toContain("My notes");
   });
 
   it("handles all empty inputs", () => {
-    const result = buildVatAiSuggestFieldsPrompt("", "", "", "", "", "", "", undefined);
+    const result = buildVatAiSuggestFieldsPrompt({ vatName: "", pipelineSummary: "", riskSummary: "", completedActionsSummary: "", openActionsSummary: "", plannerSummary: "", reportContext: "", userActionNotes: undefined });
     expect(result).toContain("No pipeline data available");
   });
 });
@@ -2207,5 +2209,69 @@ describe("buildVatChatSystemPrompt", () => {
   it("handles empty pipeline", () => {
     const result = buildVatChatSystemPrompt("T", "", "", "");
     expect(result).toContain("No pipeline data available");
+  });
+});
+
+describe("parseOptionalTrimmed", () => {
+  it("returns trimmed string for valid value", () => {
+    expect(parseOptionalTrimmed("  hello  ")).toBe("hello");
+  });
+
+  it("returns null for null", () => {
+    expect(parseOptionalTrimmed(null)).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(parseOptionalTrimmed(undefined)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseOptionalTrimmed("")).toBeNull();
+  });
+
+  it("converts numbers to string", () => {
+    expect(parseOptionalTrimmed(42)).toBe("42");
+  });
+
+  it("returns null for 0", () => {
+    expect(parseOptionalTrimmed(0)).toBeNull();
+  });
+});
+
+describe("parseNumericField", () => {
+  it("returns formatted number with specified decimals", () => {
+    expect(parseNumericField(42.567, 2)).toBe("42.57");
+  });
+
+  it("returns null for null", () => {
+    expect(parseNumericField(null, 2)).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(parseNumericField(undefined, 2)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseNumericField("", 2)).toBeNull();
+  });
+
+  it("returns null for non-numeric string", () => {
+    expect(parseNumericField("abc", 2)).toBeNull();
+  });
+
+  it("handles string numbers", () => {
+    expect(parseNumericField("123.456", 3)).toBe("123.456");
+  });
+
+  it("handles zero", () => {
+    expect(parseNumericField(0, 2)).toBe("0.00");
+  });
+
+  it("handles negative numbers", () => {
+    expect(parseNumericField(-5.1, 1)).toBe("-5.1");
+  });
+
+  it("handles large decimals", () => {
+    expect(parseNumericField(1.999999, 0)).toBe("2");
   });
 });

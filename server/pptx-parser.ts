@@ -583,25 +583,37 @@ export function groupSlidesByVat(slides: ParsedSlide[]): VatGroup[] {
   return groups;
 }
 
+export function processStatusTable(table: string[][], report: ParsedVatReport): void {
+  const overallStatus = extractOverallStatusFromTable(table);
+  if (overallStatus) report.overallStatus = overallStatus;
+  const statuses = extractStatusSummary(table);
+  if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
+  if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
+  if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
+  if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
+  if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
+  if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
+}
+
+export function processRiskTableForReport(table: string[][], report: ParsedVatReport): void {
+  report.risks.push(...parseRiskTable(table));
+}
+
+export function processPlannerTableForReport(table: string[][], report: ParsedVatReport): void {
+  report.plannerTasks.push(...parsePlannerTable(table));
+}
+
 export function processTableForReport(table: string[][], report: ParsedVatReport): void {
   if (table.length === 0) return;
   const headerRow = table[0];
   const colCount = headerRow.length;
 
   if (colCount === 3 && table.length >= 5) {
-    const overallStatus = extractOverallStatusFromTable(table);
-    if (overallStatus) report.overallStatus = overallStatus;
-    const statuses = extractStatusSummary(table);
-    if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
-    if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
-    if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
-    if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
-    if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
-    if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
+    processStatusTable(table, report);
   } else if (colCount === 11 && headerRow.some(h => h.toLowerCase().includes("raised by"))) {
-    report.risks.push(...parseRiskTable(table));
+    processRiskTableForReport(table, report);
   } else if (colCount === 7 && headerRow.some(h => h.toLowerCase().includes("bucket"))) {
-    report.plannerTasks.push(...parsePlannerTable(table));
+    processPlannerTableForReport(table, report);
   }
 }
 
