@@ -87,6 +87,28 @@ function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
   );
 }
 
+function ProjectLoadingState() {
+  return (
+    <div className="flex-1 overflow-auto p-6 space-y-6">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
+function ProjectNotFound() {
+  return (
+    <div className="flex-1 overflow-auto p-6 space-y-6">
+      <p className="text-muted-foreground">Project not found.</p>
+      <Link href="/projects">
+        <Button variant="outline" data-testid="button-back-projects">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Projects
+        </Button>
+      </Link>
+    </div>
+  );
+}
+
 export default function ProjectDetail() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -116,25 +138,11 @@ export default function ProjectDetail() {
   });
 
   if (loadingProject) {
-    return (
-      <div className="flex-1 overflow-auto p-6 space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
+    return <ProjectLoadingState />;
   }
 
   if (!project) {
-    return (
-      <div className="flex-1 overflow-auto p-6 space-y-6">
-        <p className="text-muted-foreground">Project not found.</p>
-        <Link href="/projects">
-          <Button variant="outline" data-testid="button-back-projects">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Projects
-          </Button>
-        </Link>
-      </div>
-    );
+    return <ProjectNotFound />;
   }
 
   return (

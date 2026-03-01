@@ -64,12 +64,12 @@ function requirePermission(resource: string, action: string) {
   };
 }
 
-function getOppMonthlyRevenues(opp: any): (string | null)[] {
+export function getOppMonthlyRevenues(opp: any): (string | null)[] {
   return [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
     opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
 }
 
-function sumRevenues(monthRevs: (string | null)[]): number {
+export function sumRevenues(monthRevs: (string | null)[]): number {
   return monthRevs.reduce((s: number, v) => s + Number.parseFloat(v || "0"), 0);
 }
 
@@ -264,7 +264,7 @@ Produce a RISK REGISTER with:
 Focus on risks that could materially hurt revenue, margin, or cash flow in the next 6 months.`;
 }
 
-function getSpendingSystemPrompt(type: string): string {
+export function getSpendingSystemPrompt(type: string): string {
   if (type === "spending_patterns") {
     return `You are a senior financial analyst specializing in spending pattern analysis for an Australian professional services firm. Use Australian Financial Year (Jul-Jun). Provide data-driven analysis with specific numbers.`;
   }
@@ -401,7 +401,7 @@ async function findOrCreateProjectForImport(
   return newProj.id;
 }
 
-function fuzzyMatchProjectId(
+export function fuzzyMatchProjectId(
   engagementName: string,
   projByName: Map<string, number>,
   projByBaseCode: Map<string, number>,
@@ -422,16 +422,332 @@ function fuzzyMatchProjectId(
   return null;
 }
 
-function mapPlannerProgress(percentComplete: number): string {
+export function mapPlannerProgress(percentComplete: number): string {
   if (percentComplete === 100) return "Completed";
   if (percentComplete > 0) return "In progress";
   return "Not started";
 }
 
-function mapPlannerPriority(priority: number | undefined): string {
+export function mapPlannerPriority(priority: number | undefined): string {
   if (priority === 1) return "Important";
   if (priority === 5) return "Low";
   return "Medium";
+}
+
+export function deriveFyYear(startDateStr: string | null): string {
+  if (!startDateStr) return "23-24";
+  const yr = Number.parseInt(startDateStr.slice(0, 4));
+  const mo = Number.parseInt(startDateStr.slice(5, 7));
+  const fyStart = mo >= 7 ? yr : yr - 1;
+  return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+}
+
+async function createJobStatusMonthlyData(project: any, r: any[], fyYear: string): Promise<void> {
+  const monthCols = { revenue: [35,36,37,38,39,40,41,42,43,44,45,46], cost: [47,48,49,50,51,52,53,54,55,56,57,58], profit: [59,60,61,62,63,64,65,66,67,68,69,70] };
+  const monthLabels = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+  for (let m = 0; m < 12; m++) {
+    const rev = Number.parseFloat(toNum(r[monthCols.revenue[m]]));
+    const cost = Number.parseFloat(toNum(r[monthCols.cost[m]]));
+    const profit = Number.parseFloat(toNum(r[monthCols.profit[m]]));
+    if (rev !== 0 || cost !== 0 || profit !== 0) {
+      await storage.createProjectMonthly({
+        projectId: project.id,
+        fyYear,
+        month: m + 1,
+        monthLabel: monthLabels[m],
+        revenue: toNum(rev),
+        cost: toNum(cost),
+        profit: toNum(profit),
+      });
+    }
+  }
+}
+
+async function buildInsightPrompts(
+  type: string,
+  defaultSystemPrompt: string,
+  projects: any[],
+  kpis: any[],
+  pipelineOpps: any[],
+  projectMonthly: any[],
+): Promise<{ systemPrompt: string; userPrompt: string }> {
+  if (type === "pipeline") {
+    return { systemPrompt: defaultSystemPrompt, userPrompt: buildPipelineInsightPrompt(pipelineOpps, projects) };
+  }
+  if (type === "projects") {
+    return { systemPrompt: defaultSystemPrompt, userPrompt: buildProjectInsightPrompt(projects, projectMonthly) };
+  }
+  if (type === "spending_patterns" || type === "financial_advice" || type === "spending_forecast") {
+    const employees = await storage.getEmployees();
+    let resourceCosts: any[] = [];
+    try { resourceCosts = await db("resource_costs").select("*"); } catch (e) { console.error(e); }
+    const dataContext = buildSpendingDataContext(projects, projectMonthly, pipelineOpps, employees, resourceCosts);
+    return {
+      systemPrompt: getSpendingSystemPrompt(type),
+      userPrompt: getSpendingUserPrompt(type, dataContext),
+    };
+  }
+  return { systemPrompt: defaultSystemPrompt, userPrompt: buildOverviewInsightPrompt(kpis, projects, pipelineOpps, projectMonthly) };
+}
+
+export function buildJobStatusProjectData(r: any[], projectName: string, codeCounter: number): any {
+  const clientCode = String(r[2] || "").trim();
+  const projectCode = clientCode ? `${clientCode}-${String(codeCounter).padStart(3, "0")}` : `IMP-${String(codeCounter).padStart(3, "0")}`;
+  const billingCat = String(r[9] || "").trim();
+  return {
+    projectCode,
+    name: projectName,
+    client: clientCode,
+    clientCode,
+    clientManager: r[4] ? String(r[4]) : null,
+    engagementManager: r[5] ? String(r[5]) : null,
+    engagementSupport: r[6] ? String(r[6]) : null,
+    contractType: billingCat === "Fixed" ? "fixed_price" : "time_materials",
+    billingCategory: billingCat || null,
+    workType: r[10] ? String(r[10]) : null,
+    panel: r[11] ? String(r[11]) : null,
+    recurring: r[12] ? String(r[12]) : null,
+    vat: r[1] ? String(r[1]).trim() : null,
+    pipelineStatus: "C",
+    adStatus: r[0] ? String(r[0]).trim() : "Active",
+    status: String(r[0] || "").toLowerCase().includes("closed") ? "completed" : "active",
+    startDate: excelDateToString(r[7]),
+    endDate: excelDateToString(r[8]),
+    workOrderAmount: toNum(r[13]),
+    budgetAmount: toNum(r[14]),
+    actualAmount: toNum(r[15]),
+    balanceAmount: toNum(r[16]),
+    forecastedRevenue: toNum(r[18]),
+    forecastedGrossCost: toNum(r[29]),
+    contractValue: toNum(r[13]),
+    varianceAtCompletion: toNum(r[19]),
+    variancePercent: toDecimal(r[20]),
+    varianceToContractPercent: toDecimal(r[21]),
+    writeOff: toNum(r[22]),
+    opsCommentary: r[23] ? String(r[23]) : null,
+    soldGmPercent: toDecimal(r[31]),
+    toDateGrossProfit: toNum(r[30]),
+    toDateGmPercent: toDecimal(r[32]),
+    gpAtCompletion: toNum(r[33]),
+    forecastGmPercent: toDecimal(r[34]),
+    description: null,
+  };
+}
+
+export function buildEmployeeLookupMaps(allEmployees: any[]): { empMap: Map<string, number>; empCodes: Set<string> } {
+  const empMap = new Map<string, number>();
+  const empCodes = new Set<string>();
+  for (const e of allEmployees) {
+    empMap.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e.id);
+    empCodes.add(e.employeeCode);
+  }
+  return { empMap, empCodes };
+}
+
+export function buildProjectLookupMaps(allProjects: any[]): { projMap: Map<string, number>; projCodes: Set<string> } {
+  const projMap = new Map<string, number>();
+  const projCodes = new Set<string>();
+  for (const p of allProjects) {
+    projMap.set(p.name.toLowerCase(), p.id);
+    if (p.projectCode) {
+      projMap.set(p.projectCode.toLowerCase(), p.id);
+      projCodes.add(p.projectCode);
+    }
+  }
+  return { projMap, projCodes };
+}
+
+export function buildOpenOppRecord(r: any[], name: string, classification: string): any {
+  const rawValue = r[3];
+  const numRawValue = Number(rawValue);
+  const value = rawValue !== "" && rawValue != null && !Number.isNaN(numRawValue) ? String(numRawValue.toFixed(2)) : null;
+  const rawMargin = r[4];
+  const numRawMargin = Number(rawMargin);
+  const marginPercent = rawMargin !== "" && rawMargin != null && !Number.isNaN(numRawMargin) ? String(numRawMargin.toFixed(3)) : null;
+  const workType = r[5] ? String(r[5]).trim() : null;
+  const startDate = excelDateToISOString(r[6]);
+  const expiryDate = excelDateToISOString(r[7]);
+  let vat = r[8] ? String(r[8]).trim() : null;
+  if (vat) {
+    vat = vat.replaceAll(";#", "").replace(/\|.*$/, "").trim();
+    if (vat.toLowerCase() === "growth") vat = "GROWTH";
+  }
+  const status = r[9] ? String(r[9]).trim() : null;
+  const comment = r[10] ? String(r[10]).trim() : null;
+  const casLead = r[11] ? String(r[11]).trim() : null;
+  const csdLead = r[12] ? String(r[12]).replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() : null;
+  const category = r[13] ? String(r[13]).replaceAll(";#", ", ").trim() : null;
+  const partner = r[14] ? String(r[14]).replaceAll(";#", ", ").trim() : null;
+  const clientContact = r[15] ? String(r[15]).trim() : null;
+  const clientCode = r[16] ? String(r[16]).trim() : null;
+  const dueDate = excelDateToISOString(r[2]);
+  return {
+    name, classification, vat, fyYear: "open_opps",
+    value, marginPercent, workType, status, dueDate,
+    startDate, expiryDate, comment, casLead, csdLead,
+    category, partner, clientContact, clientCode,
+  };
+}
+
+export function buildPlannerSyncInsights(counts: {
+  newlyCompletedCount: number;
+  newCount: number;
+  updatedCount: number;
+  removedCount: number;
+  recentCompletedCount: number;
+}): string[] {
+  const insights: string[] = [];
+  if (counts.newlyCompletedCount > 0) insights.push(`${counts.newlyCompletedCount} task${counts.newlyCompletedCount > 1 ? "s" : ""} newly completed this sync`);
+  if (counts.newCount > 0) insights.push(`${counts.newCount} new task${counts.newCount > 1 ? "s" : ""} added from Planner`);
+  if (counts.updatedCount > 0) insights.push(`${counts.updatedCount} task${counts.updatedCount > 1 ? "s" : ""} updated`);
+  if (counts.removedCount > 0) insights.push(`${counts.removedCount} task${counts.removedCount > 1 ? "s" : ""} removed (no longer in Planner)`);
+  if (counts.recentCompletedCount > 0) insights.push(`${counts.recentCompletedCount} task${counts.recentCompletedCount > 1 ? "s" : ""} completed in last 4 weeks`);
+  if (insights.length === 0) insights.push("All tasks are up to date");
+  return insights;
+}
+
+export function buildExistingTaskMaps(existingTasks: any[]): { existingByExtId: Map<string, any>; existingWithoutExtId: any[] } {
+  const existingByExtId = new Map<string, any>();
+  const existingWithoutExtId: any[] = [];
+  for (const t of existingTasks) {
+    if (t.externalId) {
+      existingByExtId.set(t.externalId, t);
+    } else {
+      existingWithoutExtId.push(t);
+    }
+  }
+  return { existingByExtId, existingWithoutExtId };
+}
+
+export function collectPlannerUserIds(plannerTasks: any[]): Set<string> {
+  const allUserIds = new Set<string>();
+  for (const pt of plannerTasks) {
+    if (pt.assignments) {
+      for (const uid of Object.keys(pt.assignments)) {
+        if (uid) allUserIds.add(uid);
+      }
+    }
+    if (pt.completedBy?.user?.id) {
+      allUserIds.add(pt.completedBy.user.id);
+    }
+  }
+  return allUserIds;
+}
+
+export function buildPlannerTaskRecord(
+  pt: any,
+  bucketNameCache: Map<string, string>,
+  resolveUserName: (uid: string) => string,
+): { taskName: string; bucketName: string; progress: string; dueDate: string; priority: string; assignedTo: string; extId: string } {
+  const extId = pt.id;
+  const taskName = pt.title || "Untitled";
+  const bucketName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "") || "";
+  const progress = mapPlannerProgress(pt.percentComplete || 0);
+  const dueDate = pt.dueDateTime?.split("T")[0] ?? "";
+  const priority = mapPlannerPriority(pt.priority);
+  const assignedToIds = pt.assignments ? Object.keys(pt.assignments) : [];
+  const assignedTo = assignedToIds.map(uid => resolveUserName(uid)).join(", ");
+  return { taskName, bucketName, progress, dueDate, priority, assignedTo, extId };
+}
+
+export function detectTaskChanges(
+  existing: any,
+  taskName: string,
+  progress: string,
+  dueDate: string,
+  priority: string,
+): string[] {
+  const changes: string[] = [];
+  if (existing.progress !== progress) changes.push(`progress: "${existing.progress}" \u2192 "${progress}"`);
+  if (existing.dueDate !== dueDate && dueDate) changes.push(`due date: "${existing.dueDate || "none"}" \u2192 "${dueDate}"`);
+  if (existing.priority !== priority) changes.push(`priority: "${existing.priority}" \u2192 "${priority}"`);
+  if (existing.taskName !== taskName) changes.push(`title: "${existing.taskName}" \u2192 "${taskName}"`);
+  return changes;
+}
+
+export function findRecentlyCompletedTasks(
+  plannerTasks: any[],
+  fourWeeksAgo: Date,
+  resolveUserName: (uid: string) => string,
+): { title: string; completedBy: string; completedDate: string }[] {
+  const result: { title: string; completedBy: string; completedDate: string }[] = [];
+  for (const pt of plannerTasks) {
+    if (pt.percentComplete !== 100) continue;
+    if (!pt.completedDateTime) continue;
+    if (new Date(pt.completedDateTime) < fourWeeksAgo) continue;
+    let completedByName = "Unknown";
+    if (pt.completedBy?.user?.id) {
+      completedByName = resolveUserName(pt.completedBy.user.id);
+    } else if (pt.completedBy?.user?.displayName) {
+      completedByName = pt.completedBy.user.displayName;
+    }
+    result.push({
+      title: pt.title || "Untitled",
+      completedBy: completedByName,
+      completedDate: pt.completedDateTime.split("T")[0],
+    });
+  }
+  return result;
+}
+
+export function buildPlannerBucketGroups(
+  plannerTasks: any[],
+  bucketNameCache: Map<string, string>,
+  resolveUserName: (uid: string) => string,
+): Record<string, string[]> {
+  const bucketGroups: Record<string, string[]> = {};
+  for (const pt of plannerTasks) {
+    const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
+    if (!bucketGroups[bName]) bucketGroups[bName] = [];
+    const pct = pt.percentComplete || 0;
+    let status = "Not Started";
+    if (pct === 100) status = "Completed";
+    else if (pct > 0) status = "In Progress";
+    const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
+    const titleStatus = `${pt.title} [${status}]`;
+    const taskEntry = assignees ? `${titleStatus} (${assignees})` : titleStatus;
+    bucketGroups[bName].push(taskEntry);
+  }
+  return bucketGroups;
+}
+
+export function parseStaffSOTRow(r: any[]): any {
+  const fullName = String(r[0]).trim();
+  const parts = fullName.split(" ");
+  const firstName = parts[0] || fullName;
+  const lastName = parts.slice(1).join(" ") || "";
+  return {
+    firstName,
+    lastName,
+    fullName,
+    empData: {
+      employeeCode: "",
+      firstName,
+      lastName,
+      email: null,
+      role: null,
+      costBandLevel: r[1] ? String(r[1]).substring(0, 50) : null,
+      staffType: r[2] ? String(r[2]).substring(0, 50) : null,
+      grade: null,
+      location: r[12] ? String(r[12]).substring(0, 100) : null,
+      costCenter: null,
+      securityClearance: null,
+      payrollTax: String(r[3] || "").toLowerCase() === "yes",
+      payrollTaxRate: null,
+      baseCost: toNum(r[4]),
+      grossCost: toNum(r[6]),
+      baseSalary: null,
+      status: String(r[5] || "active").toLowerCase() === "virtual bench" ? "bench" : "active",
+      startDate: null,
+      endDate: null,
+      scheduleStart: excelDateToString(r[8]),
+      scheduleEnd: excelDateToString(r[9]),
+      resourceGroup: null,
+      team: r[10] ? String(r[10]).substring(0, 100) : null,
+      jid: r[7] ? String(r[7]).substring(0, 50) : null,
+      onboardingStatus: "completed",
+    },
+  };
 }
 
 export async function registerRoutes(
@@ -1506,7 +1822,7 @@ export async function registerRoutes(
     if (existing) return res.status(400).json({ message: "Username already exists" });
 
     const bcrypt = await import("bcryptjs");
-    const crypto = await import("crypto");
+    const crypto = await import("node:crypto");
     const randomPassword = crypto.randomBytes(16).toString("hex");
     const tempPassword = await bcrypt.hash(randomPassword, 10);
     const newUser = await storage.createUser({
@@ -1780,7 +2096,7 @@ export async function registerRoutes(
       const pipelineOpps = await storage.getPipelineOpportunities();
       const projectMonthly = await storage.getProjectMonthly();
 
-      let systemPrompt = `You are a risk-focused financial analyst for an Australian project management firm. Your job is to identify SPECIFIC RISKS, RED FLAGS, and WARNING SIGNS in the data provided. Do NOT give generic advice or summaries.
+      const defaultSystemPrompt = `You are a risk-focused financial analyst for an Australian project management firm. Your job is to identify SPECIFIC RISKS, RED FLAGS, and WARNING SIGNS in the data provided. Do NOT give generic advice or summaries.
 
 Rules:
 - Australian Financial Year (Jul-Jun, e.g. FY25-26)
@@ -1790,295 +2106,11 @@ Rules:
 - For each risk, state: what the risk is, why it matters, and what to do about it
 - Be direct and blunt. The reader is a senior manager who needs to know what could go wrong.`;
 
-      let userPrompt = "";
+      const { systemPrompt, userPrompt } = await buildInsightPrompts(
+        type, defaultSystemPrompt, projects, kpis, pipelineOpps, projectMonthly
+      );
 
-      if (type === "pipeline") {
-        const classGroups: Record<string, number> = {};
-        let totalWeighted = 0;
-        const oppDetails: string[] = [];
-        pipelineOpps.forEach(opp => {
-          const cls = opp.classification || "Unknown";
-          const monthRevs = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
-            opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12];
-          const total = monthRevs.reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-          classGroups[cls] = (classGroups[cls] || 0) + total;
-          const winRate: Record<string, number> = { C: 1, S: 0.8, DVF: 0.5, DF: 0.3, Q: 0.15, A: 0.05 };
-          totalWeighted += total * (winRate[cls] || 0);
-
-          const zeroMonths = monthRevs.filter(v => Number.parseFloat(v || "0") === 0).length;
-          const h1 = monthRevs.slice(0, 6).reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-          const h2 = monthRevs.slice(6).reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-          oppDetails.push(`  - "${opp.name}" [${cls}] VAT:${opp.vat || "?"} Total:$${total.toLocaleString()} H1:$${h1.toLocaleString()} H2:$${h2.toLocaleString()} ZeroMonths:${zeroMonths}/12`);
-        });
-
-        const totalPipeline = Object.values(classGroups).reduce((s, v) => s + v, 0);
-        const committedPct = totalPipeline > 0 ? ((classGroups["C"] || 0) / totalPipeline * 100).toFixed(1) : "0";
-        const earlyPct = totalPipeline > 0 ? (((classGroups["Q"] || 0) + (classGroups["A"] || 0)) / totalPipeline * 100).toFixed(1) : "0";
-
-        userPrompt = `Identify ALL risks in our sales pipeline. Be specific - name each opportunity that has problems.
-
-Pipeline Data (${pipelineOpps.length} opportunities, Total: $${totalPipeline.toLocaleString()}, Weighted: $${totalWeighted.toLocaleString()}):
-Classification breakdown:
-${Object.entries(classGroups).map(([k, v]) => { const pct = totalPipeline > 0 ? (v / totalPipeline * 100).toFixed(1) : "0"; return `- ${k}: $${v.toLocaleString()} (${pct}%)`; }).join("\n")}
-
-Committed (C) as % of total: ${committedPct}%
-Early-stage (Q+A) as % of total: ${earlyPct}%
-Active projects that could absorb pipeline: ${projects.filter(p => p.status === "active").length}
-
-Individual Opportunities:
-${oppDetails.join("\n")}
-
-Identify risks including:
-- Concentration risk: too much revenue dependent on few opportunities or one classification
-- Conversion risk: opportunities stuck in early stages with large values
-- Revenue gap risk: months with zero or very low revenue across opportunities
-- Client/VAT concentration: over-reliance on specific VAT categories
-- H1 vs H2 imbalance: is revenue front-loaded or back-loaded?
-- Pipeline coverage ratio: is weighted pipeline sufficient vs target revenue?
-- Stale opportunities: large deals in low-probability stages (Q/A)`;
-      } else if (type === "projects") {
-        const projectSummaries = projects.map(p => {
-          const monthly = projectMonthly.filter(m => m.projectId === p.id);
-          const totalRev = monthly.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
-          const totalCost = monthly.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
-          const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
-          const monthlyMargins = monthly.map(m => {
-            const r = Number.parseFloat(m.revenue || "0");
-            const c = Number.parseFloat(m.cost || "0");
-            return r > 0 ? ((r - c) / r * 100).toFixed(0) : "N/A";
-          });
-          const costTrend = monthly.slice(-3).map(m => `$${Number.parseFloat(m.cost || "0").toLocaleString()}`).join(" -> ");
-          const wo = Number.parseFloat(p.workOrderAmount || "0");
-          const actual = Number.parseFloat(p.actualAmount || "0");
-          const balance = Number.parseFloat(p.balanceAmount || "0");
-          const burnPct = wo > 0 ? ((actual / wo) * 100).toFixed(0) : "N/A";
-          return `  - "${p.name}" [${p.billingCategory || "?"}] VAT:${p.vat || "?"} Status:${p.status} AD:${p.adStatus || "?"}
-    Revenue:$${totalRev.toLocaleString()} Cost:$${totalCost.toLocaleString()} Margin:${margin}%
-    WorkOrder:$${wo.toLocaleString()} Actual:$${actual.toLocaleString()} Balance:$${balance.toLocaleString()} BurnRate:${burnPct}%
-    MonthlyMargins:[${monthlyMargins.join(", ")}] RecentCostTrend:${costTrend}`;
-        }).join("\n");
-
-        userPrompt = `Identify ALL risks across our project portfolio. Name each project that has issues.
-
-Project Data (${projects.length} total):
-${projectSummaries}
-
-Identify risks including:
-- Margin erosion: projects where margin is below 20% or trending downward month-over-month
-- Budget overrun: projects where actual spend exceeds work order amount or balance is negative
-- Cost blowout: projects where costs are increasing month-over-month without matching revenue growth
-- Fixed-price risk: Fixed projects with low margins (cost overruns can't be recovered)
-- Stalled projects: projects with "pending" or unusual AD status
-- Revenue concentration: too much revenue from one or two projects
-- T&M leakage: T&M projects where billable rates may not cover costs
-- Forecast vs actual gaps: projects where forecasted revenue differs significantly from actual trajectory`;
-      } else if (type === "spending_patterns" || type === "financial_advice" || type === "spending_forecast") {
-        const employees = await storage.getEmployees();
-        let resourceCosts: any[] = [];
-        try { resourceCosts = await db("resource_costs").select("*"); } catch (e) { console.error(e); }
-
-        const activeProjects = projects.filter(p => p.status === "active" || p.adStatus === "Active");
-        const permEmployees = employees.filter(e => e.staffType === "Permanent");
-
-        const monthlySpend: Record<string, { revenue: number; cost: number; profit: number }> = {};
-        projectMonthly.forEach(m => {
-          const key = `${m.fyYear}-M${m.month}`;
-          if (!monthlySpend[key]) monthlySpend[key] = { revenue: 0, cost: 0, profit: 0 };
-          monthlySpend[key].revenue += Number.parseFloat(m.revenue || "0");
-          monthlySpend[key].cost += Number.parseFloat(m.cost || "0");
-          monthlySpend[key].profit += Number.parseFloat(m.revenue || "0") - Number.parseFloat(m.cost || "0");
-        });
-
-        const billingBreakdown: Record<string, { revenue: number; cost: number }> = {};
-        projects.forEach(p => {
-          const cat = p.billingCategory || "Other";
-          const pm = projectMonthly.filter(m => m.projectId === p.id);
-          const rev = pm.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
-          const cost = pm.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
-          if (!billingBreakdown[cat]) billingBreakdown[cat] = { revenue: 0, cost: 0 };
-          billingBreakdown[cat].revenue += rev;
-          billingBreakdown[cat].cost += cost;
-        });
-
-        const topCostProjects = projects.map(p => {
-          const pm = projectMonthly.filter(m => m.projectId === p.id);
-          const totalCost = pm.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
-          const totalRev = pm.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
-          const monthCosts = [...pm].sort((a, b) => (a.month ?? 0) - (b.month ?? 0)).map(m => Number.parseFloat(m.cost || "0"));
-          return { name: p.name, code: p.projectCode, billing: p.billingCategory, totalCost, totalRev, margin: totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0", monthCosts };
-        }).sort((a, b) => b.totalCost - a.totalCost).slice(0, 20);
-
-        const staffCostSummary = resourceCosts.map((rc: any) => ({
-          name: rc.employee_name,
-          staffType: rc.staff_type,
-          phase: rc.cost_phase,
-          total: Number.parseFloat(rc.total_cost || "0"),
-        }));
-        const totalStaffCost = staffCostSummary.reduce((s: number, r: any) => s + r.total, 0);
-        const permCost = staffCostSummary.filter((r: any) => r.staffType === "Permanent").reduce((s: number, r: any) => s + r.total, 0);
-        const contractorCost = staffCostSummary.filter((r: any) => r.staffType === "Contractor").reduce((s: number, r: any) => s + r.total, 0);
-
-        const monthlySpendStr = Object.entries(monthlySpend)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Profit $${v.profit.toLocaleString()}`)
-          .join("\n");
-
-        const billingStr = Object.entries(billingBreakdown)
-          .map(([k, v]) => `  ${k}: Rev $${v.revenue.toLocaleString()} | Cost $${v.cost.toLocaleString()} | Margin ${v.revenue > 0 ? ((v.revenue - v.cost) / v.revenue * 100).toFixed(1) : 0}%`)
-          .join("\n");
-
-        const topProjectsStr = topCostProjects
-          .map(p => {
-            const trendStr = p.monthCosts.map(c => `$${c.toLocaleString()}`).join(",");
-            return `  "${p.name}" [${p.billing || "?"}]: Cost $${p.totalCost.toLocaleString()} Rev $${p.totalRev.toLocaleString()} Margin:${p.margin}% Trend:[${trendStr}]`;
-          })
-          .join("\n");
-
-        const dataContext = `Organization Financial Data:
-- Active Projects: ${activeProjects.length} / ${projects.length} total
-- Permanent Employees: ${permEmployees.length} / ${employees.length} total
-- Total Staff Cost (resource_costs): $${totalStaffCost.toLocaleString()} (Permanent: $${permCost.toLocaleString()}, Contractor: $${contractorCost.toLocaleString()})
-- Pipeline Opportunities: ${pipelineOpps.length}
-
-Monthly Spend Pattern (by FY-Month):
-${monthlySpendStr}
-
-Billing Category Breakdown:
-${billingStr}
-
-Top 20 Projects by Cost:
-${topProjectsStr}`;
-
-        if (type === "spending_patterns") {
-          systemPrompt = `You are a senior financial analyst specializing in spending pattern analysis for an Australian professional services firm. Use Australian Financial Year (Jul-Jun). Provide data-driven analysis with specific numbers.`;
-          userPrompt = `Analyze our spending patterns in detail. Identify trends, anomalies, and areas of concern.
-
-${dataContext}
-
-Provide analysis on:
-1. **Monthly Spending Trends**: Are costs increasing, stable, or decreasing? Identify any spikes or dips and what might be driving them.
-2. **Cost Concentration**: Which projects consume the most resources? Is there unhealthy concentration?
-3. **Billing Type Economics**: How do Fixed vs T&M projects compare on cost efficiency and margins?
-4. **Staff Cost Structure**: What's the permanent vs contractor cost mix? Is it optimal?
-5. **Seasonal Patterns**: Are there predictable quarterly or monthly patterns in spend?
-6. **Cost Anomalies**: Flag any unusual cost movements that warrant investigation.
-
-Use specific project names and dollar amounts. Include month-over-month or quarter-over-quarter comparisons where relevant.`;
-        } else if (type === "financial_advice") {
-          systemPrompt = `You are a strategic financial advisor for an Australian professional services firm. Provide actionable, specific financial advice based on real data. Use Australian Financial Year (Jul-Jun). Be direct and practical — this is for senior leadership decision-making.`;
-          userPrompt = `Based on our financial data, provide strategic financial advice and actionable recommendations.
-
-${dataContext}
-
-Provide advice across these areas:
-1. **Margin Improvement**: Which projects or billing categories have the most margin improvement potential? What specific actions should we take?
-2. **Cost Optimization**: Where can we reduce costs without impacting delivery? Are there projects where costs are out of proportion to revenue?
-3. **Revenue Growth Opportunities**: Based on current project performance, where should we invest more? Which clients or work types are most profitable?
-4. **Workforce Strategy**: Is our permanent/contractor mix optimal? Should we convert contractors to permanent or vice versa based on cost data?
-5. **Cash Flow Management**: Based on spending patterns, are there cash flow risks we should plan for?
-6. **Portfolio Rebalancing**: Should we shift focus between Fixed and T&M work based on margin performance?
-
-For each recommendation, provide: the specific opportunity, estimated financial impact, and suggested timeline.`;
-        } else {
-          systemPrompt = `You are a financial forecasting expert for an Australian professional services firm. Use historical spending data to predict future trends. Use Australian Financial Year (Jul-Jun). Be specific with projections and clearly state your confidence level and assumptions.`;
-          userPrompt = `Based on our historical spending data, predict future spending trends and financial trajectory.
-
-${dataContext}
-
-Provide forecasts and predictions on:
-1. **Revenue Trajectory**: Based on monthly trends, project the next 3-6 months of revenue. Are we on track to meet targets?
-2. **Cost Trajectory**: Where are costs heading? Project next quarter costs based on recent trends.
-3. **Margin Forecast**: Will margins improve or deteriorate? Which factors will drive this?
-4. **Resource Cost Projections**: Based on staff cost data, what's the expected cost base going forward?
-5. **Project Completion Risk**: Based on burn rates and remaining budgets, which projects are at risk of cost overrun in the coming months?
-6. **Pipeline Revenue Timing**: When will current pipeline opportunities likely convert to revenue? What's the expected revenue ramp?
-7. **Seasonal Adjustments**: Account for any seasonal patterns (e.g., Q4 slowdown, new FY ramp-up) in your forecasts.
-
-For each prediction, state your confidence level (High/Medium/Low) and the key assumptions. Include best-case and worst-case scenarios where appropriate.`;
-        }
-      } else {
-        const totalRevenue = kpis.reduce((s, k) => s + Number.parseFloat(k.revenue || "0"), 0);
-        const totalCost = kpis.reduce((s, k) => s + Number.parseFloat(k.grossCost || "0"), 0);
-        const avgMargin = kpis.length > 0
-          ? (kpis.reduce((s, k) => s + Number.parseFloat(k.marginPercent || "0"), 0) / kpis.length).toFixed(1)
-          : "0";
-        const avgUtil = kpis.length > 0
-          ? (kpis.reduce((s, k) => s + Number.parseFloat(k.utilization || "0"), 0) / kpis.length).toFixed(1)
-          : "0";
-
-        const classGroups: Record<string, number> = {};
-        pipelineOpps.forEach(opp => {
-          const cls = opp.classification || "Unknown";
-          const total = [opp.revenueM1, opp.revenueM2, opp.revenueM3, opp.revenueM4, opp.revenueM5, opp.revenueM6,
-            opp.revenueM7, opp.revenueM8, opp.revenueM9, opp.revenueM10, opp.revenueM11, opp.revenueM12]
-            .reduce((s, v) => s + Number.parseFloat(v || "0"), 0);
-          classGroups[cls] = (classGroups[cls] || 0) + total;
-        });
-
-        const projectRisks = projects.map(p => {
-          const monthly = projectMonthly.filter(m => m.projectId === p.id);
-          const totalRev = monthly.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
-          const totalCost = monthly.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
-          const margin = totalRev > 0 ? ((totalRev - totalCost) / totalRev * 100).toFixed(1) : "0";
-          const balance = Number.parseFloat(p.balanceAmount || "0");
-          return { name: p.name, margin: Number.parseFloat(margin), balance, totalRev, status: p.status };
-        });
-
-        const lowMarginProjects = projectRisks.filter(p => p.margin < 20).map(p => `${p.name} (${p.margin}%)`);
-        const negativeBalance = projectRisks.filter(p => p.balance < 0).map(p => `${p.name} ($${p.balance.toLocaleString()})`);
-        const topRevProject = [...projectRisks].sort((a, b) => b.totalRev - a.totalRev)[0];
-        const revConcentration = topRevProject && totalRevenue > 0 ? (topRevProject.totalRev / totalRevenue * 100).toFixed(1) : "0";
-
-        userPrompt = `Identify the top risks facing this organization RIGHT NOW. Be specific and blunt.
-
-Financial Position:
-- Total Revenue: $${totalRevenue.toLocaleString()}
-- Total Cost: $${totalCost.toLocaleString()}
-- Gross Margin: ${totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue * 100).toFixed(1) : 0}%
-- Average Project Margin: ${avgMargin}%
-- Average Utilization: ${avgUtil}%
-- Active Projects: ${projects.filter(p => p.status === "active").length} / ${projects.length} total
-
-Pipeline Coverage:
-${Object.entries(classGroups).map(([k, v]) => `- ${k}: $${v.toLocaleString()}`).join("\n")}
-
-Red Flag Data:
-- Projects with margin below 20%: ${lowMarginProjects.length > 0 ? lowMarginProjects.join(", ") : "None"}
-- Projects with negative balance: ${negativeBalance.length > 0 ? negativeBalance.join(", ") : "None"}
-- Largest project is ${revConcentration}% of total revenue (${topRevProject?.name || "N/A"})
-- Pipeline opportunities: ${pipelineOpps.length}
-
-Produce a RISK REGISTER with:
-1. Each risk rated CRITICAL / HIGH / MEDIUM / LOW
-2. The specific data point that triggered the risk
-3. What happens if we do nothing (impact)
-4. Recommended immediate action
-Focus on risks that could materially hurt revenue, margin, or cash flow in the next 6 months.`;
-      }
-
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        stream: true,
-        max_tokens: 2048,
-      });
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
-        }
-      }
-
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
+      await streamAIResponse(openai, systemPrompt, userPrompt, res);
     } catch (error: any) {
       console.error("AI insights error:", error);
       if (res.headersSent) {
@@ -2521,15 +2553,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       }
 
       const existingTasks = await storage.getVatPlannerTasks(reportId);
-      const existingByExtId = new Map<string, any>();
-      const existingWithoutExtId: any[] = [];
-      for (const t of existingTasks) {
-        if (t.externalId) {
-          existingByExtId.set(t.externalId, t);
-        } else {
-          existingWithoutExtId.push(t);
-        }
-      }
+      const { existingByExtId, existingWithoutExtId } = buildExistingTaskMaps(existingTasks);
       const seenExtIds = new Set<string>();
 
       const insights: string[] = [];
@@ -2578,17 +2602,7 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         console.warn("[Planner Sync] Group members lookup failed:", groupErr.message);
       }
 
-      const allUserIds = new Set<string>();
-      for (const pt of plannerTasks) {
-        if (pt.assignments) {
-          for (const uid of Object.keys(pt.assignments)) {
-            if (uid) allUserIds.add(uid);
-          }
-        }
-        if (pt.completedBy?.user?.id) {
-          allUserIds.add(pt.completedBy.user.id);
-        }
-      }
+      const allUserIds = collectPlannerUserIds(plannerTasks);
       const unresolvedIds = Array.from(allUserIds).filter(id => !userIdCache.has(id));
       if (unresolvedIds.length > 0) {
         console.log(`[Planner Sync] ${unresolvedIds.length} user IDs still unresolved after group members lookup, trying individual lookups...`);
@@ -2639,26 +2653,12 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
       };
 
       for (const pt of plannerTasks) {
-        const extId = pt.id;
-        const taskName = pt.title || "Untitled";
-        const bucketName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "") || "";
-        const percentComplete = pt.percentComplete || 0;
-        let progress: string;
-        if (percentComplete === 100) progress = "Completed";
-        else if (percentComplete > 0) progress = "In progress";
-        else progress = "Not started";
-        const dueDate = pt.dueDateTime?.split("T")[0] ?? "";
-        let priority: string;
-        if (pt.priority === 1) priority = "Important";
-        else if (pt.priority === 5) priority = "Low";
-        else priority = "Medium";
-        const assignedToIds = pt.assignments ? Object.keys(pt.assignments) : [];
-        const assignedTo = assignedToIds.map(uid => resolveUserName(uid)).join(", ");
-        seenExtIds.add(extId);
+        const rec = buildPlannerTaskRecord(pt, bucketNameCache, resolveUserName);
+        seenExtIds.add(rec.extId);
 
-        let existing = existingByExtId.get(extId);
+        let existing = existingByExtId.get(rec.extId);
         if (!existing) {
-          const nameMatch = existingWithoutExtId.find(t => t.taskName === taskName);
+          const nameMatch = existingWithoutExtId.find(t => t.taskName === rec.taskName);
           if (nameMatch) {
             existing = nameMatch;
             existingWithoutExtId.splice(existingWithoutExtId.indexOf(nameMatch), 1);
@@ -2666,12 +2666,8 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         }
 
         if (existing) {
-          const wasCompleted = existing.progress !== "Completed" && progress === "Completed";
-          const changes: string[] = [];
-          if (existing.progress !== progress) changes.push(`progress: "${existing.progress}" → "${progress}"`);
-          if (existing.dueDate !== dueDate && dueDate) changes.push(`due date: "${existing.dueDate || "none"}" → "${dueDate}"`);
-          if (existing.priority !== priority) changes.push(`priority: "${existing.priority}" → "${priority}"`);
-          if (existing.taskName !== taskName) changes.push(`title: "${existing.taskName}" → "${taskName}"`);
+          const wasCompleted = existing.progress !== "Completed" && rec.progress === "Completed";
+          const changes = detectTaskChanges(existing, rec.taskName, rec.progress, rec.dueDate, rec.priority);
 
           if (wasCompleted) {
             newlyCompletedCount++;
@@ -2682,53 +2678,37 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
               completedByName = pt.completedBy.user.displayName;
             }
             const completedDate = pt.completedDateTime?.split("T")[0] ?? new Date().toISOString().split("T")[0];
-            newlyCompletedTasks.push({ title: taskName, completedBy: completedByName, completedDate });
+            newlyCompletedTasks.push({ title: rec.taskName, completedBy: completedByName, completedDate });
           }
-          const needsBucketUpdate = existing.bucketName !== bucketName && bucketName;
-          const needsAssigneeUpdate = existing.assignedTo !== assignedTo && assignedTo;
+          const needsBucketUpdate = existing.bucketName !== rec.bucketName && rec.bucketName;
+          const needsAssigneeUpdate = existing.assignedTo !== rec.assignedTo && rec.assignedTo;
           if (changes.length > 0 || !existing.externalId || needsBucketUpdate || needsAssigneeUpdate) {
-            await storage.updateVatPlannerTask(existing.id, { progress, dueDate, priority, assignedTo, taskName, bucketName, externalId: extId });
+            await storage.updateVatPlannerTask(existing.id, { progress: rec.progress, dueDate: rec.dueDate, priority: rec.priority, assignedTo: rec.assignedTo, taskName: rec.taskName, bucketName: rec.bucketName, externalId: rec.extId });
             if (changes.length > 0) {
               updatedCount++;
-              updatedTasks.push({ title: taskName, changes });
+              updatedTasks.push({ title: rec.taskName, changes });
             }
           }
         } else {
           await storage.createVatPlannerTask({
             vatReportId: reportId,
-            bucketName,
-            taskName,
-            progress,
-            dueDate,
-            priority,
-            assignedTo,
-            labels: progress === "Completed" ? "GREEN" : "AMBER",
+            bucketName: rec.bucketName,
+            taskName: rec.taskName,
+            progress: rec.progress,
+            dueDate: rec.dueDate,
+            priority: rec.priority,
+            assignedTo: rec.assignedTo,
+            labels: rec.progress === "Completed" ? "GREEN" : "AMBER",
             sortOrder: synced,
-            externalId: extId,
+            externalId: rec.extId,
           });
           newCount++;
-          newTasks.push({ title: taskName, dueDate });
+          newTasks.push({ title: rec.taskName, dueDate: rec.dueDate });
         }
         synced++;
       }
 
-      const recentCompletedInLast4Weeks: { title: string; completedBy: string; completedDate: string }[] = [];
-      for (const pt of plannerTasks) {
-        if (pt.percentComplete !== 100) continue;
-        if (!pt.completedDateTime) continue;
-        if (new Date(pt.completedDateTime) < fourWeeksAgo) continue;
-        let completedByName = "Unknown";
-        if (pt.completedBy?.user?.id) {
-          completedByName = resolveUserName(pt.completedBy.user.id);
-        } else if (pt.completedBy?.user?.displayName) {
-          completedByName = pt.completedBy.user.displayName;
-        }
-        recentCompletedInLast4Weeks.push({
-          title: pt.title || "Untitled",
-          completedBy: completedByName,
-          completedDate: pt.completedDateTime.split("T")[0],
-        });
-      }
+      const recentCompletedInLast4Weeks = findRecentlyCompletedTasks(plannerTasks, fourWeeksAgo, resolveUserName);
 
       let removedCount = 0;
       const removedTasks: string[] = [];
@@ -2740,29 +2720,19 @@ Focus on risks that could materially hurt revenue, margin, or cash flow in the n
         }
       }
 
-      if (newlyCompletedCount > 0) insights.push(`${newlyCompletedCount} task${newlyCompletedCount > 1 ? "s" : ""} newly completed this sync`);
-      if (newCount > 0) insights.push(`${newCount} new task${newCount > 1 ? "s" : ""} added from Planner`);
-      if (updatedCount > 0) insights.push(`${updatedCount} task${updatedCount > 1 ? "s" : ""} updated`);
-      if (removedCount > 0) insights.push(`${removedCount} task${removedCount > 1 ? "s" : ""} removed (no longer in Planner)`);
-      if (recentCompletedInLast4Weeks.length > 0) insights.push(`${recentCompletedInLast4Weeks.length} task${recentCompletedInLast4Weeks.length > 1 ? "s" : ""} completed in last 4 weeks`);
-      if (insights.length === 0) insights.push("All tasks are up to date");
+      const computedInsights = buildPlannerSyncInsights({
+        newlyCompletedCount,
+        newCount,
+        updatedCount,
+        removedCount,
+        recentCompletedCount: recentCompletedInLast4Weeks.length,
+      });
+      insights.push(...computedInsights);
 
       let aiSummary = "";
       if (openai && (newCount > 0 || updatedCount > 0 || newlyCompletedCount > 0 || removedCount > 0 || recentCompletedInLast4Weeks.length > 0)) {
         try {
-          const bucketGroups: Record<string, string[]> = {};
-          for (const pt of plannerTasks) {
-            const bName = (pt.bucketId ? bucketNameCache.get(pt.bucketId) : "Other") || "Other";
-            if (!bucketGroups[bName]) bucketGroups[bName] = [];
-            const pct = pt.percentComplete || 0;
-            let status = "Not Started";
-            if (pct === 100) status = "Completed";
-            else if (pct > 0) status = "In Progress";
-            const assignees = pt.assignments ? Object.keys(pt.assignments).map(uid => resolveUserName(uid)).join(", ") : "";
-            const titleStatus = `${pt.title} [${status}]`;
-            const taskEntry = assignees ? `${titleStatus} (${assignees})` : titleStatus;
-            bucketGroups[bName].push(taskEntry);
-          }
+          const bucketGroups = buildPlannerBucketGroups(plannerTasks, bucketNameCache, resolveUserName);
 
           const syncDataForAI = {
             totalTasksInPlan: synced,
@@ -3220,44 +3190,7 @@ Return this exact JSON structure:
   return httpServer;
 }
 
-function deriveFyYear(startDateStr: string | null): string {
-  if (!startDateStr) return "23-24";
-  const yr = Number.parseInt(startDateStr.slice(0, 4));
-  const mo = Number.parseInt(startDateStr.slice(5, 7));
-  const fyStart = mo >= 7 ? yr : yr - 1;
-  return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
-}
-
-async function createJobStatusMonthlyData(
-  project: { id: number },
-  r: any[],
-  fyYear: string,
-): Promise<void> {
-  const monthCols = {
-    revenue: [35,36,37,38,39,40,41,42,43,44,45,46],
-    cost: [47,48,49,50,51,52,53,54,55,56,57,58],
-    profit: [59,60,61,62,63,64,65,66,67,68,69,70],
-  };
-  const monthLabels = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
-  for (let m = 0; m < 12; m++) {
-    const rev = Number.parseFloat(toNum(r[monthCols.revenue[m]]));
-    const cost = Number.parseFloat(toNum(r[monthCols.cost[m]]));
-    const profit = Number.parseFloat(toNum(r[monthCols.profit[m]]));
-    if (rev !== 0 || cost !== 0 || profit !== 0) {
-      await storage.createProjectMonthly({
-        projectId: project.id,
-        fyYear,
-        month: m + 1,
-        monthLabel: monthLabels[m],
-        revenue: toNum(rev),
-        cost: toNum(cost),
-        profit: toNum(profit),
-      });
-    }
-  }
-}
-
-function parseMonthlyCosts(r: any[], startCol: number, endCol: number): { costs: string[]; total: number } {
+export function parseMonthlyCosts(r: any[], startCol: number, endCol: number): { costs: string[]; total: number } {
   let total = 0;
   const costs: string[] = [];
   for (let ci = startCol; ci <= endCol; ci++) {
@@ -3268,20 +3201,20 @@ function parseMonthlyCosts(r: any[], startCol: number, endCol: number): { costs:
   return { costs, total };
 }
 
-function cleanVatValue(raw: string | null): string | null {
+export function cleanVatValue(raw: string | null): string | null {
   if (!raw) return null;
   let vat = raw.replaceAll(";#", "").replace(/\|.*$/, "").trim();
   if (vat.toLowerCase() === "growth") vat = "GROWTH";
   return vat;
 }
 
-function parseOptionalNumericField(raw: any): string | null {
+export function parseOptionalNumericField(raw: any): string | null {
   if (raw === "" || raw == null) return null;
   const num = Number(raw);
   return Number.isNaN(num) ? null : String(num.toFixed(2));
 }
 
-function parseOptionalMarginField(raw: any): string | null {
+export function parseOptionalMarginField(raw: any): string | null {
   if (raw === "" || raw == null) return null;
   const num = Number(raw);
   return Number.isNaN(num) ? null : String(num.toFixed(3));
@@ -3369,7 +3302,7 @@ async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; 
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[3]) continue;
+    if (!r?.[3]) continue;
     try {
       const projectName = String(r[3]).trim();
       if (!projectName || projectName.toLowerCase() === "project" || projectName.toLowerCase() === "project name" || projectName.toLowerCase() === "name") continue;
@@ -3378,77 +3311,9 @@ async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; 
         continue;
       }
       existingNames.add(projectName.toLowerCase());
-      const clientCode = String(r[2] || "").trim();
-      const projectCode = clientCode ? `${clientCode}-${String(codeCounter++).padStart(3, "0")}` : `IMP-${String(codeCounter++).padStart(3, "0")}`;
-      const billingCat = String(r[9] || "").trim();
-
-      const project = await storage.createProject({
-        projectCode,
-        name: projectName,
-        client: clientCode,
-        clientCode,
-        clientManager: r[4] ? String(r[4]) : null,
-        engagementManager: r[5] ? String(r[5]) : null,
-        engagementSupport: r[6] ? String(r[6]) : null,
-        contractType: billingCat === "Fixed" ? "fixed_price" : "time_materials",
-        billingCategory: billingCat || null,
-        workType: r[10] ? String(r[10]) : null,
-        panel: r[11] ? String(r[11]) : null,
-        recurring: r[12] ? String(r[12]) : null,
-        vat: r[1] ? String(r[1]).trim() : null,
-        pipelineStatus: "C",
-        adStatus: r[0] ? String(r[0]).trim() : "Active",
-        status: String(r[0] || "").toLowerCase().includes("closed") ? "completed" : "active",
-        startDate: excelDateToString(r[7]),
-        endDate: excelDateToString(r[8]),
-        workOrderAmount: toNum(r[13]),
-        budgetAmount: toNum(r[14]),
-        actualAmount: toNum(r[15]),
-        balanceAmount: toNum(r[16]),
-        forecastedRevenue: toNum(r[18]),
-        forecastedGrossCost: toNum(r[29]),
-        contractValue: toNum(r[13]),
-        varianceAtCompletion: toNum(r[19]),
-        variancePercent: toDecimal(r[20]),
-        varianceToContractPercent: toDecimal(r[21]),
-        writeOff: toNum(r[22]),
-        opsCommentary: r[23] ? String(r[23]) : null,
-        soldGmPercent: toDecimal(r[31]),
-        toDateGrossProfit: toNum(r[30]),
-        toDateGmPercent: toDecimal(r[32]),
-        gpAtCompletion: toNum(r[33]),
-        forecastGmPercent: toDecimal(r[34]),
-        description: null,
-      });
-
-      const monthCols = { revenue: [35,36,37,38,39,40,41,42,43,44,45,46], cost: [47,48,49,50,51,52,53,54,55,56,57,58], profit: [59,60,61,62,63,64,65,66,67,68,69,70] };
-      const monthLabels = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
-
-      const startDateStr = excelDateToString(r[7]);
-      let fyYear = "23-24";
-      if (startDateStr) {
-        const yr = Number.parseInt(startDateStr.slice(0, 4));
-        const mo = Number.parseInt(startDateStr.slice(5, 7));
-        const fyStart = mo >= 7 ? yr : yr - 1;
-        fyYear = `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
-      }
-
-      for (let m = 0; m < 12; m++) {
-        const rev = Number.parseFloat(toNum(r[monthCols.revenue[m]]));
-        const cost = Number.parseFloat(toNum(r[monthCols.cost[m]]));
-        const profit = Number.parseFloat(toNum(r[monthCols.profit[m]]));
-        if (rev !== 0 || cost !== 0 || profit !== 0) {
-          await storage.createProjectMonthly({
-            projectId: project.id,
-            fyYear,
-            month: m + 1,
-            monthLabel: monthLabels[m],
-            revenue: toNum(rev),
-            cost: toNum(cost),
-            profit: toNum(profit),
-          });
-        }
-      }
+      const project = await storage.createProject(buildJobStatusProjectData(r, projectName, codeCounter++));
+      const fyYear = deriveFyYear(excelDateToString(r[7]));
+      await createJobStatusMonthlyData(project, r, fyYear);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 2}: ${err.message}`);
@@ -3469,15 +3334,12 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     try {
-      const fullName = String(r[0]).trim();
-      if (!fullName || fullName.toLowerCase() === "name") continue;
-      const parts = fullName.split(" ");
-      const firstName = parts[0] || fullName;
-      const lastName = parts.slice(1).join(" ") || "";
+      const parsed = parseStaffSOTRow(r);
+      if (!parsed.fullName || parsed.fullName.toLowerCase() === "name") continue;
 
-      if (existingNames.has(fullName.toLowerCase())) {
+      if (existingNames.has(parsed.fullName.toLowerCase())) {
         continue;
       }
 
@@ -3486,36 +3348,10 @@ async function importStaffSOT(ws: XLSX.WorkSheet): Promise<{ imported: number; e
         empCode = `E${codeCounter++}`;
       }
       existingCodes.add(empCode);
-      existingNames.add(fullName.toLowerCase());
+      existingNames.add(parsed.fullName.toLowerCase());
 
-      const empData = {
-        employeeCode: empCode,
-        firstName,
-        lastName,
-        email: null,
-        role: null,
-        costBandLevel: r[1] ? String(r[1]).substring(0, 50) : null,
-        staffType: r[2] ? String(r[2]).substring(0, 50) : null,
-        grade: null,
-        location: r[12] ? String(r[12]).substring(0, 100) : null,
-        costCenter: null,
-        securityClearance: null,
-        payrollTax: String(r[3] || "").toLowerCase() === "yes",
-        payrollTaxRate: null,
-        baseCost: toNum(r[4]),
-        grossCost: toNum(r[6]),
-        baseSalary: null,
-        status: String(r[5] || "active").toLowerCase() === "virtual bench" ? "bench" : "active",
-        startDate: null,
-        endDate: null,
-        scheduleStart: excelDateToString(r[8]),
-        scheduleEnd: excelDateToString(r[9]),
-        resourceGroup: null,
-        team: r[10] ? String(r[10]).substring(0, 100) : null,
-        jid: r[7] ? String(r[7]).substring(0, 50) : null,
-        onboardingStatus: "completed",
-      };
-      await storage.createEmployee(empData);
+      parsed.empData.employeeCode = empCode;
+      await storage.createEmployee(parsed.empData);
       imported++;
     } catch (err: any) {
       console.error(`StaffSOT Row ${i + 3} raw:`, JSON.stringify(r.slice(0, 15)));
@@ -3536,7 +3372,7 @@ async function importPipelineRevenue(ws: XLSX.WorkSheet, hasVat: boolean, sheetN
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     try {
       const name = String(r[0]).trim();
       const classification = String(r[1] || "Q").trim();
@@ -3588,7 +3424,7 @@ async function importGrossProfit(ws: XLSX.WorkSheet): Promise<{ imported: number
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     try {
       const name = String(r[0]).trim();
       const classification = String(r[1] || "Q").trim();
@@ -3629,85 +3465,30 @@ async function importPersonalHours(ws: XLSX.WorkSheet): Promise<{ imported: numb
   const errors: string[] = [];
 
   const allEmployees = await storage.getEmployees();
-  const empMap = new Map<string, number>();
-  const empCodes = new Set<string>();
-  for (const e of allEmployees) {
-    empMap.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e.id);
-    empCodes.add(e.employeeCode);
-  }
-  let empCounter = Date.now() % 100000;
+  const { empMap, empCodes } = buildEmployeeLookupMaps(allEmployees);
+  const empCounter = { value: Date.now() % 100000 };
 
   const allProjects = await storage.getProjects();
-  const projMap = new Map<string, number>();
-  const projCodes = new Set<string>();
-  for (const p of allProjects) {
-    projMap.set(p.name.toLowerCase(), p.id);
-    if (p.projectCode) {
-      projMap.set(p.projectCode.toLowerCase(), p.id);
-      projCodes.add(p.projectCode);
-    }
-  }
-  let projCounter = Date.now() % 100000;
+  const { projMap, projCodes } = buildProjectLookupMaps(allProjects);
+  const projCounter = { value: Date.now() % 100000 };
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     try {
       const firstName = r[10] ? String(r[10]).trim().substring(0, 100) : "";
       const lastName = r[11] ? String(r[11]).trim().substring(0, 100) : "";
       if (!firstName && !lastName) continue;
-      const fullName = `${firstName} ${lastName}`.toLowerCase();
-      let employeeId = empMap.get(fullName);
-      if (!employeeId) {
-        let empCode = `E${empCounter++}`;
-        while (empCodes.has(empCode)) empCode = `E${empCounter++}`;
-        empCodes.add(empCode);
-        const newEmp = await storage.createEmployee({
-          employeeCode: empCode, firstName, lastName,
-          email: null, role: r[12] ? String(r[12]).substring(0, 100) : "Staff",
-          costBandLevel: null, staffType: null, grade: null, location: null,
-          costCenter: null, securityClearance: null, payrollTax: false, payrollTaxRate: null,
-          baseCost: "0", grossCost: "0", baseSalary: null,
-          status: "active", startDate: null, endDate: null,
-          scheduleStart: null, scheduleEnd: null, resourceGroup: null,
-          team: null, jid: null, onboardingStatus: "completed",
-        });
-        employeeId = newEmp.id;
-        empMap.set(fullName, employeeId);
-      }
+      const role = r[12] ? String(r[12]).substring(0, 100) : null;
+      const employeeId = await findOrCreateEmployeeForImport(empMap, empCodes, empCounter, firstName, lastName, role);
 
       const weekEnding = excelDateToString(r[0]);
       if (!weekEnding) continue;
 
-      const projName = r[9] ? String(r[9]).trim().toLowerCase() : "";
-      let projectId = projName ? projMap.get(projName) : null;
+      const projName = r[9] ? String(r[9]).trim() : "";
+      let projectId: number | null = projName ? (projMap.get(projName.toLowerCase()) ?? null) : null;
       if (!projectId && projName) {
-        const origName = String(r[9]).trim();
-
-        const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
-        const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(origName);
-        let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${projCounter++}`;
-        while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
-        projCodes.add(pCode);
-        let clientName = "Unknown";
-        if (codeParts) {
-          clientName = codeParts[1].replaceAll(/[\d-]/g, '');
-        } else if (isInternal) {
-          clientName = "Internal";
-        }
-        const newProj = await storage.createProject({
-          projectCode: pCode, name: origName.substring(0, 200), client: clientName,
-          clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
-          contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
-          recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
-          startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
-          balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
-          varianceAtCompletion: "0", variancePercent: "0", varianceToContractPercent: "0", writeOff: "0",
-          opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
-          gpAtCompletion: "0", forecastGmPercent: "0", description: null,
-        });
-        projectId = newProj.id;
-        projMap.set(projName, projectId);
+        projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projName);
       }
       if (!projectId) continue;
 
@@ -3740,52 +3521,21 @@ async function importProjectHours(ws: XLSX.WorkSheet): Promise<{ imported: numbe
   const errors: string[] = [];
 
   const allProjects = await storage.getProjects();
-  const projMap = new Map<string, Project>();
-  const projCodes = new Set<string>();
-  for (const p of allProjects) {
-    projMap.set(p.name.toLowerCase(), p);
-    if (p.projectCode) {
-      projMap.set(p.projectCode.toLowerCase(), p);
-      projCodes.add(p.projectCode);
-    }
-  }
-  let projCounter = Date.now() % 100000;
+  const { projMap, projCodes } = buildProjectLookupMaps(allProjects);
+  const projCounter = { value: Date.now() % 100000 };
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[3]) continue;
+    if (!r?.[3]) continue;
     try {
       const projectDesc = String(r[3]).trim();
-      const isInternal = /^\d+$/.test(projectDesc) || /^Reason\s/i.test(projectDesc);
-
-      let match = projMap.get(projectDesc.toLowerCase());
-      if (!match) {
-        const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(projectDesc);
-        let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${projCounter++}`;
-        while (projCodes.has(pCode)) pCode = `INT${projCounter++}`;
-        projCodes.add(pCode);
-        let clientName2 = "Unknown";
-        if (codeParts) {
-          clientName2 = codeParts[1].replaceAll(/[\d-]/g, '');
-        } else if (isInternal) {
-          clientName2 = "Internal";
-        }
-        match = await storage.createProject({
-          projectCode: pCode, name: projectDesc.substring(0, 200), client: clientName2,
-          clientCode: null, clientManager: null, engagementManager: null, engagementSupport: null,
-          contractType: "time_materials", billingCategory: null, workType: isInternal ? "Internal" : null, panel: null,
-          recurring: null, vat: null, pipelineStatus: "C", adStatus: "Active", status: "active",
-          startDate: null, endDate: null, workOrderAmount: "0", budgetAmount: "0", actualAmount: "0",
-          balanceAmount: "0", forecastedRevenue: "0", forecastedGrossCost: "0", contractValue: "0",
-          varianceAtCompletion: "0", variancePercent: "0", varianceToContractPercent: "0", writeOff: "0",
-          opsCommentary: null, soldGmPercent: "0", toDateGrossProfit: "0", toDateGmPercent: "0",
-          gpAtCompletion: "0", forecastGmPercent: "0", description: null,
-        });
-        projMap.set(projectDesc.toLowerCase(), match);
+      let projectId = projMap.get(projectDesc.toLowerCase());
+      if (!projectId) {
+        projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projectDesc);
       }
 
       await storage.createKpi({
-        projectId: match.id,
+        projectId,
         month: new Date().toISOString().slice(0, 10),
         revenue: toNum(r[1]),
         contractRate: null,
@@ -3835,31 +3585,12 @@ async function importCxMasterList(ws: XLSX.WorkSheet): Promise<{ imported: numbe
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     try {
       const engagementName = String(r[0]).trim();
       if (!engagementName || engagementName.toLowerCase() === "engagement name") continue;
 
-      let projectId: number | null = null;
-      const exactMatch = projByName.get(engagementName.toLowerCase());
-      if (exactMatch) {
-        projectId = exactMatch;
-      }
-      if (!projectId) {
-        const codePart = /^([A-Z]{2,6}\d{2,4})/i.exec(engagementName);
-        if (codePart) {
-          projectId = projByBaseCode.get(codePart[1].toLowerCase()) || null;
-        }
-      }
-      if (!projectId) {
-        const entries = Array.from(projByName.entries());
-        for (const [key, id] of entries) {
-          if (engagementName.toLowerCase().includes(key) || key.includes(engagementName.toLowerCase())) {
-            projectId = id;
-            break;
-          }
-        }
-      }
+      const projectId = fuzzyMatchProjectId(engagementName, projByName, projByBaseCode);
 
       const resourceName = r[3] ? String(r[3]).trim() : null;
       let employeeId: number | null = null;
@@ -3903,7 +3634,7 @@ async function importProjectResourceCost(ws: XLSX.WorkSheet): Promise<{ imported
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     const name = String(r[0]).trim();
     if (!name || name.toLowerCase() === "name") continue;
     try {
@@ -3952,7 +3683,7 @@ async function importProjectResourceCostAF(ws: XLSX.WorkSheet): Promise<{ import
 
   for (let i = 2; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
     const name = String(r[0]).trim();
     if (!name || name.toLowerCase() === "name") continue;
     try {
@@ -4044,7 +3775,7 @@ async function importOpenOpps(ws: XLSX.WorkSheet): Promise<{ imported: number; e
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (!r || !r[0]) continue;
+    if (!r?.[0]) continue;
 
     const name = String(r[0]).trim();
     const phase = String(r[1] || "").trim();
@@ -4055,52 +3786,8 @@ async function importOpenOpps(ws: XLSX.WorkSheet): Promise<{ imported: number; e
 
     try {
       const classification = phaseToClassification[phase];
-      const rawValue = r[3];
-      const numRawValue = Number(rawValue);
-      const value = rawValue !== "" && rawValue != null && !Number.isNaN(numRawValue) ? String(numRawValue.toFixed(2)) : null;
-      const rawMargin = r[4];
-      const numRawMargin = Number(rawMargin);
-      const marginPercent = rawMargin !== "" && rawMargin != null && !Number.isNaN(numRawMargin) ? String(numRawMargin.toFixed(3)) : null;
-      const workType = r[5] ? String(r[5]).trim() : null;
-      const startDate = excelDateToISOString(r[6]);
-      const expiryDate = excelDateToISOString(r[7]);
-
-      let vat = r[8] ? String(r[8]).trim() : null;
-      if (vat) {
-        vat = vat.replaceAll(";#", "").replace(/\|.*$/, "").trim();
-        if (vat.toLowerCase() === "growth") vat = "GROWTH";
-      }
-
-      const status = r[9] ? String(r[9]).trim() : null;
-      const comment = r[10] ? String(r[10]).trim() : null;
-      const casLead = r[11] ? String(r[11]).trim() : null;
-      const csdLead = r[12] ? String(r[12]).replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() : null;
-      const category = r[13] ? String(r[13]).replaceAll(";#", ", ").trim() : null;
-      const partner = r[14] ? String(r[14]).replaceAll(";#", ", ").trim() : null;
-      const clientContact = r[15] ? String(r[15]).trim() : null;
-      const clientCode = r[16] ? String(r[16]).trim() : null;
-      const dueDate = excelDateToISOString(r[2]);
-
-      await storage.createPipelineOpportunity({
-        name,
-        classification,
-        vat,
-        fyYear: "open_opps",
-        value,
-        marginPercent,
-        workType,
-        status,
-        dueDate,
-        startDate,
-        expiryDate,
-        comment,
-        casLead,
-        csdLead,
-        category,
-        partner,
-        clientContact,
-        clientCode,
-      });
+      const oppRecord = buildOpenOppRecord(r, name, classification);
+      await storage.createPipelineOpportunity(oppRecord);
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 1} (${name}): ${err.message}`);

@@ -48,6 +48,41 @@ const financialCards: { type: InsightType; title: string; description: string; i
   },
 ];
 
+function parseSseLine(line: string): { content?: string; done?: boolean; error?: string } | null {
+  if (!line.startsWith("data: ")) return null;
+  try {
+    return JSON.parse(line.slice(6));
+  } catch (e) {
+    if (e instanceof SyntaxError) return null;
+    throw e;
+  }
+}
+
+async function processSseStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  onContent: (text: string) => void,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const data = parseSseLine(line);
+      if (!data) continue;
+      if (data.done) return;
+      if (data.error) throw new Error(data.error);
+      if (data.content) onContent(data.content);
+    }
+  }
+}
+
 export default function AIInsights() {
   const [activeType, setActiveType] = useState<InsightType | null>(null);
   const [content, setContent] = useState("");
@@ -75,32 +110,9 @@ export default function AIInsights() {
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response stream");
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.done) break;
-            if (data.error) throw new Error(data.error);
-            if (data.content) {
-              setContent(prev => prev + data.content);
-            }
-          } catch (e) {
-            if (e instanceof SyntaxError) continue;
-            throw e;
-          }
-        }
-      }
+      await processSseStream(reader, (text) => {
+        setContent(prev => prev + text);
+      });
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {

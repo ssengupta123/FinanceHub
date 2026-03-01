@@ -110,6 +110,54 @@ const ALL_COLUMNS: { key: FinanceColumnKey; label: string }[] = [
   { key: "status", label: "Status" },
 ];
 
+function buildClientRows(
+  fyProjects: Project[],
+  monthlyByProject: Map<number, ProjectMonthly[]>,
+  elapsedMonths: number,
+): ClientRow[] {
+  return fyProjects.map((p) => {
+    const rows = monthlyByProject.get(p.id) || [];
+
+    const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
+      rows
+        .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
+        .reduce((s, r) => s + parseNum(r[field]), 0);
+
+    const q1Rev = sumRange(1, 3, "revenue");
+    const q2Rev = sumRange(4, 6, "revenue");
+    const q3Rev = sumRange(7, 9, "revenue");
+    const q4Rev = sumRange(10, 12, "revenue");
+    const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
+    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
+    const ytdGP = ytdRevenue - ytdCost;
+    const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
+
+    return {
+      projectId: p.id,
+      client: p.client || p.name,
+      projectCode: p.projectCode,
+      vat: p.vat || "",
+      billing: p.billingCategory || "",
+      q1Rev,
+      q2Rev,
+      q3Rev,
+      q4Rev,
+      ytdRevenue,
+      ytdCost,
+      ytdGP,
+      gpPercent,
+      status: p.adStatus || p.status,
+    };
+  });
+}
+
+function gpCardClassName(isLoading: boolean, totalGP: number): string {
+  if (isLoading) {
+    return "";
+  }
+  return totalGP > 0 ? "border-green-500/50" : "border-red-500/50";
+}
+
 export default function FinanceDashboard() {
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [visibleColumns, setVisibleColumns] = useState<Set<FinanceColumnKey>>(
@@ -168,40 +216,7 @@ export default function FinanceDashboard() {
     monthlyByProject.set(m.projectId, list);
   });
 
-  const clientRows: ClientRow[] = fyProjects.map((p) => {
-    const rows = monthlyByProject.get(p.id) || [];
-
-    const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
-      rows
-        .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
-        .reduce((s, r) => s + parseNum(r[field]), 0);
-
-    const q1Rev = sumRange(1, 3, "revenue");
-    const q2Rev = sumRange(4, 6, "revenue");
-    const q3Rev = sumRange(7, 9, "revenue");
-    const q4Rev = sumRange(10, 12, "revenue");
-    const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
-    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
-    const ytdGP = ytdRevenue - ytdCost;
-    const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
-
-    return {
-      projectId: p.id,
-      client: p.client || p.name,
-      projectCode: p.projectCode,
-      vat: p.vat || "",
-      billing: p.billingCategory || "",
-      q1Rev,
-      q2Rev,
-      q3Rev,
-      q4Rev,
-      ytdRevenue,
-      ytdCost,
-      ytdGP,
-      gpPercent,
-      status: p.adStatus || p.status,
-    };
-  });
+  const clientRows = buildClientRows(fyProjects, monthlyByProject, elapsedMonths);
 
   const statusOrder = (s: string) => {
     const lower = s?.toLowerCase() || "";
@@ -313,7 +328,7 @@ export default function FinanceDashboard() {
             </CardContent>
           </Card>
 
-          <Card className={(() => { if (isLoading) return ""; return totalGP > 0 ? "border-green-500/50" : "border-red-500/50"; })()}>
+          <Card className={gpCardClassName(isLoading, totalGP)}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />

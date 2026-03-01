@@ -193,26 +193,34 @@ function isPlannerSlide(slide: ParsedSlide): boolean {
   return first.includes("PLANNER STATUS UPDATE") || first.includes("PLANNER STATUS");
 }
 
+export function tryParseTextDate(text: string): string | null {
+  const dateMatch = /(\d{1,2}\s[A-Za-z]+,?\s\d{4})/.exec(text);
+  if (!dateMatch) return null;
+  try {
+    const d = new Date(dateMatch[1].replace(",", ""));
+    if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function tryParseSlashDate(text: string): string | null {
+  const dateMatch = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(text);
+  if (!dateMatch) return null;
+  const parts = dateMatch[1].split("/");
+  if (parts.length === 3) {
+    const d = new Date(`${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  }
+  return null;
+}
+
 function extractReportDate(paragraphs: string[], titleSlideParas: string[]): string {
   const allParas = [...paragraphs.slice(0, 5), ...titleSlideParas];
   for (const p of allParas) {
-    const dateMatch = /(\d{1,2}\s[A-Za-z]+,?\s\d{4})/.exec(p);
-    if (dateMatch) {
-      try {
-        const d = new Date(dateMatch[1].replace(",", ""));
-        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
-      } catch (e) {
-        console.error("[extractReportDate] Date parse error:", (e as Error).message);
-      }
-    }
-    const dateMatch2 = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(p);
-    if (dateMatch2) {
-      const parts = dateMatch2[1].split("/");
-      if (parts.length === 3) {
-        const d = new Date(`${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`);
-        if (!Number.isNaN(d.getTime())) return d.toISOString().split("T")[0];
-      }
-    }
+    const result = tryParseTextDate(p) || tryParseSlashDate(p);
+    if (result) return result;
   }
   return new Date().toISOString().split("T")[0];
 }
@@ -223,6 +231,15 @@ function extractOverallStatusFromTable(table: string[][]): string {
   const text = (firstRow[0] || "").toUpperCase();
   const match = /(GREEN|AMBER|RED|N\/A)/.exec(text);
   return match ? match[1] : "";
+}
+
+export function matchSectionLabel(col1Upper: string, sectionLabelToField: Record<string, string>): string | null {
+  for (const [marker, field] of Object.entries(sectionLabelToField)) {
+    if (col1Upper === marker || col1Upper.startsWith(marker)) {
+      return field;
+    }
+  }
+  return null;
 }
 
 function extractStatusSummary(table: string[][]): {
@@ -266,20 +283,17 @@ function extractStatusSummary(table: string[][]): {
       continue;
     }
 
-    let matched = false;
-    for (const [marker, field] of Object.entries(sectionLabelToField)) {
-      if (col1Upper === marker || col1Upper.startsWith(marker)) {
-        const allCols = [col0Upper, col1Upper, col2.toUpperCase()].join(" ");
-        const ragMatch = /(GREEN|AMBER|RED|N\/A)/.exec(allCols);
-        if (ragMatch) {
-          (result as any)[field] = ragMatch[1];
-        }
-        matched = true;
-        break;
+    const matchedField = matchSectionLabel(col1Upper, sectionLabelToField);
+    if (matchedField) {
+      const allCols = [col0Upper, col1Upper, col2.toUpperCase()].join(" ");
+      const ragMatch = /(GREEN|AMBER|RED|N\/A)/.exec(allCols);
+      if (ragMatch) {
+        (result as any)[matchedField] = ragMatch[1];
       }
+      continue;
     }
 
-    if (!matched && col0) {
+    if (col0) {
       if (result.statusSummary) {
         result.statusSummary += "\n" + col0;
       } else {
@@ -386,13 +400,7 @@ function detectSectionFromParagraph(upper: string): { section: ContentSection; a
   return null;
 }
 
-function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
-  const sections: Record<ContentSection, string[]> = {
-    status: [], openOpps: [], bigPlays: [], accountGoals: [],
-    relationships: [], research: [], approach: [], other: [],
-  };
-  let currentSection: ContentSection = "status";
-
+export function computeHeaderSkipCount(paragraphs: string[]): number {
   let skipCount = 0;
   for (let i = 0; i < Math.min(5, paragraphs.length); i++) {
     const upper = paragraphs[i].toUpperCase();
@@ -400,24 +408,40 @@ function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
       skipCount = i + 1;
     }
   }
+  return skipCount;
+}
 
-  const skipMarkers = new Set([
-    "STATUS OVERALL", "RAISED BY", "DESCRIPTION", "IMPACT",
-    "DATE RISK BECOMES ISSUE", "STATUS", "OWNER", "IMPACT RATING",
-    "LIKELIHOOD", "MITIGATION", "COMMENTS", "RISK RATING",
-    "ISSUE RATING", "RISKS", "ISSUES", "RISK", "ISSUE",
-    "PEOPLE", "PROCESS", "PEOPLE PROCESS", "WEEK ENDING",
-  ]);
+const SKIP_MARKERS = new Set([
+  "STATUS OVERALL", "RAISED BY", "DESCRIPTION", "IMPACT",
+  "DATE RISK BECOMES ISSUE", "STATUS", "OWNER", "IMPACT RATING",
+  "LIKELIHOOD", "MITIGATION", "COMMENTS", "RISK RATING",
+  "ISSUE RATING", "RISKS", "ISSUES", "RISK", "ISSUE",
+  "PEOPLE", "PROCESS", "PEOPLE PROCESS", "WEEK ENDING",
+]);
+
+export function shouldSkipParagraph(upper: string): boolean {
+  if (upper === "GREEN" || upper === "AMBER" || upper === "RED" || upper === "N/A") return true;
+  if (SKIP_MARKERS.has(upper)) return true;
+  if (/^WEEK ENDING/i.test(upper)) return true;
+  if (upper.includes("VAT REPORT") && upper.length < 30) return true;
+  return false;
+}
+
+function extractContentFromParagraphs(paragraphs: string[]): ParagraphContent {
+  const sections: Record<ContentSection, string[]> = {
+    status: [], openOpps: [], bigPlays: [], accountGoals: [],
+    relationships: [], research: [], approach: [], other: [],
+  };
+  let currentSection: ContentSection = "status";
+
+  const skipCount = computeHeaderSkipCount(paragraphs);
 
   for (let i = skipCount; i < paragraphs.length; i++) {
     const p = paragraphs[i].trim();
     if (!p) continue;
     const upper = p.toUpperCase();
 
-    if (upper === "GREEN" || upper === "AMBER" || upper === "RED" || upper === "N/A") continue;
-    if (skipMarkers.has(upper)) continue;
-    if (/^WEEK ENDING/i.test(upper)) continue;
-    if (upper.includes("VAT REPORT") && upper.length < 30) continue;
+    if (shouldSkipParagraph(upper)) continue;
 
     const sectionMatch = detectSectionFromParagraph(upper);
     if (sectionMatch) {
@@ -461,22 +485,14 @@ export function debugPptxSlides(buffer: Buffer): { slides: { index: number; para
   return { slides };
 }
 
-export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; summary: string } {
-  const slides = extractSlides(buffer);
-  if (slides.length === 0) {
-    throw new Error("No slides found in the PPTX file.");
-  }
+interface VatGroup {
+  vatName: string;
+  titleSlide: ParsedSlide;
+  contentSlides: ParsedSlide[];
+  plannerSlides: ParsedSlide[];
+}
 
-  const titleParas = slides[0]?.paragraphs || [];
-  const globalDate = extractReportDate(titleParas, []);
-
-  interface VatGroup {
-    vatName: string;
-    titleSlide: ParsedSlide;
-    contentSlides: ParsedSlide[];
-    plannerSlides: ParsedSlide[];
-  }
-
+export function groupSlidesByVat(slides: ParsedSlide[]): VatGroup[] {
   const groups: VatGroup[] = [];
   let currentGroup: VatGroup | null = null;
 
@@ -509,106 +525,128 @@ export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; sum
     }
   }
 
-  const reports: ParsedVatReport[] = [];
+  return groups;
+}
 
-  for (const group of groups) {
-    const report: ParsedVatReport = {
-      vatName: group.vatName,
-      reportDate: globalDate,
-      overallStatus: "",
-      statusSummary: "",
-      openOppsSummary: "",
-      bigPlays: "",
-      accountGoals: "",
-      relationships: "",
-      research: "",
-      approachToShortfall: "",
-      otherActivities: "",
-      openOppsStatus: "",
-      bigPlaysStatus: "",
-      accountGoalsStatus: "",
-      relationshipsStatus: "",
-      researchStatus: "",
-      risks: [],
-      plannerTasks: [],
-    };
+export function processTableForReport(table: string[][], report: ParsedVatReport): void {
+  if (table.length === 0) return;
+  const headerRow = table[0];
+  const colCount = headerRow.length;
 
-    for (const slide of group.contentSlides) {
-      const reportDate = extractReportDate(slide.paragraphs, group.titleSlide.paragraphs);
-      if (reportDate !== new Date().toISOString().split("T")[0]) {
-        report.reportDate = reportDate;
-      }
+  if (colCount === 3 && table.length >= 5) {
+    const overallStatus = extractOverallStatusFromTable(table);
+    if (overallStatus) report.overallStatus = overallStatus;
+    const statuses = extractStatusSummary(table);
+    if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
+    if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
+    if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
+    if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
+    if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
+    if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
+  } else if (colCount === 11 && headerRow.some(h => h.toLowerCase().includes("raised by"))) {
+    report.risks.push(...parseRiskTable(table));
+  } else if (colCount === 7 && headerRow.some(h => h.toLowerCase().includes("bucket"))) {
+    report.plannerTasks.push(...parsePlannerTable(table));
+  }
+}
 
-      for (const table of slide.tables) {
-        if (table.length === 0) continue;
-        const headerRow = table[0];
-        const colCount = headerRow.length;
-
-        if (colCount === 3 && table.length >= 5) {
-          const overallStatus = extractOverallStatusFromTable(table);
-          if (overallStatus) report.overallStatus = overallStatus;
-          const statuses = extractStatusSummary(table);
-          if (statuses.statusSummary && !report.statusSummary) report.statusSummary = statuses.statusSummary;
-          if (statuses.openOppsStatus) report.openOppsStatus = statuses.openOppsStatus;
-          if (statuses.bigPlaysStatus) report.bigPlaysStatus = statuses.bigPlaysStatus;
-          if (statuses.accountGoalsStatus) report.accountGoalsStatus = statuses.accountGoalsStatus;
-          if (statuses.relationshipsStatus) report.relationshipsStatus = statuses.relationshipsStatus;
-          if (statuses.researchStatus) report.researchStatus = statuses.researchStatus;
-        } else if (colCount === 11 && headerRow.some(h => h.toLowerCase().includes("raised by"))) {
-          const risks = parseRiskTable(table);
-          report.risks.push(...risks);
-        } else if (colCount === 7 && headerRow.some(h => h.toLowerCase().includes("bucket"))) {
-          report.plannerTasks.push(...parsePlannerTable(table));
-        }
-      }
-
-      const extraContent = extractContentFromParagraphs(slide.paragraphs);
-      if (extraContent.statusSummary && !report.statusSummary) {
-        report.statusSummary = extraContent.statusSummary;
-      }
-      const appendFields: (keyof typeof extraContent)[] = [
-        "openOppsSummary", "bigPlays", "accountGoals",
-        "relationships", "research", "approachToShortfall", "otherActivities"
-      ];
-      for (const field of appendFields) {
-        if (extraContent[field]) {
-          const key = field as keyof ParsedVatReport;
-          if (report[key]) {
-            (report as any)[key] += "\n" + extraContent[field];
-          } else {
-            (report as any)[key] = extraContent[field];
-          }
-        }
+export function appendContentFields(report: ParsedVatReport, extraContent: ParagraphContent): void {
+  if (extraContent.statusSummary && !report.statusSummary) {
+    report.statusSummary = extraContent.statusSummary;
+  }
+  const appendFields: (keyof ParagraphContent)[] = [
+    "openOppsSummary", "bigPlays", "accountGoals",
+    "relationships", "research", "approachToShortfall", "otherActivities"
+  ];
+  for (const field of appendFields) {
+    if (extraContent[field]) {
+      const key = field as keyof ParsedVatReport;
+      if (report[key]) {
+        (report as any)[key] += "\n" + extraContent[field];
+      } else {
+        (report as any)[key] = extraContent[field];
       }
     }
+  }
+}
 
-    for (const slide of group.plannerSlides) {
-      for (const table of slide.tables) {
-        if (table.length > 0 && table[0].length === 7) {
-          report.plannerTasks.push(...parsePlannerTable(table));
-        }
-      }
+export function findFallbackOverallStatus(contentSlides: ParsedSlide[]): string {
+  for (const slide of contentSlides) {
+    for (const p of slide.paragraphs.slice(0, 5)) {
+      const match = /(GREEN|AMBER|RED|N\/A)/.exec(p.toUpperCase());
+      if (match) return match[1];
+    }
+  }
+  return "";
+}
+
+export function buildReportFromGroup(group: VatGroup, globalDate: string): ParsedVatReport {
+  const report: ParsedVatReport = {
+    vatName: group.vatName,
+    reportDate: globalDate,
+    overallStatus: "",
+    statusSummary: "",
+    openOppsSummary: "",
+    bigPlays: "",
+    accountGoals: "",
+    relationships: "",
+    research: "",
+    approachToShortfall: "",
+    otherActivities: "",
+    openOppsStatus: "",
+    bigPlaysStatus: "",
+    accountGoalsStatus: "",
+    relationshipsStatus: "",
+    researchStatus: "",
+    risks: [],
+    plannerTasks: [],
+  };
+
+  for (const slide of group.contentSlides) {
+    const reportDate = extractReportDate(slide.paragraphs, group.titleSlide.paragraphs);
+    if (reportDate !== new Date().toISOString().split("T")[0]) {
+      report.reportDate = reportDate;
     }
 
-    if (!report.overallStatus) {
-      for (const slide of group.contentSlides) {
-        for (const p of slide.paragraphs.slice(0, 5)) {
-          const match = /(GREEN|AMBER|RED|N\/A)/.exec(p.toUpperCase());
-          if (match) {
-            report.overallStatus = match[1];
-            break;
-          }
-        }
-        if (report.overallStatus) break;
-      }
+    for (const table of slide.tables) {
+      processTableForReport(table, report);
     }
 
-    reports.push(report);
+    appendContentFields(report, extractContentFromParagraphs(slide.paragraphs));
   }
 
-  const summary = reports.map(r =>
+  for (const slide of group.plannerSlides) {
+    for (const table of slide.tables) {
+      if (table.length > 0 && table[0].length === 7) {
+        report.plannerTasks.push(...parsePlannerTable(table));
+      }
+    }
+  }
+
+  if (!report.overallStatus) {
+    report.overallStatus = findFallbackOverallStatus(group.contentSlides);
+  }
+
+  return report;
+}
+
+export function buildReportsSummary(reports: ParsedVatReport[]): string {
+  return reports.map(r =>
     `${r.vatName}: ${r.risks.length} risks, ${r.plannerTasks.length} planner tasks, status: ${r.overallStatus || "not set"}`
   ).join("; ");
+}
+
+export function parsePptxFile(buffer: Buffer): { reports: ParsedVatReport[]; summary: string } {
+  const slides = extractSlides(buffer);
+  if (slides.length === 0) {
+    throw new Error("No slides found in the PPTX file.");
+  }
+
+  const titleParas = slides[0]?.paragraphs || [];
+  const globalDate = extractReportDate(titleParas, []);
+  const groups = groupSlidesByVat(slides);
+  const reports = groups.map(group => buildReportFromGroup(group, globalDate));
+  const summary = buildReportsSummary(reports);
 
   return { reports, summary };
 }

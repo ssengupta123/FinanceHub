@@ -92,6 +92,120 @@ function computeBillableRatio(fyTimesheets: any[], permanentIds: Set<number>): {
   return { ratio, billHrs, totalHrs };
 }
 
+function isAllocatedToActiveProject(
+  empId: number,
+  fyTimesheets: Timesheet[],
+  projectList: Project[]
+): boolean {
+  return fyTimesheets.some(t => {
+    if (t.employeeId !== empId) return false;
+    const proj = projectList.find(p => p.id === t.projectId);
+    return !!proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || proj.adStatus === "Active");
+  });
+}
+
+function buildResourcePlanLookups(resourcePlanList: ResourcePlan[]) {
+  const rpByEmpMonth = new Map<string, number>();
+  const rpByEmpMonthProjects = new Map<string, { projectId: number; allocPct: number }[]>();
+  for (const rp of resourcePlanList) {
+    if (!rp.employeeId || !rp.month) continue;
+    const monthKey = rp.month.substring(0, 7);
+    const mapKey = `${rp.employeeId}-${monthKey}`;
+    rpByEmpMonth.set(mapKey, (rpByEmpMonth.get(mapKey) || 0) + parseNum(rp.allocationPercent));
+    const projList = rpByEmpMonthProjects.get(mapKey) || [];
+    projList.push({ projectId: rp.projectId ?? 0, allocPct: parseNum(rp.allocationPercent) });
+    rpByEmpMonthProjects.set(mapKey, projList);
+  }
+  return { rpByEmpMonth, rpByEmpMonthProjects };
+}
+
+type ProjectionAlloc = { projectId: number; hours: number; allocPct: number };
+type WeekProjection = {
+  worked: number;
+  billable: number;
+  bench: number;
+  utilization: number;
+  isProjected: boolean;
+  projectCount: number;
+  projectAllocations: ProjectionAlloc[];
+};
+type EmpAllocation = { projectId: number; startDate: Date | null; endDate: Date | null; avgHoursPerWeek: number };
+
+function computeWeekProjection(
+  empId: number,
+  weekKey: string,
+  weekDate: Date,
+  actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>,
+  hasResourcePlans: boolean,
+  rpByEmpMonth: Map<string, number>,
+  rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>,
+  allocations: EmpAllocation[],
+  recentAvg: { avgHours: number; avgBillable: number }
+): WeekProjection {
+  const mapKey = `${empId}-${weekKey}`;
+  const actual = actualDataByEmpWeek.get(mapKey);
+
+  if (actual && actual.totalHours > 0) {
+    const utilPct = (actual.totalHours / STANDARD_WEEKLY_HOURS) * 100;
+    const bench = Math.max(STANDARD_WEEKLY_HOURS - actual.totalHours, 0);
+    return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0, projectAllocations: [] };
+  }
+
+  const monthKey = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, "0")}`;
+
+  if (hasResourcePlans) {
+    const rpKey = `${empId}-${monthKey}`;
+    const rpAlloc = rpByEmpMonth.get(rpKey);
+    if (rpAlloc !== undefined) {
+      const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
+      const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
+      const rpProjects = rpByEmpMonthProjects.get(rpKey) || [];
+      const projAllocs = rpProjects.map(rp => ({
+        projectId: rp.projectId,
+        hours: (rp.allocPct / 100) * STANDARD_WEEKLY_HOURS,
+        allocPct: rp.allocPct,
+      }));
+      return { worked: projHours, billable: projHours, bench, utilization: rpAlloc, isProjected: true, projectCount: rpProjects.length, projectAllocations: projAllocs };
+    }
+  }
+
+  const activeAllocsForWeek = allocations.filter(a => {
+    if (a.endDate && weekDate > a.endDate) return false;
+    if (a.startDate && weekDate < a.startDate) return false;
+    return true;
+  });
+
+  if (activeAllocsForWeek.length > 0) {
+    const totalProjectedHours = activeAllocsForWeek.reduce((s, a) => s + a.avgHoursPerWeek, 0);
+    const utilPct = (totalProjectedHours / STANDARD_WEEKLY_HOURS) * 100;
+    const bench = Math.max(STANDARD_WEEKLY_HOURS - totalProjectedHours, 0);
+    const billableRatio = recentAvg.avgHours > 0 ? recentAvg.avgBillable / recentAvg.avgHours : 0.8;
+    const projAllocs = activeAllocsForWeek.map(a => ({
+      projectId: a.projectId,
+      hours: a.avgHoursPerWeek,
+      allocPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
+    }));
+    return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length, projectAllocations: projAllocs };
+  }
+
+  return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: [] };
+}
+
+function buildProjectBreakdown(
+  allocations: EmpAllocation[],
+  activeProjects: Project[]
+) {
+  return allocations.map(a => {
+    const proj = activeProjects.find(p => p.id === a.projectId);
+    return {
+      projectName: proj ? (proj.projectCode || proj.name) : `Project ${a.projectId}`,
+      client: proj?.client || "",
+      avgHoursPerWeek: a.avgHoursPerWeek,
+      allocationPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
+    };
+  }).sort((a, b) => b.avgHoursPerWeek - a.avgHoursPerWeek);
+}
+
 function OverutilisedEmployeeRow({ emp, isExpanded, onToggle }: Readonly<{
   emp: any;
   isExpanded: boolean;
@@ -314,13 +428,8 @@ export default function UtilizationDashboard() {
   const fyTimesheets = timesheets || [];
 
   const allocatedPermanent = useMemo(() => {
-    return permanentEmployees.filter(emp => {
-      return fyTimesheets.some(t => {
-        if (t.employeeId !== emp.id) return false;
-        const proj = (projects || []).find(p => p.id === t.projectId);
-        return proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || proj.adStatus === "Active");
-      });
-    });
+    const projectList = projects || [];
+    return permanentEmployees.filter(emp => isAllocatedToActiveProject(emp.id, fyTimesheets, projectList));
   }, [permanentEmployees, fyTimesheets, projects]);
 
   const { weekColumns, rollingView, benchSummary, overutilisedList, allActiveProjects } = useMemo(() => {
@@ -361,19 +470,9 @@ export default function UtilizationDashboard() {
       return d >= recentCutoff && d <= today;
     });
 
-    const rpByEmpMonth = new Map<string, number>();
-    const rpByEmpMonthProjects = new Map<string, { projectId: number; allocPct: number }[]>();
-    const hasResourcePlans = (resourcePlans || []).length > 0;
-    for (const rp of (resourcePlans || [])) {
-      if (!rp.employeeId || !rp.month) continue;
-      const monthKey = rp.month.substring(0, 7);
-      const mapKey = `${rp.employeeId}-${monthKey}`;
-      const existing = rpByEmpMonth.get(mapKey) || 0;
-      rpByEmpMonth.set(mapKey, existing + parseNum(rp.allocationPercent));
-      const projList = rpByEmpMonthProjects.get(mapKey) || [];
-      projList.push({ projectId: rp.projectId ?? 0, allocPct: parseNum(rp.allocationPercent) });
-      rpByEmpMonthProjects.set(mapKey, projList);
-    }
+    const resourcePlanList = resourcePlans || [];
+    const hasResourcePlans = resourcePlanList.length > 0;
+    const { rpByEmpMonth, rpByEmpMonthProjects } = buildResourcePlanLookups(resourcePlanList);
 
     const activeProjects = (projects || []).filter(p => {
       if (p.client === "Internal" || p.client === "RGT") return false;
@@ -479,58 +578,12 @@ export default function UtilizationDashboard() {
       const recent = empRecentAvg.get(emp.id)!;
       const allocations = empProjectAllocations.get(emp.id) || [];
 
-      const weeks = futureWeeks.map((fw, wi) => {
-        const mapKey = `${emp.id}-${fw.key}`;
-        const actual = actualDataByEmpWeek.get(mapKey);
-
-        if (actual && actual.totalHours > 0) {
-          const utilPct = (actual.totalHours / STANDARD_WEEKLY_HOURS) * 100;
-          const bench = Math.max(STANDARD_WEEKLY_HOURS - actual.totalHours, 0);
-          const emptyAllocations: { projectId: number; hours: number; allocPct: number }[] = [];
-          return { worked: actual.totalHours, billable: actual.billableHours, bench, utilization: utilPct, isProjected: false, projectCount: 0, projectAllocations: emptyAllocations };
-        }
-
-        const weekDate = fw.date;
-        const monthKey = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, "0")}`;
-
-        if (hasResourcePlans) {
-          const rpKey = `${emp.id}-${monthKey}`;
-          const rpAlloc = rpByEmpMonth.get(rpKey);
-          if (rpAlloc !== undefined) {
-            const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
-            const utilPct = rpAlloc;
-            const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
-            const rpProjects = rpByEmpMonthProjects.get(rpKey) || [];
-            const projAllocs = rpProjects.map(rp => ({
-              projectId: rp.projectId,
-              hours: (rp.allocPct / 100) * STANDARD_WEEKLY_HOURS,
-              allocPct: rp.allocPct,
-            }));
-            return { worked: projHours, billable: projHours, bench, utilization: utilPct, isProjected: true, projectCount: rpProjects.length, projectAllocations: projAllocs };
-          }
-        }
-
-        const activeAllocsForWeek = allocations.filter(a => {
-          if (a.endDate && weekDate > a.endDate) return false;
-          if (a.startDate && weekDate < a.startDate) return false;
-          return true;
-        });
-
-        if (activeAllocsForWeek.length > 0) {
-          const totalProjectedHours = activeAllocsForWeek.reduce((s, a) => s + a.avgHoursPerWeek, 0);
-          const utilPct = (totalProjectedHours / STANDARD_WEEKLY_HOURS) * 100;
-          const bench = Math.max(STANDARD_WEEKLY_HOURS - totalProjectedHours, 0);
-          const billableRatio = recent.avgHours > 0 ? recent.avgBillable / recent.avgHours : 0.8;
-          const projAllocs = activeAllocsForWeek.map(a => ({
-            projectId: a.projectId,
-            hours: a.avgHoursPerWeek,
-            allocPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
-          }));
-          return { worked: totalProjectedHours, billable: totalProjectedHours * billableRatio, bench, utilization: utilPct, isProjected: true, projectCount: activeAllocsForWeek.length, projectAllocations: projAllocs };
-        }
-
-        const noAllocations: { projectId: number; hours: number; allocPct: number }[] = [];
-        return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: noAllocations };
+      const weeks = futureWeeks.map((fw) => {
+        return computeWeekProjection(
+          emp.id, fw.key, fw.date, actualDataByEmpWeek,
+          hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects,
+          allocations, { avgHours: recent.avgHours, avgBillable: recent.avgBillable }
+        );
       });
 
       const avgUtil = weeks.length > 0
@@ -562,16 +615,8 @@ export default function UtilizationDashboard() {
     const overutilised = rolling
       .filter(r => r.avgUtil > 100)
       .map(r => {
-        const allocations = empProjectAllocations.get(r.employeeId) || [];
-        const projectBreakdown = allocations.map(a => {
-          const proj = activeProjects.find(p => p.id === a.projectId);
-          return {
-            projectName: proj ? (proj.projectCode || proj.name) : `Project ${a.projectId}`,
-            client: proj?.client || "",
-            avgHoursPerWeek: a.avgHoursPerWeek,
-            allocationPct: (a.avgHoursPerWeek / STANDARD_WEEKLY_HOURS) * 100,
-          };
-        }).sort((a, b) => b.avgHoursPerWeek - a.avgHoursPerWeek);
+        const allocs = empProjectAllocations.get(r.employeeId) || [];
+        const projectBreakdown = buildProjectBreakdown(allocs, activeProjects);
         return { name: r.name, role: r.role, avgHours: r.totalWorked / weekCols.length, pct: r.avgUtil, projectCount: r.maxProjectCount, projectBreakdown };
       })
       .sort((a, b) => b.pct - a.pct);
@@ -737,8 +782,8 @@ export default function UtilizationDashboard() {
             <p className="text-sm text-muted-foreground mt-1">
               Permanent employees only. Cross-references resource plans and project date ranges to detect multi-project allocations.
               <span className="ml-2 inline-flex items-center gap-1">
-                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /> Actual
-                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /> Projected
+                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" /><span>Actual</span>
+                <span className="inline-block w-3 h-2 rounded-sm bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 opacity-70 ml-2" /><span>Projected</span>
               </span>
             </p>
           </div>

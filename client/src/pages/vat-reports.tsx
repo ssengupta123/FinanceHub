@@ -68,6 +68,14 @@ const STATUS_HEADER_BADGE: Record<string, string> = {
   "N/A": "bg-gray-400 text-white px-2 py-0.5 font-bold text-sm",
 };
 
+const stepLabels: Record<number, string> = { 1: "Risks", 2: "Planner Actions", 3: "Generate" };
+
+function getStepIndicatorClass(currentStep: number, stepNumber: number): string {
+  if (currentStep === stepNumber) return "bg-purple-500 text-white";
+  if (currentStep > stepNumber) return "bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300";
+  return "bg-muted text-muted-foreground";
+}
+
 const IMPACT_COLORS: Record<string, string> = {
   "VERY HIGH": "text-red-600 dark:text-red-400 font-bold",
   HIGH: "text-red-500 dark:text-red-400",
@@ -1385,6 +1393,55 @@ const EMPTY_DRAFT: ReportDraftFields = {
   openOppsStatus: "", bigPlaysStatus: "", accountGoalsStatus: "", relationshipsStatus: "", researchStatus: "",
 };
 
+function RiskReviewItem({ risk, index, onRemove, onStatusChange }: Readonly<{
+  risk: VatRisk;
+  index: number;
+  onRemove: (index: number) => void;
+  onStatusChange: (index: number, status: string) => void;
+}>) {
+  return (
+    <div key={risk.id} className="border rounded-lg p-2.5 bg-background space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium flex-1">{risk.description}</p>
+        <div className="flex items-center gap-1 shrink-0">
+          <Badge variant={risk.riskType === "issue" ? "destructive" : "secondary"} className="text-[9px] px-1.5">
+            {risk.riskType || "risk"}
+          </Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+            onClick={() => onRemove(index)}
+            data-testid={`button-remove-risk-${index}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+        <span>Impact: <strong>{risk.impactRating || "N/A"}</strong></span>
+        <span>Likelihood: <strong>{risk.likelihood || "N/A"}</strong></span>
+        <span>Status: <strong>{risk.status || "Open"}</strong></span>
+        <span>Owner: <strong>{risk.owner || "Unassigned"}</strong></span>
+      </div>
+      <Select
+        value={risk.status || "Open"}
+        onValueChange={(v) => onStatusChange(index, v)}
+      >
+        <SelectTrigger className="h-6 text-[10px] w-[120px]" data-testid={`select-risk-status-${risk.id}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="Open">Open</SelectItem>
+          <SelectItem value="Mitigating">Mitigating</SelectItem>
+          <SelectItem value="Closed">Closed</SelectItem>
+          <SelectItem value="Escalated">Escalated</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatName: string; reportId?: number; onApplyContent: (field: keyof ReportDraftFields, content: string) => void }>) {
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -1473,15 +1530,13 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
         <div key={s} className="flex items-center gap-1">
           <button
             onClick={() => { if (s < 3 || suggestions) setStep(s as 1|2|3); }}
-            className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold transition-colors ${
-              step === s ? "bg-purple-500 text-white" : (step > s ? "bg-purple-200 dark:bg-purple-900 text-purple-700 dark:text-purple-300" : "bg-muted text-muted-foreground")
-            }`}
+            className={`flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold transition-colors ${getStepIndicatorClass(step, s)}`}
             data-testid={`step-indicator-${s}`}
           >
             {s}
           </button>
           <span className={`text-[10px] ${step === s ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-            {(() => { if (s === 1) return "Risks"; if (s === 2) return "Planner Actions"; return "Generate"; })()}
+            {stepLabels[s] || "Generate"}
           </span>
           {s < 3 && <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />}
         </div>
@@ -1583,47 +1638,13 @@ function VatAISuggestions({ vatName, reportId, onApplyContent }: Readonly<{ vatN
                   <p className="text-xs text-muted-foreground">No risks recorded yet. Use "Add Risk" above to add risks for the AI to consider.</p>
                 </div>
               ) : risks.map((risk, i) => (
-                <div key={risk.id} className="border rounded-lg p-2.5 bg-background space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-medium flex-1">{risk.description}</p>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Badge variant={risk.riskType === "issue" ? "destructive" : "secondary"} className="text-[9px] px-1.5">
-                        {risk.riskType || "risk"}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => setRisks(prev => prev.filter((_, idx) => idx !== i))}
-                        data-testid={`button-remove-risk-${i}`}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                    <span>Impact: <strong>{risk.impactRating || "N/A"}</strong></span>
-                    <span>Likelihood: <strong>{risk.likelihood || "N/A"}</strong></span>
-                    <span>Status: <strong>{risk.status || "Open"}</strong></span>
-                    <span>Owner: <strong>{risk.owner || "Unassigned"}</strong></span>
-                  </div>
-                  <Select
-                    value={risk.status || "Open"}
-                    onValueChange={(v) => {
-                      setRisks(prev => prev.map((r, idx) => idx === i ? { ...r, status: v } : r));
-                    }}
-                  >
-                    <SelectTrigger className="h-6 text-[10px] w-[120px]" data-testid={`select-risk-status-${risk.id}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Open">Open</SelectItem>
-                      <SelectItem value="Mitigating">Mitigating</SelectItem>
-                      <SelectItem value="Closed">Closed</SelectItem>
-                      <SelectItem value="Escalated">Escalated</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <RiskReviewItem
+                  key={risk.id}
+                  risk={risk}
+                  index={i}
+                  onRemove={(idx) => setRisks(prev => prev.filter((_, j) => j !== idx))}
+                  onStatusChange={(idx, v) => setRisks(prev => prev.map((r, j) => j === idx ? { ...r, status: v } : r))}
+                />
               ))}
             </div>
           </ScrollArea>
@@ -2208,11 +2229,13 @@ export default function VatReportsPage() {
           ))}
         </TabsList>
 
-        {VAT_NAMES.map((vat) => (
+        {VAT_NAMES.map((vat) => {
+          const vatReport = latestReports[vat];
+          return (
           <TabsContent key={vat} value={vat} className="mt-4">
-            {latestReports[vat] ? (
+            {vatReport ? (
               <VatReportView
-                report={latestReports[vat]!}
+                report={vatReport}
                 allReportsForVat={reportsByVat[vat] || []}
                 onSelectReport={(r) => setSelectedReportIds(prev => ({ ...prev, [vat]: r.id }))}
                 onDeleteReport={() => setSelectedReportIds(prev => { const next = { ...prev }; delete next[vat]; return next; })}
@@ -2232,7 +2255,8 @@ export default function VatReportsPage() {
               </Card>
             )}
           </TabsContent>
-        ))}
+          );
+        })}
       </Tabs>
     </div>
   );

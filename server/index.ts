@@ -5,8 +5,7 @@ import jwt from "jsonwebtoken";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
-import { runMigrations, runIncrementalMigrations } from "./db";
-import { db } from "./db";
+import { db, runMigrations, runIncrementalMigrations } from "./db";
 import { storage } from "./storage";
 
 process.on("SIGHUP", () => {});
@@ -206,7 +205,9 @@ httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
 
 }
 
-startServer().catch((err) => {
+try {
+  await startServer();
+} catch (err) {
   console.error("Failed to start server:", err);
   process.exit(1);
-});
+}

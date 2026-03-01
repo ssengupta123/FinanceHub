@@ -70,6 +70,25 @@ function formatDollars(val: number): string {
   return "$" + val.toFixed(0);
 }
 
+function splitPartnerNames(partnerStr: string): string[] {
+  return partnerStr.split(/[;,#]/).map(p => p.trim()).filter(p => p && p !== "(blank)");
+}
+
+function accumulatePartnerDetails(
+  map: Record<string, { opps: PipelineOpp[]; totalValue: number }>,
+  opp: PipelineOpp
+) {
+  if (!opp.partner) return;
+  const partners = splitPartnerNames(opp.partner);
+  const val = Number.parseFloat(opp.value || "0") || 0;
+  const share = partners.length > 0 ? val / partners.length : 0;
+  for (const clean of partners) {
+    if (!map[clean]) map[clean] = { opps: [], totalValue: 0 };
+    map[clean].opps.push(opp);
+    map[clean].totalValue += share;
+  }
+}
+
 function getPartnerCerts(certifications: string, partnerName: string): string[] {
   const keywords = PARTNER_CERT_KEYWORDS[partnerName];
   if (!keywords) return [];
@@ -130,20 +149,7 @@ export default function PartnerView() {
 
   const partnerDetails = useMemo(() => {
     const map: Record<string, { opps: PipelineOpp[]; totalValue: number }> = {};
-    partnerOpps.forEach(o => {
-      if (o.partner) {
-        o.partner.split(/[;,#]/).forEach(p => {
-          const clean = p.trim();
-          if (clean && clean !== "(blank)") {
-            if (!map[clean]) map[clean] = { opps: [], totalValue: 0 };
-            map[clean].opps.push(o);
-            const val = Number.parseFloat(o.value || "0") || 0;
-            const partners = o.partner!.split(/[;,#]/).map(x => x.trim()).filter(x => x && x !== "(blank)");
-            map[clean].totalValue += partners.length > 0 ? val / partners.length : 0;
-          }
-        });
-      }
-    });
+    partnerOpps.forEach(o => accumulatePartnerDetails(map, o));
     return map;
   }, [partnerOpps]);
 
@@ -192,7 +198,7 @@ export default function PartnerView() {
     for (const partner of uniquePartners) {
       const matched: Array<{ employee: Employee; certs: string[] }> = [];
       for (const emp of activeEmps) {
-        const certs = getPartnerCerts(emp.certifications!, partner);
+        const certs = getPartnerCerts(emp.certifications ?? "", partner);
         if (certs.length > 0) {
           matched.push({ employee: emp, certs });
         }
@@ -211,7 +217,9 @@ export default function PartnerView() {
       <div className="flex flex-col gap-6 p-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-24" />)}
+          <Skeleton key="skeleton-opps" className="h-24" />
+            <Skeleton key="skeleton-value" className="h-24" />
+            <Skeleton key="skeleton-partners" className="h-24" />
         </div>
         <Skeleton className="h-[300px]" />
       </div>

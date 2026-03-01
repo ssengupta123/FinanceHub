@@ -118,42 +118,44 @@ export function isReasonableDate(d: Date): boolean {
   return year >= 1900 && year <= 2100;
 }
 
+export function sanitizeStringDateValue(val: string): any {
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+  if (isoMatch) {
+    const d = new Date(Number.parseInt(isoMatch[1]), Number.parseInt(isoMatch[2]) - 1, Number.parseInt(isoMatch[3]));
+    if (!isReasonableDate(d)) return null;
+    return isMSSQL ? d : val;
+  }
+  const d = new Date(val);
+  if (!Number.isNaN(d.getTime()) && isReasonableDate(d)) {
+    return isMSSQL
+      ? d
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+export function sanitizeSingleDateField(val: any): any {
+  if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
+    return null;
+  }
+  if (val instanceof Date) {
+    return isReasonableDate(val) ? val : null;
+  }
+  if (typeof val === "string") {
+    return sanitizeStringDateValue(val);
+  }
+  if (typeof val === "number") {
+    return null;
+  }
+  return val;
+}
+
 export function sanitizeDateFields(data: Record<string, any>, table?: string): Record<string, any> {
   const textDateCols = table ? TEXT_DATE_COLUMNS_BY_TABLE[table] : undefined;
   for (const key of Object.keys(data)) {
     if (DATE_COLUMNS.has(key)) {
       if (textDateCols?.has(key)) continue;
-      const val = data[key];
-      if (val === null || val === "" || val === undefined || val === "N/A" || val === "-" || val === "n/a") {
-        data[key] = null;
-      } else if (val instanceof Date) {
-        if (!isReasonableDate(val)) {
-          data[key] = null;
-        }
-      } else if (typeof val === "string") {
-        const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
-        if (isoMatch) {
-          const d = new Date(Number.parseInt(isoMatch[1]), Number.parseInt(isoMatch[2]) - 1, Number.parseInt(isoMatch[3]));
-          if (!isReasonableDate(d)) {
-            data[key] = null;
-          } else if (isMSSQL) {
-            data[key] = d;
-          }
-        } else {
-          const d = new Date(val);
-          if (!Number.isNaN(d.getTime()) && isReasonableDate(d)) {
-            if (isMSSQL) {
-              data[key] = d;
-            } else {
-              data[key] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            }
-          } else {
-            data[key] = null;
-          }
-        }
-      } else if (typeof val === "number") {
-        data[key] = null;
-      }
+      data[key] = sanitizeSingleDateField(data[key]);
     }
   }
   return data;
@@ -166,7 +168,7 @@ async function insertReturning<T>(table: string, data: Record<string, any>): Pro
     const [row] = await db(table).insert(snakeData).returning("*");
     return rowToModel<T>(row);
   } catch (err: any) {
-    if (err.message && err.message.includes("date")) {
+    if (err.message?.includes("date")) {
       const dateFields: Record<string, any> = {};
       for (const [k, v] of Object.entries(snakeData)) {
         if (v !== null && v !== undefined && (DATE_COLUMNS.has(k) || typeof v === "string")) {
@@ -379,6 +381,56 @@ export interface IStorage {
   getFeatureRequest(id: number): Promise<FeatureRequest | undefined>;
   createFeatureRequest(data: InsertFeatureRequest): Promise<FeatureRequest>;
   updateFeatureRequest(id: number, data: Partial<{ status: string; reviewedBy: number; githubBranch: string; notes: string }>): Promise<FeatureRequest | undefined>;
+}
+
+export function buildVatNameList(refVats: Array<{ key: string }>, targetModels: Array<{ vatName: string }>): string[] {
+  const vatNames: string[] = [];
+  const vatNameSet = new Set<string>();
+  for (const rv of refVats) {
+    if (!vatNameSet.has(rv.key)) {
+      vatNames.push(rv.key);
+      vatNameSet.add(rv.key);
+    }
+  }
+  for (const t of targetModels) {
+    if (!vatNameSet.has(t.vatName)) {
+      vatNames.push(t.vatName);
+      vatNameSet.add(t.vatName);
+    }
+  }
+  return vatNames;
+}
+
+async function computeQuarterActuals(
+  vatName: string,
+  fyYear: string,
+  projectIds: number[],
+  quarterFyMonths: Record<string, number[]>,
+  maxMonth: number
+): Promise<{ quarter: string; revenue: number; gmContribution: number; gmPercent: number }[]> {
+  const actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[] = [];
+  for (const [qName, months] of Object.entries(quarterFyMonths)) {
+    const eligibleMonths = months.filter(m => m <= maxMonth);
+    if (projectIds.length === 0 || eligibleMonths.length === 0) {
+      actuals.push({ quarter: qName, revenue: 0, gmContribution: 0, gmPercent: 0 });
+      continue;
+    }
+    const monthlyData = await db("project_monthly")
+      .join("projects", "project_monthly.project_id", "projects.id")
+      .where("projects.vat", vatName)
+      .where("project_monthly.fy_year", fyYear)
+      .whereIn("project_monthly.month", eligibleMonths)
+      .select(
+        db.raw("COALESCE(SUM(CAST(project_monthly.revenue AS DECIMAL(14,2))), 0) as total_revenue"),
+        db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
+      );
+
+    const revenue = Number.parseFloat(monthlyData[0]?.total_revenue || "0");
+    const profit = Number.parseFloat(monthlyData[0]?.total_profit || "0");
+    const gmPercent = revenue > 0 ? profit / revenue : 0;
+    actuals.push({ quarter: qName, revenue, gmContribution: profit, gmPercent });
+  }
+  return actuals;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -992,20 +1044,7 @@ export class DatabaseStorage implements IStorage {
 
     const targetModels = rowsToModels<VatTarget>(targets);
     const refVats = await db("reference_data").where({ category: "vat_category", active: true }).orderBy("display_order", "asc");
-    const vatNames: string[] = [];
-    const vatNameSet = new Set<string>();
-    for (const rv of refVats) {
-      if (!vatNameSet.has(rv.key)) {
-        vatNames.push(rv.key);
-        vatNameSet.add(rv.key);
-      }
-    }
-    for (const t of targetModels) {
-      if (!vatNameSet.has(t.vatName)) {
-        vatNames.push(t.vatName);
-        vatNameSet.add(t.vatName);
-      }
-    }
+    const vatNames = buildVatNameList(refVats, targetModels);
 
     const results: {
       vatName: string;
@@ -1016,32 +1055,7 @@ export class DatabaseStorage implements IStorage {
     for (const vatName of vatNames) {
       const vatTargets = targetModels.filter(t => t.vatName === vatName);
       const projectIds = projectsByVat[vatName] || [];
-
-      const actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[] = [];
-
-      for (const [qName, months] of Object.entries(quarterFyMonths)) {
-        const eligibleMonths = months.filter(m => m <= maxMonth);
-        if (projectIds.length === 0 || eligibleMonths.length === 0) {
-          actuals.push({ quarter: qName, revenue: 0, gmContribution: 0, gmPercent: 0 });
-          continue;
-        }
-        const monthlyData = await db("project_monthly")
-          .join("projects", "project_monthly.project_id", "projects.id")
-          .where("projects.vat", vatName)
-          .where("project_monthly.fy_year", fyYear)
-          .whereIn("project_monthly.month", eligibleMonths)
-          .select(
-            db.raw("COALESCE(SUM(CAST(project_monthly.revenue AS DECIMAL(14,2))), 0) as total_revenue"),
-            db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
-          );
-
-        const revenue = Number.parseFloat(monthlyData[0]?.total_revenue || "0");
-        const profit = Number.parseFloat(monthlyData[0]?.total_profit || "0");
-        const gmPercent = revenue > 0 ? profit / revenue : 0;
-
-        actuals.push({ quarter: qName, revenue, gmContribution: profit, gmPercent });
-      }
-
+      const actuals = await computeQuarterActuals(vatName, fyYear, projectIds, quarterFyMonths, maxMonth);
       results.push({ vatName, targets: vatTargets, actuals });
     }
 

@@ -327,6 +327,80 @@ function VatFinancialTargetsEditor() {
 
   const isLoading = vatsLoading || targetsLoading;
 
+  const renderVatTargetsContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex justify-center p-4">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      );
+    }
+    if (selectedVat) {
+      return (
+        <div className="space-y-4">
+          <div className="border rounded-md">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="text-left p-3 text-sm font-medium">Metric</th>
+                  {tierKeys.map(t => (
+                    <th key={t} className="text-left p-3 text-sm font-medium">{tierLabels[t]}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {vatMetrics.map(m => {
+                  const existing = getExistingTarget(m.key);
+                  return (
+                    <tr key={m.key} className="border-b last:border-b-0" data-testid={`row-vat-target-${m.key}`}>
+                      <td className="p-3">
+                        <div className="text-sm font-medium">{m.label}</div>
+                        {existing && (
+                          <div className="text-xs text-muted-foreground" data-testid={`text-vat-current-${m.key}`}>
+                            Current: {tierKeys.map(t => {
+                              const v = existing[t as keyof VatTarget];
+                              return v !== null && v !== undefined ? formatDisplay(m.type, String(v)) : "-";
+                            }).join(" / ")}
+                          </div>
+                        )}
+                      </td>
+                      {tierKeys.map(t => (
+                        <td key={t} className="p-3">
+                          <Input
+                            value={getFieldValue(m.key, t)}
+                            onChange={(e) => setFieldValue(m.key, t, e.target.value)}
+                            placeholder={m.type === "percent" ? "e.g. 0.35" : "e.g. 500000"}
+                            className="max-w-[140px]"
+                            data-testid={`input-vat-target-${m.key}-${t}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSaveAll}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-vat-targets"
+            >
+              {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+              Save All Targets
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="text-vat-select-prompt">
+        Select a VAT to view and edit financial targets.
+      </p>
+    );
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
@@ -358,79 +432,7 @@ function VatFinancialTargetsEditor() {
         </div>
       </CardHeader>
       <CardContent>
-        {(() => {
-          if (isLoading) {
-            return (
-              <div className="flex justify-center p-4">
-                <Loader2 className="h-6 w-6 animate-spin" />
-              </div>
-            );
-          }
-          if (selectedVat) {
-            return (
-              <div className="space-y-4">
-                <div className="border rounded-md">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="text-left p-3 text-sm font-medium">Metric</th>
-                        {tierKeys.map(t => (
-                          <th key={t} className="text-left p-3 text-sm font-medium">{tierLabels[t]}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vatMetrics.map(m => {
-                        const existing = getExistingTarget(m.key);
-                        return (
-                          <tr key={m.key} className="border-b last:border-b-0" data-testid={`row-vat-target-${m.key}`}>
-                            <td className="p-3">
-                              <div className="text-sm font-medium">{m.label}</div>
-                              {existing && (
-                                <div className="text-xs text-muted-foreground" data-testid={`text-vat-current-${m.key}`}>
-                                  Current: {tierKeys.map(t => {
-                                    const v = existing[t as keyof VatTarget];
-                                    return v !== null && v !== undefined ? formatDisplay(m.type, String(v)) : "-";
-                                  }).join(" / ")}
-                                </div>
-                              )}
-                            </td>
-                            {tierKeys.map(t => (
-                              <td key={t} className="p-3">
-                                <Input
-                                  value={getFieldValue(m.key, t)}
-                                  onChange={(e) => setFieldValue(m.key, t, e.target.value)}
-                                  placeholder={m.type === "percent" ? "e.g. 0.35" : "e.g. 500000"}
-                                  className="max-w-[140px]"
-                                  data-testid={`input-vat-target-${m.key}-${t}`}
-                                />
-                              </td>
-                            ))}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    onClick={handleSaveAll}
-                    disabled={saveMutation.isPending}
-                    data-testid="button-save-vat-targets"
-                  >
-                    {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-                    Save All Targets
-                  </Button>
-                </div>
-              </div>
-            );
-          }
-          return (
-            <p className="text-sm text-muted-foreground" data-testid="text-vat-select-prompt">
-              Select a VAT to view and edit financial targets.
-            </p>
-          );
-        })()}
+        {renderVatTargetsContent()}
       </CardContent>
     </Card>
   );

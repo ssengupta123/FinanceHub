@@ -599,7 +599,7 @@ export default function Resources() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-6 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-12 w-full" />)}
+              {[1, 2, 3, 4, 5].map(n => <Skeleton key={`skeleton-${n}`} className="h-12 w-full" />)}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -694,8 +694,7 @@ export default function Resources() {
                               </PopoverContent>
                             </Popover>
                           </div>
-                        ) : (
-                          can("resources", "edit") ? (
+                        ) : can("resources", "edit") ? (
                             <Popover open={linkPopoverId === emp.id} onOpenChange={(open) => {
                               setLinkPopoverId(open ? emp.id : null);
                               if (open) setCreateUserForm({ username: `${emp.firstName}.${emp.lastName}`.toLowerCase().replaceAll(/\s/g, ""), role: "employee" });
@@ -769,8 +768,7 @@ export default function Resources() {
                             </Popover>
                           ) : (
                             <span className="text-muted-foreground">--</span>
-                          )
-                        )}
+                          )}
                       </TableCell>}
                       {isCol("costBand") && <TableCell data-testid={`text-employee-costband-${emp.id}`}>{emp.costBandLevel || "--"}</TableCell>}
                       {isCol("staffType") && <TableCell data-testid={`text-employee-stafftype-${emp.id}`}>{emp.staffType || "--"}</TableCell>}

@@ -339,7 +339,7 @@ export async function runMigrations() {
   console.log("Database tables created successfully");
 }
 
-export async function runIncrementalMigrations() {
+export async function migrateColumnAdditions() {
   const hasBillingType = await db.schema.hasColumn("pipeline_opportunities", "billing_type");
   if (!hasBillingType) {
     await db.schema.alterTable("pipeline_opportunities", (t) => {
@@ -376,6 +376,37 @@ export async function runIncrementalMigrations() {
     });
   }
 
+  const hasRefFyYear = await db.schema.hasColumn("reference_data", "fy_year");
+  if (!hasRefFyYear) {
+    await db.schema.alterTable("reference_data", (t) => {
+      t.text("fy_year");
+    });
+    console.log("Added fy_year column to reference_data");
+  }
+
+  const hasPipelineValue = await db.schema.hasColumn("pipeline_opportunities", "value");
+  if (!hasPipelineValue) {
+    await db.schema.alterTable("pipeline_opportunities", (t) => {
+      t.decimal("value", 14, 2);
+      t.decimal("margin_percent", 5, 3);
+      t.text("work_type");
+      t.text("status");
+      t.text("due_date");
+      t.text("start_date");
+      t.text("expiry_date");
+      t.text("comment");
+      t.text("cas_lead");
+      t.text("csd_lead");
+      t.text("category");
+      t.text("partner");
+      t.text("client_contact");
+      t.text("client_code");
+    });
+    console.log("Added new pipeline_opportunities columns");
+  }
+}
+
+export async function migrateResourceAndCxTables() {
   const hasResourcePlans = await db.schema.hasTable("resource_plans");
   if (!hasResourcePlans) {
     await db.schema.createTable("resource_plans", (t) => {
@@ -424,36 +455,9 @@ export async function runIncrementalMigrations() {
     });
     console.log("Created resource_costs table");
   }
+}
 
-  const hasPipelineValue = await db.schema.hasColumn("pipeline_opportunities", "value");
-  if (!hasPipelineValue) {
-    await db.schema.alterTable("pipeline_opportunities", (t) => {
-      t.decimal("value", 14, 2);
-      t.decimal("margin_percent", 5, 3);
-      t.text("work_type");
-      t.text("status");
-      t.text("due_date");
-      t.text("start_date");
-      t.text("expiry_date");
-      t.text("comment");
-      t.text("cas_lead");
-      t.text("csd_lead");
-      t.text("category");
-      t.text("partner");
-      t.text("client_contact");
-      t.text("client_code");
-    });
-    console.log("Added new pipeline_opportunities columns");
-  }
-
-  const hasRefFyYear = await db.schema.hasColumn("reference_data", "fy_year");
-  if (!hasRefFyYear) {
-    await db.schema.alterTable("reference_data", (t) => {
-      t.text("fy_year");
-    });
-    console.log("Added fy_year column to reference_data");
-  }
-
+export async function migrateVatTables() {
   const hasVatReports = await db.schema.hasTable("vat_reports");
   if (!hasVatReports) {
     await db.schema.createTable("vat_reports", (t) => {
@@ -544,7 +548,6 @@ export async function runIncrementalMigrations() {
     console.log("Created vat_planner_tasks table");
   }
 
-  // Incremental migration: add external_id column for Planner sync
   const hasExternalId = await db.schema.hasColumn("vat_planner_tasks", "external_id");
   if (!hasExternalId) {
     await db.schema.alterTable("vat_planner_tasks", (t) => {
@@ -604,7 +607,9 @@ export async function runIncrementalMigrations() {
     });
     console.log("Created vat_targets table");
   }
+}
 
+export async function seedVatData() {
   const vatNameNormalization: Record<string, string> = {
     "VICGov": "VIC Gov",
     "Growth": "GROWTH",
@@ -656,7 +661,9 @@ export async function runIncrementalMigrations() {
     }
     console.log("Seeded initial VAT targets for FY 25-26");
   }
+}
 
+export async function migrateEmployeeAndPermissions() {
   const hasEmployeeUserId = await db.schema.hasColumn("employees", "user_id");
   if (!hasEmployeeUserId) {
     await db.schema.alterTable("employees", (t) => {
@@ -702,6 +709,13 @@ export async function runIncrementalMigrations() {
     });
     console.log("Added certifications column to employees");
   }
+}
 
+export async function runIncrementalMigrations() {
+  await migrateColumnAdditions();
+  await migrateResourceAndCxTables();
+  await migrateVatTables();
+  await seedVatData();
+  await migrateEmployeeAndPermissions();
   console.log("Incremental migrations completed");
 }

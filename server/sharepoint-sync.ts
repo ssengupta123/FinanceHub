@@ -1,5 +1,4 @@
 import { db } from "./db";
-import { storage } from "./storage";
 
 interface SharePointToken {
   access_token: string;
@@ -100,6 +99,57 @@ function cleanVat(val: string | null | undefined): string | null {
   return vat || null;
 }
 
+export function transformSharePointItem(item: SharePointListItem): { record?: any; error?: string } {
+  const name = item.Title || item.FileLeafRef || "";
+  if (!name) return {};
+
+  const phaseRaw = item.Phase || item.OppPhase || "";
+  const classification = PHASE_MAP[phaseRaw];
+  if (!classification) return {};
+
+  const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
+  if (item.FSObjType !== undefined && !isFolder) return {};
+
+  try {
+    const rawValue = item.Value ?? item.OppValue ?? item.TotalValue;
+    const numValue = Number(rawValue);
+    const value = rawValue != null && !Number.isNaN(numValue)
+      ? String(numValue.toFixed(2))
+      : null;
+
+    const rawMargin = item.Margin ?? item.MarginPercent ?? item.OppMargin;
+    const numMargin = Number(rawMargin);
+    const marginPercent = rawMargin != null && !Number.isNaN(numMargin)
+      ? String(numMargin.toFixed(3))
+      : null;
+
+    const workType = item.WorkType || item.OppWorkType || null;
+    const status = item.Status || item.OppStatus || item.RAGStatus || null;
+    const comment = item.Comment || item.Comments || item.OppComment || null;
+    const casLead = item.CASLead || item.CAS_x0020_Lead || null;
+    const csdLead = cleanMultiValueField(item.CSDLead || item.CSD_x0020_Lead || null);
+    const category = cleanMultiValueField(item.Category || item.OppCategory || null);
+    const partner = cleanMultiValueField(item.Partner || item.OppPartner || null);
+    const clientContact = item.ClientContact || item.Client_x0020_Contact || null;
+    const clientCode = item.ClientCode || item.Client_x0020_Code || null;
+    const vat = cleanVat(item.VAT || item.VATCategory || null);
+
+    const dueDate = parseSharePointDate(item.DueDate || item.OppDueDate);
+    const startDate = parseSharePointDate(item.StartDate || item.OppStartDate);
+    const expiryDate = parseSharePointDate(item.ExpiryDate || item.OppExpiryDate);
+
+    return {
+      record: {
+        name, classification, vat, fyYear: "open_opps",
+        value, marginPercent, workType, status, dueDate, startDate, expiryDate,
+        comment, casLead, csdLead, category, partner, clientContact, clientCode,
+      },
+    };
+  } catch (err: any) {
+    return { error: `Item "${name}": ${err.message}` };
+  }
+}
+
 export async function syncSharePointOpenOpps(): Promise<{
   imported: number;
   errors: string[];
@@ -182,69 +232,12 @@ export async function syncSharePointOpenOpps(): Promise<{
   console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
 
   const staged: any[] = [];
-  for (let i = 0; i < allItems.length; i++) {
-    const item = allItems[i];
-
-    const name = item.Title || item.FileLeafRef || "";
-    if (!name) continue;
-
-    const phaseRaw = item.Phase || item.OppPhase || "";
-    const classification = PHASE_MAP[phaseRaw];
-    if (!classification) continue;
-
-    const itemType = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
-    if (item.FSObjType !== undefined && !itemType) continue;
-
-    try {
-      const rawValue = item.Value ?? item.OppValue ?? item.TotalValue;
-      const numValue = Number(rawValue);
-      const value = rawValue != null && !Number.isNaN(numValue)
-        ? String(numValue.toFixed(2))
-        : null;
-
-      const rawMargin = item.Margin ?? item.MarginPercent ?? item.OppMargin;
-      const numMargin = Number(rawMargin);
-      const marginPercent = rawMargin != null && !Number.isNaN(numMargin)
-        ? String(numMargin.toFixed(3))
-        : null;
-
-      const workType = item.WorkType || item.OppWorkType || null;
-      const status = item.Status || item.OppStatus || item.RAGStatus || null;
-      const comment = item.Comment || item.Comments || item.OppComment || null;
-      const casLead = item.CASLead || item.CAS_x0020_Lead || null;
-      const csdLead = cleanMultiValueField(item.CSDLead || item.CSD_x0020_Lead || null);
-      const category = cleanMultiValueField(item.Category || item.OppCategory || null);
-      const partner = cleanMultiValueField(item.Partner || item.OppPartner || null);
-      const clientContact = item.ClientContact || item.Client_x0020_Contact || null;
-      const clientCode = item.ClientCode || item.Client_x0020_Code || null;
-      const vat = cleanVat(item.VAT || item.VATCategory || null);
-
-      const dueDate = parseSharePointDate(item.DueDate || item.OppDueDate);
-      const startDate = parseSharePointDate(item.StartDate || item.OppStartDate);
-      const expiryDate = parseSharePointDate(item.ExpiryDate || item.OppExpiryDate);
-
-      staged.push({
-        name,
-        classification,
-        vat,
-        fyYear: "open_opps",
-        value,
-        marginPercent,
-        workType,
-        status,
-        dueDate,
-        startDate,
-        expiryDate,
-        comment,
-        casLead,
-        csdLead,
-        category,
-        partner,
-        clientContact,
-        clientCode,
-      });
-    } catch (err: any) {
-      errors.push(`Item "${name}": ${err.message}`);
+  for (const item of allItems) {
+    const result = transformSharePointItem(item);
+    if (result.error) {
+      errors.push(result.error);
+    } else if (result.record) {
+      staged.push(result.record);
     }
   }
 
