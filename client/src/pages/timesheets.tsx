@@ -75,8 +75,8 @@ export default function Timesheets() {
   function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
     createMutation.mutate({
-      employeeId: parseInt(employeeId),
-      projectId: parseInt(projectId),
+      employeeId: Number.parseInt(employeeId),
+      projectId: Number.parseInt(projectId),
       weekEnding,
       hoursWorked,
       daysWorked,

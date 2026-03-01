@@ -20,7 +20,7 @@ import type { Forecast, Project, ProjectMonthly } from "@shared/schema";
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0";
-  const n = typeof val === "string" ? parseFloat(val) : val;
+  const n = typeof val === "string" ? Number.parseFloat(val) : val;
   if (Number.isNaN(n)) return "$0";
   if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
   if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
@@ -29,7 +29,7 @@ function formatCurrency(val: string | number | null | undefined) {
 
 function parseNum(val: string | null | undefined): number {
   if (!val) return 0;
-  const n = parseFloat(val);
+  const n = Number.parseFloat(val);
   return Number.isNaN(n) ? 0 : n;
 }
 
@@ -177,7 +177,7 @@ export default function Forecasts() {
       return;
     }
     createMutation.mutate({
-      projectId: parseInt(formData.projectId),
+      projectId: Number.parseInt(formData.projectId),
       month: formData.month,
       forecastRevenue: formData.forecastRevenue || null,
       forecastCost: formData.forecastCost || null,
@@ -425,7 +425,7 @@ export default function Forecasts() {
           <CardContent>
             {(() => {
               if (isLoading) {
-                return Array.from({ length: 4 }).map((_, i) => <Skeleton key={`skeleton-${i}`} className="h-10 w-full mb-2" />);
+                return [1, 2, 3, 4].map(n => <Skeleton key={`skeleton-${n}`} className="h-10 w-full mb-2" />);
               }
               if (!forecasts || forecasts.length === 0) {
                 return <p className="text-sm text-muted-foreground">No forecasts available</p>;

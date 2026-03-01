@@ -8,7 +8,7 @@ interface FySelectorProps {
   includeAll?: boolean;
 }
 
-export function FySelector({ value, options, onChange, includeOpenOpps, includeAll }: FySelectorProps) {
+export function FySelector({ value, options, onChange, includeOpenOpps, includeAll }: Readonly<FySelectorProps>) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-[140px]" data-testid="select-fy">

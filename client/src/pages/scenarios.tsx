@@ -29,7 +29,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { FlaskConical, Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -83,6 +83,76 @@ function riskColorClass(cls: string): string {
   }
 }
 
+function getOppValue(opp: PipelineOpportunity): number {
+  const v = Number.parseFloat(opp.value || "0");
+  return Number.isNaN(v) ? 0 : v;
+}
+
+function getOppMargin(opp: PipelineOpportunity): number {
+  const m = Number.parseFloat(opp.marginPercent || "0");
+  return Number.isNaN(m) ? 0 : m;
+}
+
+function getOppGP(opp: PipelineOpportunity): number {
+  return getOppValue(opp) * getOppMargin(opp);
+}
+
+function getMonthlyRevenue(opp: PipelineOpportunity, month: number): number {
+  return Number.parseFloat((opp as any)[`revenueM${month}`] || "0");
+}
+
+function getMonthlyGP(opp: PipelineOpportunity, month: number): number {
+  return Number.parseFloat((opp as any)[`grossProfitM${month}`] || "0");
+}
+
+function hasMonthlyData(opp: PipelineOpportunity): boolean {
+  for (let m = 1; m <= 12; m++) {
+    if (getMonthlyRevenue(opp, m) > 0) return true;
+  }
+  return false;
+}
+
+function processOppForScenario(
+  opp: PipelineOpportunity,
+  rate: number,
+  isOpenOpps: boolean,
+  monthlyRevenue: number[],
+  monthlyGP: number[],
+): { rev: number; gp: number; rawRev: number; rawGP: number } {
+  let clsRev = 0;
+  let clsGP = 0;
+  let rawRev = 0;
+  let rawGP = 0;
+
+  if (isOpenOpps || !hasMonthlyData(opp)) {
+    const val = getOppValue(opp);
+    const gp = getOppGP(opp);
+    rawRev += val;
+    rawGP += gp;
+    clsRev += val * rate;
+    clsGP += gp * rate;
+    const perMonth = val / 12;
+    const gpPerMonth = gp / 12;
+    for (let m = 0; m < 12; m++) {
+      monthlyRevenue[m] += perMonth * rate;
+      monthlyGP[m] += gpPerMonth * rate;
+    }
+  } else {
+    for (let m = 1; m <= 12; m++) {
+      const rev = getMonthlyRevenue(opp, m);
+      const gp = getMonthlyGP(opp, m);
+      monthlyRevenue[m - 1] += rev * rate;
+      monthlyGP[m - 1] += gp * rate;
+      clsRev += rev * rate;
+      clsGP += gp * rate;
+      rawRev += rev;
+      rawGP += gp;
+    }
+  }
+
+  return { rev: clsRev, gp: clsGP, rawRev, rawGP };
+}
+
 export default function Scenarios() {
   const { toast } = useToast();
   const { can } = useAuth();
@@ -115,24 +185,6 @@ export default function Scenarios() {
     },
   });
 
-  const getOppValue = (opp: PipelineOpportunity) => {
-    const v = parseFloat(opp.value || "0");
-    return isNaN(v) ? 0 : v;
-  };
-  const getOppMargin = (opp: PipelineOpportunity) => {
-    const m = parseFloat(opp.marginPercent || "0");
-    return isNaN(m) ? 0 : m;
-  };
-  const getOppGP = (opp: PipelineOpportunity) => getOppValue(opp) * getOppMargin(opp);
-  const getMonthlyRevenue = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`revenueM${month}`] || "0");
-  const getMonthlyGP = (opp: PipelineOpportunity, month: number) => parseFloat((opp as any)[`grossProfitM${month}`] || "0");
-  const hasMonthlyData = (opp: PipelineOpportunity) => {
-    for (let m = 1; m <= 12; m++) {
-      if (getMonthlyRevenue(opp, m) > 0) return true;
-    }
-    return false;
-  };
-
   const filteredPipeline = useMemo(() => {
     if (!pipeline) return [];
     if (selectedFY === "open_opps") return pipeline.filter(o => o.fyYear === "open_opps");
@@ -146,18 +198,13 @@ export default function Scenarios() {
     return merged.length > 0 ? merged : FY_PERIODS;
   }, [pipeline, fyPeriods]);
 
-  const activeClassifications = useMemo(() => {
-    const classSet = new Set(filteredPipeline.map(o => o.classification));
-    return CLASSIFICATIONS.filter(cls => classSet.has(cls));
-  }, [filteredPipeline]);
-
   const isOpenOpps = selectedFY === "open_opps";
 
   const scenarioResults = useMemo(() => {
     if (!pipeline) return null;
 
-    const monthlyRevenue = Array(12).fill(0);
-    const monthlyGP = Array(12).fill(0);
+    const monthlyRevenue = new Array(12).fill(0);
+    const monthlyGP = new Array(12).fill(0);
     const classBreakdown: Record<string, { revenue: number; gp: number; rawRevenue: number; rawGP: number; count: number }> = {};
 
     for (const cls of CLASSIFICATIONS) {
@@ -169,31 +216,11 @@ export default function Scenarios() {
       let rawGP = 0;
 
       for (const opp of opps) {
-        if (isOpenOpps || !hasMonthlyData(opp)) {
-          const val = getOppValue(opp);
-          const gp = getOppGP(opp);
-          rawRev += val;
-          rawGP += gp;
-          clsRev += val * rate;
-          clsGP += gp * rate;
-          const perMonth = val / 12;
-          const gpPerMonth = gp / 12;
-          for (let m = 0; m < 12; m++) {
-            monthlyRevenue[m] += perMonth * rate;
-            monthlyGP[m] += gpPerMonth * rate;
-          }
-        } else {
-          for (let m = 1; m <= 12; m++) {
-            const rev = getMonthlyRevenue(opp, m);
-            const gp = getMonthlyGP(opp, m);
-            monthlyRevenue[m - 1] += rev * rate;
-            monthlyGP[m - 1] += gp * rate;
-            clsRev += rev * rate;
-            clsGP += gp * rate;
-            rawRev += rev;
-            rawGP += gp;
-          }
-        }
+        const result = processOppForScenario(opp, rate, isOpenOpps, monthlyRevenue, monthlyGP);
+        clsRev += result.rev;
+        clsGP += result.gp;
+        rawRev += result.rawRev;
+        rawGP += result.rawGP;
       }
 
       classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length };
@@ -247,7 +274,7 @@ export default function Scenarios() {
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
             Sales Pipeline Financial Forecast
-            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${selectedFY === "open_opps" ? "Open Opps" : `FY ${selectedFY}`}`}
+            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${selectedFY === "open_opps" ? "Open Opps" : "FY ".concat(selectedFY)}`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -357,7 +384,7 @@ export default function Scenarios() {
                 {scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">{scenarioResults?.meetsMarginGoal ? "Meets margin goal" : `${scenarioResults ? formatPercent(scenarioResults.marginGap) : "0%"} below target`}</p>
+            <p className="text-xs text-muted-foreground">{(() => { if (scenarioResults?.meetsMarginGoal) return "Meets margin goal"; const gapText = scenarioResults ? formatPercent(scenarioResults.marginGap) : "0%"; return `${gapText} below target`; })()}</p>
           </CardContent>
         </Card>
       </div>
@@ -498,28 +525,28 @@ export default function Scenarios() {
                   <TableRow>
                     <TableCell className="font-medium">Monthly Revenue</TableCell>
                     {scenarioResults?.monthlyRevenue.map((v, i) => (
-                      <TableCell key={i} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
                     ))}
                     <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium">Cumulative Revenue</TableCell>
                     {scenarioResults?.cumulativeRev.map((v, i) => (
-                      <TableCell key={i} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
                     ))}
                     <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium">Monthly GP</TableCell>
                     {scenarioResults?.monthlyGP.map((v, i) => (
-                      <TableCell key={i} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                      <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
                     ))}
                     <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
                   </TableRow>
                   <TableRow className="border-t">
                     <TableCell className="font-medium">Goal</TableCell>
-                    {FY_MONTHS.map((_, i) => (
-                      <TableCell key={i} className="text-right text-sm text-muted-foreground">{formatCurrency(revenueGoal / 12 * (i + 1))}</TableCell>
+                    {FY_MONTHS.map((month, i) => (
+                      <TableCell key={month} className="text-right text-sm text-muted-foreground">{formatCurrency(revenueGoal / 12 * (i + 1))}</TableCell>
                     ))}
                     <TableCell className="text-right font-medium text-muted-foreground">{formatCurrency(revenueGoal)}</TableCell>
                   </TableRow>
@@ -551,7 +578,7 @@ export default function Scenarios() {
                   <TableRow key={s.id} data-testid={`row-scenario-saved-${s.id}`}>
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell>{s.fyYear}</TableCell>
-                    <TableCell className="text-right">{s.revenueGoal ? formatCurrency(parseFloat(s.revenueGoal)) : "-"}</TableCell>
+                    <TableCell className="text-right">{s.revenueGoal ? formatCurrency(Number.parseFloat(s.revenueGoal)) : "-"}</TableCell>
                     <TableCell className="text-right">{s.marginGoalPercent ? `${s.marginGoalPercent}%` : "-"}</TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
                       {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "-"}

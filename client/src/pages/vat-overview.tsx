@@ -130,10 +130,10 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
 
     pipelineOpps.forEach(opp => {
       if (!activeClasses.includes(opp.classification)) return;
-      const value = parseFloat(opp.value || "0");
+      const value = Number.parseFloat(opp.value || "0");
       if (value <= 0) return;
       const winRate = (whatIf.winRates[opp.classification] || 0) / 100;
-      const margin = parseFloat(opp.marginPercent || "0") || 0.30;
+      const margin = Number.parseFloat(opp.marginPercent || "0") || 0.30;
       totalPipelineRev += value * winRate;
       totalPipelineGm += value * winRate * margin;
       oppCount++;
@@ -244,9 +244,9 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
 
   const pipelineSummary = useMemo(() => {
     const summary: Record<string, { count: number; totalValue: number }> = {};
-    (["DVF", "Q", "A"] as string[]).forEach(cls => {
+    (["DVF", "Q", "A"]).forEach(cls => {
       const opps = pipelineOpps.filter(o => o.classification === cls);
-      const totalValue = opps.reduce((s, o) => s + (parseFloat(o.value || "0") || 0), 0);
+      const totalValue = opps.reduce((s, o) => s + (Number.parseFloat(o.value || "0") || 0), 0);
       summary[cls] = { count: opps.length, totalValue };
     });
     return summary;

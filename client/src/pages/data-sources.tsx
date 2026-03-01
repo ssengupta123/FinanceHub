@@ -64,13 +64,13 @@ export default function DataSources() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      if (data?.imported != null) {
+      if (data?.imported == null) {
+        toast({ title: "Sync result", description: data?.message || "Sync completed." });
+      } else {
         toast({
           title: "Sync complete",
           description: `${data.imported} records imported. ${data.errors?.length || 0} errors.`,
         });
-      } else {
-        toast({ title: "Sync result", description: data?.message || "Sync completed." });
       }
     },
     onError: (error: Error) => {
@@ -157,150 +157,158 @@ export default function DataSources() {
         </div>
       )}
 
-      {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-5 w-48" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
+      {(() => {
+        if (isLoading) {
+          return (
+            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
+              {["ds-skel-1", "ds-skel-2", "ds-skel-3"].map(id => (
+                <Card key={id}>
+                  <CardHeader>
+                    <Skeleton className="h-5 w-48" />
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          );
+        }
+        if (!dataSources || dataSources.length === 0) {
+          return (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Database className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No data sources configured</p>
+                <p className="text-sm mt-1">Set up connections to SharePoint, iTimesheets, and Employment Hero to start syncing data.</p>
+                {can("data_sources", "create") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => seedMutation.mutate()}
+                    disabled={seedMutation.isPending}
+                    data-testid="button-seed-datasources-empty"
+                  >
+                    <Database className="mr-1 h-4 w-4" />
+                    {seedMutation.isPending ? "Creating..." : "Configure Data Sources"}
+                  </Button>
+                )}
               </CardContent>
             </Card>
-          ))}
-        </div>
-      ) : !dataSources || dataSources.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Database className="h-10 w-10 mx-auto mb-3 opacity-40" />
-            <p className="font-medium">No data sources configured</p>
-            <p className="text-sm mt-1">Set up connections to SharePoint, iTimesheets, and Employment Hero to start syncing data.</p>
-            {can("data_sources", "create") && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-4"
-                onClick={() => seedMutation.mutate()}
-                disabled={seedMutation.isPending}
-                data-testid="button-seed-datasources-empty"
-              >
-                <Database className="mr-1 h-4 w-4" />
-                {seedMutation.isPending ? "Creating..." : "Configure Data Sources"}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {dataSources.map(ds => {
-            const connInfo = parseConnectionInfo(ds.connectionInfo);
-            return (
-              <Card key={ds.id} data-testid={`card-datasource-${ds.id}`}>
-                <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="mt-0.5">{sourceIcon(ds.type)}</div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-base" data-testid={`text-name-${ds.id}`}>{ds.name}</CardTitle>
-                      {connInfo?.description && (
-                        <p className="text-sm text-muted-foreground mt-0.5">{connInfo.description}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {syncMutation.isPending && syncMutation.variables === ds.id ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
-                        <Badge variant="secondary" data-testid={`badge-status-${ds.id}`}>syncing</Badge>
-                      </>
-                    ) : (
-                      <>
-                        {statusIcon(ds.status ?? null)}
-                        <Badge variant={statusVariant(ds.status ?? null)} data-testid={`badge-status-${ds.id}`}>
-                          {ds.status ?? "configured"}
-                        </Badge>
-                      </>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground flex items-center gap-1"><Database className="h-3 w-3" /> Type</span>
-                      <span className="font-medium" data-testid={`text-type-${ds.id}`}>{ds.type}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Frequency</span>
-                      <span className="font-medium capitalize" data-testid={`text-frequency-${ds.id}`}>{ds.syncFrequency || "manual"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3" /> Last Sync</span>
-                      <span className="font-medium" data-testid={`text-last-sync-${ds.id}`}>{formatDate(ds.lastSyncAt)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Records</span>
-                      <span className="font-medium" data-testid={`text-records-${ds.id}`}>{ds.recordsProcessed ?? 0}</span>
-                    </div>
-                  </div>
-
-                  {connInfo && (
-                    <div className="border rounded-md p-3 space-y-2 text-sm bg-muted/30">
-                      <p className="font-medium text-xs uppercase tracking-wider text-muted-foreground">Connection Details</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {connInfo.endpoint && (
-                          <div>
-                            <span className="text-muted-foreground">Endpoint</span>
-                            <p className="font-mono text-xs break-all" data-testid={`text-endpoint-${ds.id}`}>{connInfo.endpoint}</p>
-                          </div>
-                        )}
-                        {connInfo.authMethod && (
-                          <div>
-                            <span className="text-muted-foreground flex items-center gap-1"><Shield className="h-3 w-3" /> Auth Method</span>
-                            <p className="font-medium" data-testid={`text-auth-${ds.id}`}>{connInfo.authMethod}</p>
-                          </div>
-                        )}
-                        {connInfo.syncTarget && (
-                          <div>
-                            <span className="text-muted-foreground">Sync Target</span>
-                            <p className="font-mono text-xs" data-testid={`text-target-${ds.id}`}>{connInfo.syncTarget}</p>
-                          </div>
-                        )}
-                        {connInfo.requiredSecrets && (
-                          <div>
-                            <span className="text-muted-foreground">Required Secrets</span>
-                            <div className="flex gap-1 flex-wrap mt-0.5">
-                              {connInfo.requiredSecrets.map((s: string) => (
-                                <Badge key={s} variant="outline" className="text-xs font-mono">{s}</Badge>
-                              ))}
-                            </div>
-                          </div>
+          );
+        }
+        return (
+          <div className="space-y-4">
+            {dataSources.map(ds => {
+              const connInfo = parseConnectionInfo(ds.connectionInfo);
+              return (
+                <Card key={ds.id} data-testid={`card-datasource-${ds.id}`}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="mt-0.5">{sourceIcon(ds.type)}</div>
+                      <div className="min-w-0">
+                        <CardTitle className="text-base" data-testid={`text-name-${ds.id}`}>{ds.name}</CardTitle>
+                        {connInfo?.description && (
+                          <p className="text-sm text-muted-foreground mt-0.5">{connInfo.description}</p>
                         )}
                       </div>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {syncMutation.isPending && syncMutation.variables === ds.id ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />
+                          <Badge variant="secondary" data-testid={`badge-status-${ds.id}`}>syncing</Badge>
+                        </>
+                      ) : (
+                        <>
+                          {statusIcon(ds.status ?? null)}
+                          <Badge variant={statusVariant(ds.status ?? null)} data-testid={`badge-status-${ds.id}`}>
+                            {ds.status ?? "configured"}
+                          </Badge>
+                        </>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1"><Database className="h-3 w-3" /> Type</span>
+                        <span className="font-medium" data-testid={`text-type-${ds.id}`}>{ds.type}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Frequency</span>
+                        <span className="font-medium capitalize" data-testid={`text-frequency-${ds.id}`}>{ds.syncFrequency || "manual"}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1"><RefreshCw className="h-3 w-3" /> Last Sync</span>
+                        <span className="font-medium" data-testid={`text-last-sync-${ds.id}`}>{formatDate(ds.lastSyncAt)}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Records</span>
+                        <span className="font-medium" data-testid={`text-records-${ds.id}`}>{ds.recordsProcessed ?? 0}</span>
+                      </div>
+                    </div>
 
-                  <div className="flex gap-2 flex-wrap">
-                    {can("data_sources", "sync") && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={syncMutation.isPending}
-                        onClick={() => syncMutation.mutate(ds.id)}
-                        data-testid={`button-sync-${ds.id}`}
-                      >
-                        <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending && syncMutation.variables === ds.id ? "animate-spin" : ""}`} />
-                        {syncMutation.isPending && syncMutation.variables === ds.id ? "Syncing..." : "Sync Now"}
-                      </Button>
+                    {connInfo && (
+                      <div className="border rounded-md p-3 space-y-2 text-sm bg-muted/30">
+                        <p className="font-medium text-xs uppercase tracking-wider text-muted-foreground">Connection Details</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {connInfo.endpoint && (
+                            <div>
+                              <span className="text-muted-foreground">Endpoint</span>
+                              <p className="font-mono text-xs break-all" data-testid={`text-endpoint-${ds.id}`}>{connInfo.endpoint}</p>
+                            </div>
+                          )}
+                          {connInfo.authMethod && (
+                            <div>
+                              <span className="text-muted-foreground flex items-center gap-1"><Shield className="h-3 w-3" /> Auth Method</span>
+                              <p className="font-medium" data-testid={`text-auth-${ds.id}`}>{connInfo.authMethod}</p>
+                            </div>
+                          )}
+                          {connInfo.syncTarget && (
+                            <div>
+                              <span className="text-muted-foreground">Sync Target</span>
+                              <p className="font-mono text-xs" data-testid={`text-target-${ds.id}`}>{connInfo.syncTarget}</p>
+                            </div>
+                          )}
+                          {connInfo.requiredSecrets && (
+                            <div>
+                              <span className="text-muted-foreground">Required Secrets</span>
+                              <div className="flex gap-1 flex-wrap mt-0.5">
+                                {connInfo.requiredSecrets.map((s: string) => (
+                                  <Badge key={s} variant="outline" className="text-xs font-mono">{s}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+
+                    <div className="flex gap-2 flex-wrap">
+                      {can("data_sources", "sync") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={syncMutation.isPending}
+                          onClick={() => syncMutation.mutate(ds.id)}
+                          data-testid={`button-sync-${ds.id}`}
+                        >
+                          <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending && syncMutation.variables === ds.id ? "animate-spin" : ""}`} />
+                          {syncMutation.isPending && syncMutation.variables === ds.id ? "Syncing..." : "Sync Now"}
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

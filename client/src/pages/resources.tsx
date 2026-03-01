@@ -79,7 +79,7 @@ function statusVariant(status: string): "default" | "secondary" | "outline" {
 
 function formatCurrency(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "--";
-  const num = typeof value === "string" ? parseFloat(value) : value;
+  const num = typeof value === "string" ? Number.parseFloat(value) : value;
   if (Number.isNaN(num)) return "--";
   return `$${Math.round(num).toLocaleString()}`;
 }
@@ -112,7 +112,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
 
 function grossCostRagColor(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "bg-gray-300";
-  const num = typeof value === "string" ? parseFloat(value) : value;
+  const num = typeof value === "string" ? Number.parseFloat(value) : value;
   if (Number.isNaN(num)) return "bg-gray-300";
   if (num < 700) return "bg-green-500";
   if (num <= 800) return "bg-amber-500";
@@ -184,7 +184,7 @@ export default function Resources() {
   const { data: employees, isLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: availableFYsData } = useQuery<string[]>({ queryKey: ["/api/timesheets/available-fys"] });
   const { data: timesheets } = useQuery<Timesheet[]>({
-    queryKey: ["/api/timesheets" + (selectedFY !== "all" ? "?fy=" + selectedFY : "")],
+    queryKey: ["/api/timesheets" + (selectedFY === "all" ? "" : "?fy=" + selectedFY)],
   });
   const { data: allUsers } = useQuery<Array<{ id: number; username: string; role: string; email: string | null; displayName: string | null }>>({ queryKey: ["/api/users"] });
 
@@ -285,7 +285,7 @@ export default function Resources() {
     const active = employees.filter(e => e.status === "active").length;
     const onBench = employees.filter(e => e.status === "active" && !e.team).length;
     const rates = employees
-      .map(e => parseFloat(e.baseCost || "0"))
+      .map(e => Number.parseFloat(e.baseCost || "0"))
       .filter(r => r > 0);
     const avgDayRate = rates.length > 0 ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
     return { total: employees.length, active, onBench, avgDayRate };
@@ -708,7 +708,7 @@ export default function Resources() {
                               <PopoverContent className="w-72 p-3" align="start">
                                 <div className="space-y-3">
                                   <p className="text-sm font-medium">Assign User Account</p>
-                                  {allUsers && allUsers.some(u => !linkedUserIds.has(u.id)) && (
+                                  {allUsers?.some(u => !linkedUserIds.has(u.id)) && (
                                     <div className="space-y-1">
                                       <Label className="text-xs">Link Existing User</Label>
                                       <Select

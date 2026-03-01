@@ -272,7 +272,21 @@ export default function UploadPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {!file ? (
+          {file ? (
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                <div>
+                  <p className="font-medium" data-testid="text-filename">{file.name}</p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={clearFile} data-testid="button-clear-file">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Remove
+              </Button>
+            </div>
+          ) : (
             <button
               type="button"
               className="w-full border-2 border-dashed rounded-md p-12 text-center cursor-pointer hover-elevate bg-transparent"
@@ -291,20 +305,6 @@ export default function UploadPage() {
                 data-testid="input-file"
               />
             </button>
-          ) : (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="h-8 w-8 text-green-600" />
-                <div>
-                  <p className="font-medium" data-testid="text-filename">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                </div>
-              </div>
-              <Button variant="outline" onClick={clearFile} data-testid="button-clear-file">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Remove
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>
@@ -396,7 +396,10 @@ export default function UploadPage() {
                     disabled={importing || selectedSheets.size === 0}
                     data-testid="button-import"
                   >
-                    {importing ? "Importing..." : `Import ${selectedSheets.size} Sheet${selectedSheets.size !== 1 ? "s" : ""}`}
+                    {(() => {
+                      if (importing) return "Importing...";
+                      return `Import ${selectedSheets.size} Sheet${selectedSheets.size === 1 ? "" : "s"}`;
+                    })()}
                   </Button>
                 )}
               </div>
@@ -572,29 +575,7 @@ function SingleSheetUpload({ title, description, sheetType }: Readonly<{ title: 
         <p className="text-xs text-muted-foreground">{description}</p>
       </CardHeader>
       <CardContent>
-        {!file ? (
-          <button
-            type="button"
-            className="w-full border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate bg-transparent"
-            onClick={() => fileInputRef.current?.click()}
-            data-testid={`drop-zone-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
-          >
-            <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-            <p className="text-sm font-medium">Click to select file</p>
-            <p className="text-xs text-muted-foreground">.xlsx file with {title} data</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) { setFile(f); setResult(null); }
-              }}
-              data-testid={`input-file-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
-            />
-          </button>
-        ) : (
+        {file ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -637,6 +618,28 @@ function SingleSheetUpload({ title, description, sheetType }: Readonly<{ title: 
               </div>
             )}
           </div>
+        ) : (
+          <button
+            type="button"
+            className="w-full border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover-elevate bg-transparent"
+            onClick={() => fileInputRef.current?.click()}
+            data-testid={`drop-zone-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
+          >
+            <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+            <p className="text-sm font-medium">Click to select file</p>
+            <p className="text-xs text-muted-foreground">.xlsx file with {title} data</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) { setFile(f); setResult(null); }
+              }}
+              data-testid={`input-file-${sheetType.replaceAll(/\s+/g, "-").toLowerCase()}`}
+            />
+          </button>
         )}
       </CardContent>
     </Card>
@@ -687,7 +690,7 @@ function VatPptxUpload() {
       const data = await res.json();
       toast({
         title: "VAT Reports Deleted",
-        description: `${data.deleted} VAT report${data.deleted !== 1 ? "s" : ""} and all associated data have been removed.`,
+        description: `${data.deleted} VAT report${data.deleted === 1 ? "" : "s"} and all associated data have been removed.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports/latest"] });
@@ -750,7 +753,7 @@ function VatPptxUpload() {
       const totalImported = Object.values(data.results as Record<string, VatImportResult>).filter(r => r.imported).length;
       toast({
         title: "Import Complete",
-        description: `${totalImported} VAT report${totalImported !== 1 ? "s" : ""} imported successfully`,
+        description: `${totalImported} VAT report${totalImported === 1 ? "" : "s"} imported successfully`,
       });
 
       queryClient.invalidateQueries({ queryKey: ["/api/vat-reports"] });
@@ -794,55 +797,77 @@ function VatPptxUpload() {
             Upload a VAT Sales Committee Report PowerPoint file to import all VAT reports, risks, and planner tasks.
           </p>
 
-          {showDeleteConfirm ? (
-            <div className="mb-4 p-4 rounded-md border border-destructive/50 bg-destructive/5">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-medium text-destructive">Delete all VAT report data?</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    This will permanently remove all VAT reports, risks, action items, planner tasks, and change logs. This cannot be undone.
-                  </p>
-                  <div className="flex items-center gap-2 mt-3">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleDeleteAll}
-                      disabled={deleting}
-                      data-testid="button-confirm-delete-vat"
-                    >
-                      {deleting ? "Deleting..." : "Yes, delete all"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowDeleteConfirm(false)}
-                      disabled={deleting}
-                      data-testid="button-cancel-delete-vat"
-                    >
-                      Cancel
-                    </Button>
+          {(() => {
+            if (showDeleteConfirm) {
+              return (
+                <div className="mb-4 p-4 rounded-md border border-destructive/50 bg-destructive/5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium text-destructive">Delete all VAT report data?</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        This will permanently remove all VAT reports, risks, action items, planner tasks, and change logs. This cannot be undone.
+                      </p>
+                      <div className="flex items-center gap-2 mt-3">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={handleDeleteAll}
+                          disabled={deleting}
+                          data-testid="button-confirm-delete-vat"
+                        >
+                          {deleting ? "Deleting..." : "Yes, delete all"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowDeleteConfirm(false)}
+                          disabled={deleting}
+                          data-testid="button-cancel-delete-vat"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          ) : can("admin", "manage") ? (
-            <div className="mb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => setShowDeleteConfirm(true)}
-                data-testid="button-delete-all-vat"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete All VAT Report Data
-              </Button>
-              <p className="text-xs text-muted-foreground mt-1">Clear existing reports before importing to avoid duplicates</p>
-            </div>
-          ) : null}
+              );
+            }
+            if (can("admin", "manage")) {
+              return (
+                <div className="mb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    data-testid="button-delete-all-vat"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete All VAT Report Data
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-1">Clear existing reports before importing to avoid duplicates</p>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
-          {!pptxFile ? (
+          {pptxFile ? (
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <Presentation className="h-8 w-8 text-blue-600" />
+                <div>
+                  <p className="font-medium" data-testid="text-pptx-filename">{pptxFile.name}</p>
+                  <p className="text-sm text-muted-foreground">{(pptxFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={clearPptx} data-testid="button-clear-pptx">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Remove
+              </Button>
+            </div>
+          ) : (
             <button
               type="button"
               className="w-full border-2 border-dashed rounded-md p-8 text-center cursor-pointer hover-elevate bg-transparent"
@@ -861,20 +886,6 @@ function VatPptxUpload() {
                 data-testid="input-pptx-file"
               />
             </button>
-          ) : (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <Presentation className="h-8 w-8 text-blue-600" />
-                <div>
-                  <p className="font-medium" data-testid="text-pptx-filename">{pptxFile.name}</p>
-                  <p className="text-sm text-muted-foreground">{(pptxFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                </div>
-              </div>
-              <Button variant="outline" onClick={clearPptx} data-testid="button-clear-pptx">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Remove
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>
@@ -944,16 +955,16 @@ function VatPptxUpload() {
                     <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                       <Badge variant="secondary">{report.risksCount} risks</Badge>
                       <Badge variant="secondary">{report.plannerTasksCount} tasks</Badge>
-                      {result && result.imported && (
+                      {result?.imported && (
                         <Badge variant="default">
                           <CheckCircle className="h-3 w-3 mr-1" />
                           Imported
                         </Badge>
                       )}
-                      {result && result.errors.length > 0 && (
+                      {(result?.errors?.length ?? 0) > 0 && (
                         <Badge variant="destructive">
                           <AlertCircle className="h-3 w-3 mr-1" />
-                          {result.errors.length} errors
+                          {result?.errors.length} errors
                         </Badge>
                       )}
                     </div>
@@ -972,7 +983,10 @@ function VatPptxUpload() {
                   disabled={importing || selectedVats.size === 0}
                   data-testid="button-import-pptx"
                 >
-                  {importing ? "Importing..." : `Import ${selectedVats.size} VAT Report${selectedVats.size !== 1 ? "s" : ""}`}
+                  {(() => {
+                    if (importing) return "Importing...";
+                    return `Import ${selectedVats.size} VAT Report${selectedVats.size === 1 ? "" : "s"}`;
+                  })()}
                 </Button>
               )}
             </div>

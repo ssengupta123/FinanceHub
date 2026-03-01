@@ -159,7 +159,7 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
 
     const slideFiles = fs.readdirSync(slidesDir)
       .filter(f => /^slide\d+\.xml$/.test(f))
-      .sort((a, b) => parseInt(/\d+/.exec(a)![0]) - parseInt(/\d+/.exec(b)![0]));
+      .sort((a, b) => Number.parseInt(/\d+/.exec(a)![0]) - Number.parseInt(/\d+/.exec(b)![0]));
 
     const resolvedTmpDir = fs.realpathSync(tmpDir);
     const slides: ParsedSlide[] = slideFiles.map(sf => {
@@ -169,7 +169,7 @@ function extractSlides(pptxBuffer: Buffer): ParsedSlide[] {
         throw new Error("Zip Slip detected: entry resolves outside extraction directory.");
       }
       const content = fs.readFileSync(resolvedPath, "utf8");
-      const idx = parseInt(/\d+/.exec(sf)![0]);
+      const idx = Number.parseInt(/\d+/.exec(sf)![0]);
       return {
         index: idx,
         paragraphs: extractParagraphs(content),

@@ -554,20 +554,7 @@ export async function runIncrementalMigrations() {
   }
 
   const hasVatChangeLogs = await db.schema.hasTable("vat_change_logs");
-  if (!hasVatChangeLogs) {
-    await db.schema.createTable("vat_change_logs", (t) => {
-      t.increments("id").primary();
-      t.integer("vat_report_id").references("id").inTable("vat_reports").onDelete("SET NULL");
-      t.text("field_name").notNullable();
-      t.text("old_value");
-      t.text("new_value");
-      t.text("changed_by");
-      t.text("entity_type");
-      t.integer("entity_id");
-      t.timestamp("changed_at").defaultTo(db.fn.now());
-    });
-    console.log("Created vat_change_logs table");
-  } else {
+  if (hasVatChangeLogs) {
     try {
       const hasNotNull = await db.raw(`
         SELECT is_nullable FROM information_schema.columns
@@ -584,6 +571,19 @@ export async function runIncrementalMigrations() {
     } catch (e) {
       console.log("vat_change_logs FK migration check skipped:", (e as Error).message);
     }
+  } else {
+    await db.schema.createTable("vat_change_logs", (t) => {
+      t.increments("id").primary();
+      t.integer("vat_report_id").references("id").inTable("vat_reports").onDelete("SET NULL");
+      t.text("field_name").notNullable();
+      t.text("old_value");
+      t.text("new_value");
+      t.text("changed_by");
+      t.text("entity_type");
+      t.integer("entity_id");
+      t.timestamp("changed_at").defaultTo(db.fn.now());
+    });
+    console.log("Created vat_change_logs table");
   }
 
   const hasVatTargets = await db.schema.hasTable("vat_targets");

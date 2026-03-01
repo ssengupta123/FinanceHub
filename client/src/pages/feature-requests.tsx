@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,7 @@ export default function FeatureRequestsPage() {
   const [category, setCategory] = useState<string>("");
   const [priority, setPriority] = useState<string>("Medium");
   const [area, setArea] = useState<string>("");
-  const [_selectedRequest, setSelectedRequest] = useState<FeatureRequest | null>(null);
+  const [, setSelectedRequest] = useState<FeatureRequest | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
 
   const { data: requests = [], isLoading } = useQuery<FeatureRequest[]>({
@@ -294,7 +294,7 @@ export default function FeatureRequestsPage() {
             ))}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground ml-2">{filtered.length} request{filtered.length !== 1 ? "s" : ""}</span>
+        <span className="text-sm text-muted-foreground ml-2">{filtered.length} request{filtered.length === 1 ? "" : "s"}</span>
       </div>
 
       <div className="space-y-3">

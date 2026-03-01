@@ -123,7 +123,7 @@ export function AppSidebar() {
                   {visibleItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild isActive={location === item.path}>
-                        <Link href={item.path} data-testid={`link-${item.path.replace(/\//g, "").replace(/-/g, "-") || "dashboard"}`}>
+                        <Link href={item.path} data-testid={`link-${item.path.replaceAll("/", "").replaceAll("-", "-") || "dashboard"}`}>
                           <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>
                         </Link>
