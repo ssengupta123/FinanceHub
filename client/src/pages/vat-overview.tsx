@@ -43,9 +43,11 @@ const TIER_COLORS = {
   amazing: "#8b5cf6",
 };
 
-const DEFAULT_WIN_RATES: Record<string, number> = { DVF: 50, Q: 15, A: 5 };
+const DEFAULT_WIN_RATES: Record<string, number> = { DVF: 50, DF: 30, Q: 15, A: 5 };
+const WHATIF_CLASSIFICATIONS = ["DVF", "DF", "Q", "A"] as const;
 const CLASSIFICATION_LABELS: Record<string, string> = {
   DVF: "DVF - Defined & Verified",
+  DF: "DF - Submitted",
   Q: "Q - Qualified",
   A: "A - Aware",
 };
@@ -117,7 +119,7 @@ interface VatCardProps {
 function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQuarterIndex, pipelineOpps }: Readonly<VatCardProps>) {
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [whatIf, setWhatIf] = useState<WhatIfConfig>({
-    enabled: { DVF: false, Q: false, A: false },
+    enabled: { DVF: false, DF: false, Q: false, A: false },
     winRates: { ...DEFAULT_WIN_RATES },
   });
 
@@ -250,7 +252,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
 
   const pipelineSummary = useMemo(() => {
     const summary: Record<string, { count: number; totalValue: number }> = {};
-    (["DVF", "Q", "A"]).forEach(cls => {
+    WHATIF_CLASSIFICATIONS.forEach(cls => {
       const opps = pipelineOpps.filter(o => o.classification === cls);
       const totalValue = opps.reduce((s, o) => s + (Number.parseFloat(o.value || "0") || 0), 0);
       summary[cls] = { count: opps.length, totalValue };
@@ -336,7 +338,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
               <div className="text-xs font-medium text-muted-foreground">
                 Toggle pipeline classifications and adjust win probability to project future performance
               </div>
-              {(["DVF", "Q", "A"] as const).map(cls => {
+              {WHATIF_CLASSIFICATIONS.map(cls => {
                 const summary = pipelineSummary[cls];
                 return (
                   <div key={cls} className="space-y-1.5">
@@ -449,7 +451,7 @@ export default function VatOverview() {
     const vatNames = overviewData?.map(v => v.vatName) || [];
     vatNames.forEach(vn => { map[vn] = []; });
     allPipeline
-      .filter(o => ["DVF", "Q", "A"].includes(o.classification))
+      .filter(o => (WHATIF_CLASSIFICATIONS as readonly string[]).includes(o.classification))
       .forEach(opp => {
         for (const vn of vatNames) {
           if (matchesVat(opp.vat, vn)) {

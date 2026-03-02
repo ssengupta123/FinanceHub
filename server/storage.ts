@@ -369,6 +369,7 @@ export interface IStorage {
     vatName: string;
     targets: VatTarget[];
     actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+    forecast: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
   }[]>;
 
   getDashboardSummary(): Promise<{
@@ -1069,13 +1070,23 @@ export class DatabaseStorage implements IStorage {
       vatName: string;
       targets: VatTarget[];
       actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+      forecast: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
     }[] = [];
 
     for (const vatName of vatNames) {
       const vatTargets = targetModels.filter(t => t.vatName === vatName);
       const projectIds = projectsByVat[vatName] || [];
       const actuals = await computeQuarterActuals(vatName, fyYear, projectIds, quarterFyMonths, maxMonth);
-      results.push({ vatName, targets: vatTargets, actuals });
+      const forecastMonths = Object.entries(quarterFyMonths)
+        .filter(([, months]) => months.some(m => m > maxMonth))
+        .reduce<Record<string, number[]>>((acc, [q, months]) => {
+          acc[q] = months.filter(m => m > maxMonth);
+          return acc;
+        }, {});
+      const forecast = Object.keys(forecastMonths).length > 0
+        ? await computeQuarterActuals(vatName, fyYear, projectIds, forecastMonths, 12)
+        : [];
+      results.push({ vatName, targets: vatTargets, actuals, forecast });
     }
 
     return results;
