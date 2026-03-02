@@ -80,10 +80,18 @@ function getTierStatus(actual: number, targets: { ok: number; good: number; grea
   return { label: "Below Target", color: "text-red-600", bgColor: "bg-red-100 dark:bg-red-900/30" };
 }
 
+interface QuarterData {
+  quarter: string;
+  revenue: number;
+  gmContribution: number;
+  gmPercent: number;
+}
+
 interface VatOverviewData {
   vatName: string;
   targets: VatTargetEntry[];
-  actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+  actuals: QuarterData[];
+  forecast: QuarterData[];
 }
 
 interface PipelineOpp {
@@ -154,16 +162,27 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
     return { totalPipelineRev, totalPipelineGm, perQuarterRev, perQuarterGm, oppCount, remainingQuarters };
   }, [whatIfOpen, whatIf, pipelineOpps, currentQuarterIndex]);
 
+  const forecastByQuarter = useMemo(() => {
+    const map: Record<string, QuarterData> = {};
+    (vatData.forecast || []).forEach(f => { map[f.quarter] = f; });
+    return map;
+  }, [vatData.forecast]);
+
   const getCumulativeActuals = () => {
     let cumRevenue = 0, cumGm = 0;
     return vatData.actuals.map((q, i) => {
-      cumRevenue += q.revenue;
-      cumGm += q.gmContribution;
+      const isActual = i <= currentQuarterIndex;
+      const fc = forecastByQuarter[q.quarter];
+      const qRevenue = isActual ? q.revenue : (fc?.revenue || 0);
+      const qGm = isActual ? q.gmContribution : (fc?.gmContribution || 0);
+      cumRevenue += qRevenue;
+      cumGm += qGm;
       return {
         quarter: QUARTER_LABELS[i] || q.quarter,
         revenue: cumRevenue,
         gmContribution: cumGm,
         gmPercent: cumRevenue > 0 ? cumGm / cumRevenue : 0,
+        isForecast: !isActual && ((fc?.revenue || 0) > 0 || (fc?.gmContribution || 0) > 0),
       };
     });
   };
@@ -195,11 +214,18 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
         projectedGmP = projCumRev > 0 ? projCumGm / projCumRev : 0;
       }
 
+      const forecastGm = ca.isForecast ? ca.gmContribution : null;
+      const forecastRev = ca.isForecast ? ca.revenue : null;
+      const forecastGmP = ca.isForecast ? ca.gmPercent : null;
+
       return {
         quarter: QUARTER_LABELS[i],
         actualGm: hasData ? ca.gmContribution : null,
         actualRev: hasData ? ca.revenue : null,
         actualGmP: hasData ? ca.gmPercent : null,
+        forecastGm,
+        forecastRev,
+        forecastGmP,
         projectedGm,
         projectedRev,
         projectedGmP,
@@ -244,9 +270,9 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
   }) : null;
 
   const metricConfig = {
-    gm_contribution: { actualKey: "actualGm", projKey: "projectedGm", okKey: "targetOkGm", goodKey: "targetGoodGm", greatKey: "targetGreatGm", amazingKey: "targetAmazingGm", formatter: formatDollars },
-    revenue: { actualKey: "actualRev", projKey: "projectedRev", okKey: "targetOkRev", goodKey: "targetGoodRev", greatKey: "targetGreatRev", amazingKey: "targetAmazingRev", formatter: formatDollars },
-    gm_percent: { actualKey: "actualGmP", projKey: "projectedGmP", okKey: "targetOkGmP", goodKey: "targetGoodGmP", greatKey: "targetGreatGmP", amazingKey: "targetAmazingGmP", formatter: formatPercent },
+    gm_contribution: { actualKey: "actualGm", forecastKey: "forecastGm", projKey: "projectedGm", okKey: "targetOkGm", goodKey: "targetGoodGm", greatKey: "targetGreatGm", amazingKey: "targetAmazingGm", formatter: formatDollars },
+    revenue: { actualKey: "actualRev", forecastKey: "forecastRev", projKey: "projectedRev", okKey: "targetOkRev", goodKey: "targetGoodRev", greatKey: "targetGreatRev", amazingKey: "targetAmazingRev", formatter: formatDollars },
+    gm_percent: { actualKey: "actualGmP", forecastKey: "forecastGmP", projKey: "projectedGmP", okKey: "targetOkGmP", goodKey: "targetGoodGmP", greatKey: "targetGreatGmP", amazingKey: "targetAmazingGmP", formatter: formatPercent },
   };
   const config = metricConfig[selectedMetric];
 
@@ -307,6 +333,7 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
               <Line type="monotone" dataKey={config.greatKey} name="Great" stroke={TIER_COLORS.great} strokeDasharray="5 5" strokeWidth={1.5} dot={false} />
               <Line type="monotone" dataKey={config.amazingKey} name="Amazing" stroke={TIER_COLORS.amazing} strokeDasharray="5 5" strokeWidth={1.5} dot={false} />
               <Bar dataKey={config.actualKey} name="Actual (YTD)" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={40} />
+              <Bar dataKey={config.forecastKey} name="Forecast" fill="hsl(var(--primary))" fillOpacity={0.4} radius={[4, 4, 0, 0]} barSize={40} strokeDasharray="4 2" stroke="hsl(var(--primary))" strokeWidth={1.5} />
               {whatIfProjection && (
                 <Bar dataKey={config.projKey} name="Projected (What If)" fill="#f97316" fillOpacity={0.7} radius={[4, 4, 0, 0]} barSize={40} />
               )}
@@ -315,14 +342,25 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
         </div>
 
         <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
-          {vatData.actuals.map((q, i) => (
-            <div key={q.quarter} className={`p-2 rounded ${i <= currentQuarterIndex ? "bg-muted" : "bg-muted/30 opacity-60"}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
-              <div className="font-medium">{QUARTER_LABELS[i]?.split(" ")[0]}</div>
-              <div>Rev: {formatDollars(q.revenue)}</div>
-              <div>GM: {formatDollars(q.gmContribution)}</div>
-              <div>GM%: {formatPercent(q.gmPercent)}</div>
-            </div>
-          ))}
+          {vatData.actuals.map((q, i) => {
+            const isActual = i <= currentQuarterIndex;
+            const fc = forecastByQuarter[q.quarter];
+            const hasForecast = !isActual && ((fc?.revenue || 0) > 0 || (fc?.gmContribution || 0) > 0);
+            const displayRev = isActual ? q.revenue : (fc?.revenue || 0);
+            const displayGm = isActual ? q.gmContribution : (fc?.gmContribution || 0);
+            const displayGmP = isActual ? q.gmPercent : (fc?.gmPercent || 0);
+            return (
+              <div key={q.quarter} className={`p-2 rounded ${isActual ? "bg-muted" : hasForecast ? "bg-blue-50 dark:bg-blue-950/30 border border-dashed border-blue-300 dark:border-blue-700" : "bg-muted/30 opacity-60"}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
+                <div className="font-medium flex items-center gap-1">
+                  {QUARTER_LABELS[i]?.split(" ")[0]}
+                  {hasForecast && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-blue-400 text-blue-600 dark:text-blue-400">Forecast</Badge>}
+                </div>
+                <div>Rev: {formatDollars(displayRev)}</div>
+                <div>GM: {formatDollars(displayGm)}</div>
+                <div>GM%: {formatPercent(displayGmP)}</div>
+              </div>
+            );
+          })}
         </div>
 
         <Collapsible open={whatIfOpen} onOpenChange={setWhatIfOpen}>
