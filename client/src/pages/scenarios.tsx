@@ -29,6 +29,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRight, ChevronDown, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -500,32 +501,29 @@ function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marg
 }>) {
   return (
     <Card className="lg:col-span-1">
-      <CardHeader>
-        <CardTitle className="text-base">Win Rate Assumptions</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Win Rate Assumptions</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-1.5 pt-0">
         {CLASSIFICATIONS.map(cls => (
-          <div key={cls} className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs">{cls}</Badge>
-                <span className="text-sm">{CLASS_LABELS[cls]}</span>
-              </div>
-              <span className="text-sm font-medium w-12 text-right" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
-            </div>
+          <div key={cls} className="flex items-center gap-2">
+            <span className="text-xs font-medium w-6 shrink-0">{cls}</span>
             <Slider
+              className="flex-1"
               value={[winRates[cls]]}
               onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
               max={100}
               step={5}
               data-testid={`slider-winrate-${cls}`}
             />
+            <span className="text-xs font-mono w-8 text-right shrink-0" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
           </div>
         ))}
-        <div className="border-t pt-4 space-y-3">
+        <div className="border-t pt-2 grid grid-cols-2 gap-2">
           <div>
-            <Label className="text-sm">Revenue Goal</Label>
+            <Label className="text-xs">Revenue Goal</Label>
             <Input
+              className="h-7 text-xs"
               type="number"
               value={revenueGoal}
               onChange={e => setRevenueGoal(Number(e.target.value))}
@@ -533,8 +531,9 @@ function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marg
             />
           </div>
           <div>
-            <Label className="text-sm">Margin Goal (%)</Label>
+            <Label className="text-xs">Margin Goal (%)</Label>
             <Input
+              className="h-7 text-xs"
               type="number"
               value={marginGoal}
               onChange={e => setMarginGoal(Number(e.target.value))}
