@@ -214,14 +214,23 @@ function computeOverlapFyRange(opp: PipelineOpportunity, fyDates: { fyStart: Dat
   };
 }
 
+function hasAnyMonthlyGP(opp: PipelineOpportunity): boolean {
+  for (let m = 1; m <= 12; m++) {
+    if (getMonthlyGP(opp, m) > 0) return true;
+  }
+  return false;
+}
+
 function processOppForScenario(
   detail: OppFyDetail,
   rate: number,
   monthlyRevenue: number[],
   monthlyGP: number[],
   fyDates: { fyStart: Date; fyEnd: Date } | null,
+  ytdMarginFallback: number,
 ): { rev: number; gp: number; rawRev: number; rawGP: number } {
   const { opp, fyRevenue, fyGP } = detail;
+  const useMarginFallback = !hasAnyMonthlyGP(opp) && ytdMarginFallback > 0;
 
   if (hasMonthlyData(opp)) {
     let clsRev = 0;
@@ -230,7 +239,7 @@ function processOppForScenario(
     let rawGP = 0;
     for (let m = 1; m <= 12; m++) {
       const rev = getMonthlyRevenue(opp, m);
-      const gp = getMonthlyGP(opp, m);
+      const gp = useMarginFallback ? rev * ytdMarginFallback : getMonthlyGP(opp, m);
       monthlyRevenue[m - 1] += rev * rate;
       monthlyGP[m - 1] += gp * rate;
       clsRev += rev * rate;
@@ -243,15 +252,16 @@ function processOppForScenario(
 
   if (fyRevenue <= 0) return { rev: 0, gp: 0, rawRev: 0, rawGP: 0 };
 
+  const effectiveFyGP = fyGP > 0 ? fyGP : fyRevenue * ytdMarginFallback;
   const { startIdx, endIdx } = computeOverlapFyRange(opp, fyDates);
   const spreadMonths = endIdx - startIdx + 1;
   const perMonth = fyRevenue / spreadMonths;
-  const gpPerMonth = fyGP / spreadMonths;
+  const gpPerMonth = effectiveFyGP / spreadMonths;
   for (let m = startIdx; m <= endIdx; m++) {
     monthlyRevenue[m] += perMonth * rate;
     monthlyGP[m] += gpPerMonth * rate;
   }
-  return { rev: fyRevenue * rate, gp: fyGP * rate, rawRev: fyRevenue, rawGP: fyGP };
+  return { rev: fyRevenue * rate, gp: effectiveFyGP * rate, rawRev: fyRevenue, rawGP: effectiveFyGP };
 }
 
 function computeScenarioResults(
@@ -262,6 +272,7 @@ function computeScenarioResults(
   marginGoal: number,
   isOpenOpps: boolean,
   selectedFY: string,
+  ytdMarginFallback: number,
 ) {
   if (!pipeline) return null;
 
@@ -282,7 +293,7 @@ function computeScenarioResults(
     for (const opp of opps) {
       const detail = computeOppFyDetail(opp, selectedFY, isOpenOpps);
       details.push(detail);
-      const result = processOppForScenario(detail, rate, monthlyRevenue, monthlyGP, fyDates);
+      const result = processOppForScenario(detail, rate, monthlyRevenue, monthlyGP, fyDates, ytdMarginFallback);
       clsRev += result.rev;
       clsGP += result.gp;
       rawRev += result.rawRev;
@@ -547,59 +558,78 @@ function formatDateShort(dateStr: string | null | undefined): string {
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
-function ClassificationProjectRows({ details, winRate, isOpenOpps }: Readonly<{
+function getEffectiveGP(d: OppFyDetail, ytdMarginFallback: number): number {
+  if (d.fyGP > 0) return d.fyGP;
+  if (d.fyRevenue > 0 && ytdMarginFallback > 0) return d.fyRevenue * ytdMarginFallback;
+  return 0;
+}
+
+function getEffectiveMargin(d: OppFyDetail, ytdMarginFallback: number): number {
+  if (d.marginPercent > 0) return d.marginPercent;
+  if (ytdMarginFallback > 0) return ytdMarginFallback;
+  return 0;
+}
+
+function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFallback }: Readonly<{
   details: OppFyDetail[];
   winRate: number;
   isOpenOpps: boolean;
+  ytdMarginFallback: number;
 }>) {
   const rate = winRate / 100;
   const sorted = [...details].sort((a, b) => b.fyRevenue - a.fyRevenue);
 
   return (
     <>
-      {sorted.map((d, idx) => (
-        <TableRow key={`detail-${d.opp.id || idx}`} className="bg-muted/30" data-testid={`row-opp-detail-${d.opp.id || idx}`}>
-          <TableCell className="pl-10">
-            <span className="text-sm">{d.opp.name}</span>
-          </TableCell>
-          <TableCell>
-            <span className="text-xs text-muted-foreground">
-              {formatDateShort(d.opp.startDate || d.opp.dueDate)} — {formatDateShort(d.opp.expiryDate)}
-            </span>
-          </TableCell>
-          <TableCell className="text-right text-sm text-muted-foreground">
-            {d.totalValue > 0 ? formatCurrency(d.totalValue) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {!isOpenOpps && d.totalMonths !== d.fyMonths ? (
-              <span className="text-muted-foreground">{d.fyMonths}/{d.totalMonths} mo</span>
-            ) : (
-              <span className="text-muted-foreground">12 mo</span>
-            )}
-          </TableCell>
-          <TableCell className="text-right text-sm font-medium">
-            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue * rate) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {d.fyGP > 0 ? formatCurrency(d.fyGP * rate) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm text-muted-foreground">
-            {d.marginPercent > 0 ? formatPercent(d.marginPercent * 100) : "\u2014"}
-          </TableCell>
-        </TableRow>
-      ))}
+      {sorted.map((d, idx) => {
+        const effGP = getEffectiveGP(d, ytdMarginFallback);
+        const effMargin = getEffectiveMargin(d, ytdMarginFallback);
+        const isEstimated = d.fyGP <= 0 && ytdMarginFallback > 0 && d.fyRevenue > 0;
+        return (
+          <TableRow key={`detail-${d.opp.id || idx}`} className="bg-muted/30" data-testid={`row-opp-detail-${d.opp.id || idx}`}>
+            <TableCell className="pl-10">
+              <span className="text-sm">{d.opp.name}</span>
+            </TableCell>
+            <TableCell>
+              <span className="text-xs text-muted-foreground">
+                {formatDateShort(d.opp.startDate || d.opp.dueDate)} — {formatDateShort(d.opp.expiryDate)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right text-sm text-muted-foreground">
+              {d.totalValue > 0 ? formatCurrency(d.totalValue) : "\u2014"}
+            </TableCell>
+            <TableCell className="text-right text-sm">
+              {!isOpenOpps && d.totalMonths !== d.fyMonths ? (
+                <span className="text-muted-foreground">{d.fyMonths}/{d.totalMonths} mo</span>
+              ) : (
+                <span className="text-muted-foreground">12 mo</span>
+              )}
+            </TableCell>
+            <TableCell className="text-right text-sm font-medium">
+              {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue) : "\u2014"}
+            </TableCell>
+            <TableCell className="text-right text-sm">
+              {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue * rate) : "\u2014"}
+            </TableCell>
+            <TableCell className={`text-right text-sm ${isEstimated ? "italic" : ""}`}>
+              {effGP > 0 ? formatCurrency(effGP * rate) : "\u2014"}
+            </TableCell>
+            <TableCell className={`text-right text-sm text-muted-foreground ${isEstimated ? "italic" : ""}`}>
+              {effMargin > 0 ? formatPercent(effMargin * 100) : "\u2014"}
+            </TableCell>
+          </TableRow>
+        );
+      })}
     </>
   );
 }
 
-function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps }: Readonly<{
+function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps, ytdMarginFallback }: Readonly<{
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   winRates: Record<string, number>;
   isLoading: boolean;
   isOpenOpps: boolean;
+  ytdMarginFallback: number;
 }>) {
   const [expandedCls, setExpandedCls] = useState<Set<string>>(new Set());
 
@@ -675,7 +705,7 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                   </TableRow>
                 )}
                 {isExpanded && b?.details && (
-                  <ClassificationProjectRows details={b.details} winRate={winRates[cls]} isOpenOpps={isOpenOpps} />
+                  <ClassificationProjectRows details={b.details} winRate={winRates[cls]} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginFallback} />
                 )}
               </Fragment>
             );
@@ -918,11 +948,13 @@ export default function Scenarios() {
 
   const isOpenOpps = selectedFY === "open_opps";
 
-  const scenarioResults = useMemo(() => computeScenarioResults(
-    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY,
-  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY]);
-
   const ytdActuals = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
+
+  const ytdMarginRatio = ytdActuals.totalRevenue > 0 ? (ytdActuals.totalGP / ytdActuals.totalRevenue) : 0;
+
+  const scenarioResults = useMemo(() => computeScenarioResults(
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio,
+  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio]);
 
   const isLoading = loadingPipeline || loadingScenarios || loadingMonthly;
 
@@ -1003,9 +1035,12 @@ export default function Scenarios() {
           <CardHeader>
             <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
             <p className="text-xs text-muted-foreground">Click a classification to see individual projects with FY-prorated revenue</p>
+            {ytdMarginRatio > 0 && (
+              <p className="text-xs text-muted-foreground italic">GP estimated using YTD actual margin ({formatPercent(ytdMarginRatio * 100)}) where pipeline GP data is missing</p>
+            )}
           </CardHeader>
           <CardContent>
-            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} />
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} />
           </CardContent>
         </Card>
       </div>
