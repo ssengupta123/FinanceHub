@@ -1027,7 +1027,7 @@ export default function Scenarios() {
 
       <ProjectedSummaryCards ytd={ytdActuals} scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-4 items-start">
         <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
 
         <Card className="lg:col-span-3">
