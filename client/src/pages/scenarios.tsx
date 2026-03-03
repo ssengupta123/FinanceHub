@@ -38,8 +38,8 @@ import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
 import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-const CLASSIFICATIONS = ["C", "S", "DVF", "DF", "Q", "A"];
-const CLASS_LABELS: Record<string, string> = { C: "Contracted", S: "Selected", DVF: "Shortlisted", DF: "Submitted", Q: "Qualified", A: "Activity" };
+const CLASSIFICATIONS = ["S", "DVF", "DF", "Q", "A"];
+const CLASS_LABELS: Record<string, string> = { S: "Selected", DVF: "Shortlisted", DF: "Submitted", Q: "Qualified", A: "Activity" };
 const DEFAULT_WIN_RATES: Record<string, number> = { C: 100, S: 80, DVF: 50, DF: 30, Q: 15, A: 5 };
 const FY_PERIODS = ["24-25", "25-26", "26-27"];
 
@@ -500,45 +500,45 @@ function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marg
   setMarginGoal: (val: number) => void;
 }>) {
   return (
-    <Card className="lg:col-span-1">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Win Rate Assumptions</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-1.5 pt-0">
-        {CLASSIFICATIONS.map(cls => (
-          <div key={cls} className="flex items-center gap-2">
-            <span className="text-xs font-medium w-6 shrink-0">{cls}</span>
-            <Slider
-              className="flex-1"
-              value={[winRates[cls]]}
-              onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
-              max={100}
-              step={5}
-              data-testid={`slider-winrate-${cls}`}
-            />
-            <span className="text-xs font-mono w-8 text-right shrink-0" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
-          </div>
-        ))}
-        <div className="border-t pt-2 grid grid-cols-2 gap-2">
-          <div>
-            <Label className="text-xs">Revenue Goal</Label>
-            <Input
-              className="h-7 text-xs"
-              type="number"
-              value={revenueGoal}
-              onChange={e => setRevenueGoal(Number(e.target.value))}
-              data-testid="input-revenue-goal"
-            />
-          </div>
-          <div>
-            <Label className="text-xs">Margin Goal (%)</Label>
-            <Input
-              className="h-7 text-xs"
-              type="number"
-              value={marginGoal}
-              onChange={e => setMarginGoal(Number(e.target.value))}
-              data-testid="input-margin-goal"
-            />
+    <Card>
+      <CardContent className="pt-4 pb-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-sm font-medium shrink-0">Win Rates</span>
+          {CLASSIFICATIONS.map(cls => (
+            <div key={cls} className="flex items-center gap-1.5 min-w-[120px]">
+              <span className="text-xs font-medium w-8 shrink-0">{cls}</span>
+              <Slider
+                className="flex-1 min-w-[60px]"
+                value={[winRates[cls]]}
+                onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
+                max={100}
+                step={5}
+                data-testid={`slider-winrate-${cls}`}
+              />
+              <span className="text-xs font-mono w-8 text-right shrink-0" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
+            </div>
+          ))}
+          <div className="border-l pl-4 flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs shrink-0">Revenue Goal</Label>
+              <Input
+                className="h-7 text-xs w-28"
+                type="number"
+                value={revenueGoal}
+                onChange={e => setRevenueGoal(Number(e.target.value))}
+                data-testid="input-revenue-goal"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs shrink-0">Margin %</Label>
+              <Input
+                className="h-7 text-xs w-16"
+                type="number"
+                value={marginGoal}
+                onChange={e => setMarginGoal(Number(e.target.value))}
+                data-testid="input-margin-goal"
+              />
+            </div>
           </div>
         </div>
       </CardContent>
@@ -1105,10 +1105,9 @@ export default function Scenarios() {
 
       <ProjectedSummaryCards ytd={ytdActuals} scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
 
-      <div className="grid gap-4 lg:grid-cols-4 items-start">
-        <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
+      <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
 
-        <Card className="lg:col-span-3">
+        <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
@@ -1127,7 +1126,6 @@ export default function Scenarios() {
             <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} allFyPipeline={allFyPipeline} excludedOppIds={excludedOppIds} onToggleOpp={toggleOpp} onToggleAllOpps={toggleAllOpps} selectedFY={selectedFY} />
           </CardContent>
         </Card>
-      </div>
 
       <ProjectedMonthlyTable ytd={ytdActuals} scenarioResults={scenarioResults} revenueGoal={revenueGoal} selectedFY={selectedFY} isLoading={isLoading} />
 
