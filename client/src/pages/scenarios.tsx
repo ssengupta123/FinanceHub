@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,7 +29,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRight, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -93,10 +93,6 @@ function getOppMargin(opp: PipelineOpportunity): number {
   return Number.isNaN(m) ? 0 : m;
 }
 
-function getOppGP(opp: PipelineOpportunity): number {
-  return getOppValue(opp) * getOppMargin(opp);
-}
-
 function getMonthlyRevenue(opp: PipelineOpportunity, month: number): number {
   return Number.parseFloat((opp as any)[`revenueM${month}`] || "0");
 }
@@ -112,32 +108,138 @@ function hasMonthlyData(opp: PipelineOpportunity): boolean {
   return false;
 }
 
+function parseFyDates(fy: string): { fyStart: Date; fyEnd: Date } | null {
+  const cleaned = fy.replace(/^FY\s*/i, "");
+  const parts = cleaned.split("-");
+  if (parts.length !== 2) return null;
+  const startNum = Number.parseInt(parts[0], 10);
+  const endNum = Number.parseInt(parts[1], 10);
+  if (Number.isNaN(startNum) || Number.isNaN(endNum)) return null;
+  const startYear = startNum < 100 ? 2000 + startNum : startNum;
+  const endYear = endNum < 100 ? 2000 + endNum : endNum;
+  return {
+    fyStart: new Date(startYear, 6, 1),
+    fyEnd: new Date(endYear, 5, 30),
+  };
+}
+
+function fyMonthIndex(date: Date, fyStart: Date): number {
+  const monthDiff = (date.getFullYear() - fyStart.getFullYear()) * 12 + (date.getMonth() - fyStart.getMonth());
+  return Math.max(0, Math.min(11, monthDiff));
+}
+
+function parseDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function monthsBetween(start: Date, end: Date): number {
+  const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+  return Math.max(months, 1);
+}
+
+function overlapMonths(projStart: Date, projEnd: Date, fyStart: Date, fyEnd: Date): number {
+  const overlapStart = projStart > fyStart ? projStart : fyStart;
+  const overlapEnd = projEnd < fyEnd ? projEnd : fyEnd;
+  if (overlapStart > overlapEnd) return 0;
+  return monthsBetween(overlapStart, overlapEnd);
+}
+
+type OppFyDetail = {
+  opp: PipelineOpportunity;
+  totalValue: number;
+  marginPercent: number;
+  totalMonths: number;
+  fyMonths: number;
+  fyRevenue: number;
+  fyGP: number;
+};
+
+function computeOppFyDetail(opp: PipelineOpportunity, fy: string, isOpenOpps: boolean): OppFyDetail {
+  const totalValue = getOppValue(opp);
+  const marginPercent = getOppMargin(opp);
+  const fullResult = { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: totalValue, fyGP: totalValue * marginPercent };
+
+  if (isOpenOpps || !fy || fy === "open_opps") return fullResult;
+
+  if (hasMonthlyData(opp)) {
+    let fyRev = 0;
+    let fyGP = 0;
+    for (let m = 1; m <= 12; m++) {
+      fyRev += getMonthlyRevenue(opp, m);
+      fyGP += getMonthlyGP(opp, m);
+    }
+    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: fyRev, fyGP };
+  }
+
+  const fyDates = parseFyDates(fy);
+  if (!fyDates) return fullResult;
+  const { fyStart, fyEnd } = fyDates;
+  const startDate = parseDate(opp.startDate) || parseDate(opp.dueDate);
+  const endDate = parseDate(opp.expiryDate);
+
+  if (startDate && endDate) {
+    if (startDate > fyEnd || endDate < fyStart) {
+      return { opp, totalValue, marginPercent, totalMonths: monthsBetween(startDate, endDate), fyMonths: 0, fyRevenue: 0, fyGP: 0 };
+    }
+    const totalMonths = monthsBetween(startDate, endDate);
+    const fyOverlap = overlapMonths(startDate, endDate, fyStart, fyEnd);
+    const fyRevenue = totalMonths > 0 ? totalValue * (fyOverlap / totalMonths) : 0;
+    return { opp, totalValue, marginPercent, totalMonths, fyMonths: fyOverlap, fyRevenue, fyGP: fyRevenue * marginPercent };
+  }
+
+  if (startDate && !endDate) {
+    if (startDate > fyEnd) {
+      return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 0, fyRevenue: 0, fyGP: 0 };
+    }
+    if (startDate <= fyEnd) {
+      const effectiveStart = startDate > fyStart ? startDate : fyStart;
+      const remainingFyMonths = monthsBetween(effectiveStart, fyEnd);
+      const ratio = remainingFyMonths / 12;
+      return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: remainingFyMonths, fyRevenue: totalValue * ratio, fyGP: totalValue * marginPercent * ratio };
+    }
+  }
+
+  return fullResult;
+}
+
+type ClassBreakdown = {
+  revenue: number;
+  gp: number;
+  rawRevenue: number;
+  rawGP: number;
+  count: number;
+  details: OppFyDetail[];
+};
+
+function computeOverlapFyRange(opp: PipelineOpportunity, fyDates: { fyStart: Date; fyEnd: Date } | null): { startIdx: number; endIdx: number } {
+  if (!fyDates) return { startIdx: 0, endIdx: 11 };
+  const { fyStart, fyEnd } = fyDates;
+  const projStart = parseDate(opp.startDate) || parseDate(opp.dueDate);
+  const projEnd = parseDate(opp.expiryDate);
+  const effectiveStart = projStart && projStart > fyStart ? projStart : fyStart;
+  const effectiveEnd = projEnd && projEnd < fyEnd ? projEnd : fyEnd;
+  return {
+    startIdx: fyMonthIndex(effectiveStart, fyStart),
+    endIdx: fyMonthIndex(effectiveEnd, fyStart),
+  };
+}
+
 function processOppForScenario(
-  opp: PipelineOpportunity,
+  detail: OppFyDetail,
   rate: number,
-  isOpenOpps: boolean,
   monthlyRevenue: number[],
   monthlyGP: number[],
+  fyDates: { fyStart: Date; fyEnd: Date } | null,
 ): { rev: number; gp: number; rawRev: number; rawGP: number } {
-  let clsRev = 0;
-  let clsGP = 0;
-  let rawRev = 0;
-  let rawGP = 0;
+  const { opp, fyRevenue, fyGP } = detail;
 
-  if (isOpenOpps || !hasMonthlyData(opp)) {
-    const val = getOppValue(opp);
-    const gp = getOppGP(opp);
-    rawRev += val;
-    rawGP += gp;
-    clsRev += val * rate;
-    clsGP += gp * rate;
-    const perMonth = val / 12;
-    const gpPerMonth = gp / 12;
-    for (let m = 0; m < 12; m++) {
-      monthlyRevenue[m] += perMonth * rate;
-      monthlyGP[m] += gpPerMonth * rate;
-    }
-  } else {
+  if (hasMonthlyData(opp)) {
+    let clsRev = 0;
+    let clsGP = 0;
+    let rawRev = 0;
+    let rawGP = 0;
     for (let m = 1; m <= 12; m++) {
       const rev = getMonthlyRevenue(opp, m);
       const gp = getMonthlyGP(opp, m);
@@ -148,9 +250,20 @@ function processOppForScenario(
       rawRev += rev;
       rawGP += gp;
     }
+    return { rev: clsRev, gp: clsGP, rawRev, rawGP };
   }
 
-  return { rev: clsRev, gp: clsGP, rawRev, rawGP };
+  if (fyRevenue <= 0) return { rev: 0, gp: 0, rawRev: 0, rawGP: 0 };
+
+  const { startIdx, endIdx } = computeOverlapFyRange(opp, fyDates);
+  const spreadMonths = endIdx - startIdx + 1;
+  const perMonth = fyRevenue / spreadMonths;
+  const gpPerMonth = fyGP / spreadMonths;
+  for (let m = startIdx; m <= endIdx; m++) {
+    monthlyRevenue[m] += perMonth * rate;
+    monthlyGP[m] += gpPerMonth * rate;
+  }
+  return { rev: fyRevenue * rate, gp: fyGP * rate, rawRev: fyRevenue, rawGP: fyGP };
 }
 
 function computeScenarioResults(
@@ -160,12 +273,14 @@ function computeScenarioResults(
   revenueGoal: number,
   marginGoal: number,
   isOpenOpps: boolean,
+  selectedFY: string,
 ) {
   if (!pipeline) return null;
 
   const monthlyRevenue = new Array(12).fill(0);
   const monthlyGP = new Array(12).fill(0);
-  const classBreakdown: Record<string, { revenue: number; gp: number; rawRevenue: number; rawGP: number; count: number }> = {};
+  const classBreakdown: Record<string, ClassBreakdown> = {};
+  const fyDates = isOpenOpps ? null : parseFyDates(selectedFY);
 
   for (const cls of CLASSIFICATIONS) {
     const rate = (winRates[cls] || 0) / 100;
@@ -174,16 +289,19 @@ function computeScenarioResults(
     let clsGP = 0;
     let rawRev = 0;
     let rawGP = 0;
+    const details: OppFyDetail[] = [];
 
     for (const opp of opps) {
-      const result = processOppForScenario(opp, rate, isOpenOpps, monthlyRevenue, monthlyGP);
+      const detail = computeOppFyDetail(opp, selectedFY, isOpenOpps);
+      details.push(detail);
+      const result = processOppForScenario(detail, rate, monthlyRevenue, monthlyGP, fyDates);
       clsRev += result.rev;
       clsGP += result.gp;
       rawRev += result.rawRev;
       rawGP += result.rawGP;
     }
 
-    classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length };
+    classBreakdown[cls] = { revenue: clsRev, gp: clsGP, rawRevenue: rawRev, rawGP: rawGP, count: opps.length, details };
   }
 
   const totalRev = Object.values(classBreakdown).reduce((s, b) => s + b.revenue, 0);
@@ -346,11 +464,78 @@ function formatFyLabel(fy: string): string {
   return fy === "open_opps" ? "Open Opps" : `FY ${fy}`;
 }
 
-function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading }: Readonly<{
+function formatDateShort(dateStr: string | null | undefined): string {
+  if (!dateStr) return "\u2014";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "2-digit" });
+}
+
+function ClassificationProjectRows({ details, winRate, isOpenOpps }: Readonly<{
+  details: OppFyDetail[];
+  winRate: number;
+  isOpenOpps: boolean;
+}>) {
+  const rate = winRate / 100;
+  const sorted = [...details].sort((a, b) => b.fyRevenue - a.fyRevenue);
+
+  return (
+    <>
+      {sorted.map((d, idx) => (
+        <TableRow key={`detail-${d.opp.id || idx}`} className="bg-muted/30" data-testid={`row-opp-detail-${d.opp.id || idx}`}>
+          <TableCell className="pl-10">
+            <span className="text-sm">{d.opp.name}</span>
+          </TableCell>
+          <TableCell>
+            <span className="text-xs text-muted-foreground">
+              {formatDateShort(d.opp.startDate || d.opp.dueDate)} — {formatDateShort(d.opp.expiryDate)}
+            </span>
+          </TableCell>
+          <TableCell className="text-right text-sm text-muted-foreground">
+            {d.totalValue > 0 ? formatCurrency(d.totalValue) : "\u2014"}
+          </TableCell>
+          <TableCell className="text-right text-sm">
+            {!isOpenOpps && d.totalMonths !== d.fyMonths ? (
+              <span className="text-muted-foreground">{d.fyMonths}/{d.totalMonths} mo</span>
+            ) : (
+              <span className="text-muted-foreground">12 mo</span>
+            )}
+          </TableCell>
+          <TableCell className="text-right text-sm font-medium">
+            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue) : "\u2014"}
+          </TableCell>
+          <TableCell className="text-right text-sm">
+            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue * rate) : "\u2014"}
+          </TableCell>
+          <TableCell className="text-right text-sm">
+            {d.fyGP > 0 ? formatCurrency(d.fyGP * rate) : "\u2014"}
+          </TableCell>
+          <TableCell className="text-right text-sm text-muted-foreground">
+            {d.marginPercent > 0 ? formatPercent(d.marginPercent * 100) : "\u2014"}
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
+  );
+}
+
+function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps }: Readonly<{
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   winRates: Record<string, number>;
   isLoading: boolean;
+  isOpenOpps: boolean;
 }>) {
+  const [expandedCls, setExpandedCls] = useState<Set<string>>(new Set());
+
+  const toggleCls = (cls: string) => {
+    setExpandedCls(prev => {
+      const next = new Set(prev);
+      if (next.has(cls)) next.delete(cls);
+      else next.add(cls);
+      return next;
+    });
+  };
+
   if (isLoading) return <Skeleton className="h-60 w-full" />;
   return (
     <div className="overflow-x-auto">
@@ -361,7 +546,7 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading }: 
             <TableHead>Risk</TableHead>
             <TableHead className="text-right">Opps</TableHead>
             <TableHead className="text-right">Win Rate</TableHead>
-            <TableHead className="text-right">Raw Revenue</TableHead>
+            <TableHead className="text-right">FY Revenue</TableHead>
             <TableHead className="text-right">Weighted Revenue</TableHead>
             <TableHead className="text-right">Weighted GP</TableHead>
             <TableHead className="text-right">GM %</TableHead>
@@ -369,26 +554,54 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading }: 
         </TableHeader>
         <TableBody>
           {CLASSIFICATIONS.map(cls => {
-            const b = scenarioResults?.classBreakdown[cls];
+            const b = scenarioResults?.classBreakdown[cls] as ClassBreakdown | undefined;
             const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
+            const isExpanded = expandedCls.has(cls);
+            const hasOpps = (b?.count || 0) > 0;
             return (
-              <TableRow key={cls} data-testid={`row-scenario-${cls}`}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{cls}</Badge>
-                    <span className="text-sm">{CLASS_LABELS[cls]}</span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
-                </TableCell>
-                <TableCell className="text-right">{b?.count || 0}</TableCell>
-                <TableCell className="text-right">{winRates[cls]}%</TableCell>
-                <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
-                <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
-                <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
-                <TableCell className="text-right">{formatPercent(margin)}</TableCell>
-              </TableRow>
+              <Fragment key={cls}>
+                <TableRow
+                  data-testid={`row-scenario-${cls}`}
+                  className={hasOpps ? "cursor-pointer hover:bg-muted/50" : ""}
+                  onClick={() => hasOpps && toggleCls(cls)}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {hasOpps && (isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      {!hasOpps && <span className="w-4" />}
+                      <Badge variant="outline">{cls}</Badge>
+                      <span className="text-sm">{CLASS_LABELS[cls]}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
+                  </TableCell>
+                  <TableCell className="text-right">{b?.count || 0}</TableCell>
+                  <TableCell className="text-right">{winRates[cls]}%</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
+                  <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
+                  <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
+                  <TableCell className="text-right">{formatPercent(margin)}</TableCell>
+                </TableRow>
+                {isExpanded && b?.details && (
+                  <TableRow className="bg-muted/20">
+                    <TableCell className="pl-10 text-xs font-medium text-muted-foreground">Opportunity</TableCell>
+                    <TableCell className="text-xs font-medium text-muted-foreground">Dates</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">Total Value</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">FY Period</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">FY Revenue</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">Weighted</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">Wtd GP</TableCell>
+                    <TableCell className="text-right text-xs font-medium text-muted-foreground">Margin</TableCell>
+                  </TableRow>
+                )}
+                {isExpanded && b?.details && (
+                  <ClassificationProjectRows details={b.details} winRate={winRates[cls]} isOpenOpps={isOpenOpps} />
+                )}
+              </Fragment>
             );
           })}
           <TableRow className="font-bold border-t-2">
@@ -561,8 +774,8 @@ export default function Scenarios() {
   const isOpenOpps = selectedFY === "open_opps";
 
   const scenarioResults = useMemo(() => computeScenarioResults(
-    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps,
-  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps]);
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY,
+  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY]);
 
   const isLoading = loadingPipeline || loadingScenarios;
 
@@ -577,7 +790,7 @@ export default function Scenarios() {
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
-            Sales Pipeline Financial Forecast
+            Sales Pipeline Financial Forecast — FY-prorated revenue based on project duration
             {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${formatFyLabel(selectedFY)}`}
           </p>
         </div>
@@ -642,9 +855,10 @@ export default function Scenarios() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">What-If by Risk Rating</CardTitle>
+            <p className="text-xs text-muted-foreground">Click a classification to see individual projects with FY-prorated revenue</p>
           </CardHeader>
           <CardContent>
-            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} />
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} />
           </CardContent>
         </Card>
       </div>
