@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -569,11 +569,13 @@ function getEffectiveMargin(d: OppFyDetail, ytdMarginFallback: number): number {
   return 0;
 }
 
-function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFallback }: Readonly<{
+function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFallback, excludedOppIds, onToggleOpp }: Readonly<{
   details: OppFyDetail[];
   winRate: number;
   isOpenOpps: boolean;
   ytdMarginFallback: number;
+  excludedOppIds: Set<number>;
+  onToggleOpp: (id: number) => void;
 }>) {
   const rate = winRate / 100;
   const sorted = [...details].sort((a, b) => b.fyRevenue - a.fyRevenue);
@@ -581,13 +583,24 @@ function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFall
   return (
     <>
       {sorted.map((d, idx) => {
+        const oppId = d.opp.id;
+        const isExcluded = excludedOppIds.has(oppId);
         const effGP = getEffectiveGP(d, ytdMarginFallback);
         const effMargin = getEffectiveMargin(d, ytdMarginFallback);
         const isEstimated = d.fyGP <= 0 && ytdMarginFallback > 0 && d.fyRevenue > 0;
+        const dimClass = isExcluded ? "opacity-40" : "";
         return (
-          <TableRow key={`detail-${d.opp.id || idx}`} className="bg-muted/30" data-testid={`row-opp-detail-${d.opp.id || idx}`}>
-            <TableCell className="pl-10">
-              <span className="text-sm">{d.opp.name}</span>
+          <TableRow key={`detail-${oppId || idx}`} className={`bg-muted/30 ${dimClass}`} data-testid={`row-opp-detail-${oppId || idx}`}>
+            <TableCell className="pl-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={!isExcluded}
+                  onCheckedChange={() => onToggleOpp(oppId)}
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`checkbox-opp-${oppId}`}
+                />
+                <span className="text-sm">{d.opp.name}</span>
+              </div>
             </TableCell>
             <TableCell>
               <span className="text-xs text-muted-foreground">
@@ -623,12 +636,17 @@ function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFall
   );
 }
 
-function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps, ytdMarginFallback }: Readonly<{
+function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps, ytdMarginFallback, allFyPipeline, excludedOppIds, onToggleOpp, onToggleAllOpps, selectedFY }: Readonly<{
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   winRates: Record<string, number>;
   isLoading: boolean;
   isOpenOpps: boolean;
   ytdMarginFallback: number;
+  allFyPipeline: PipelineOpportunity[];
+  excludedOppIds: Set<number>;
+  onToggleOpp: (id: number) => void;
+  onToggleAllOpps: (ids: number[], include: boolean) => void;
+  selectedFY: string;
 }>) {
   const [expandedCls, setExpandedCls] = useState<Set<string>>(new Set());
 
@@ -640,6 +658,15 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
       return next;
     });
   };
+
+  const allDetailsByCls = useMemo(() => {
+    const result: Record<string, OppFyDetail[]> = {};
+    for (const cls of CLASSIFICATIONS) {
+      const opps = allFyPipeline.filter(o => o.classification === cls);
+      result[cls] = opps.map(opp => computeOppFyDetail(opp, selectedFY, isOpenOpps));
+    }
+    return result;
+  }, [allFyPipeline, selectedFY, isOpenOpps]);
 
   if (isLoading) return <Skeleton className="h-60 w-full" />;
   return (
@@ -660,9 +687,13 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
         <TableBody>
           {CLASSIFICATIONS.map(cls => {
             const b = scenarioResults?.classBreakdown[cls] as ClassBreakdown | undefined;
+            const allDetails = allDetailsByCls[cls] || [];
             const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
             const isExpanded = expandedCls.has(cls);
-            const hasOpps = (b?.count || 0) > 0;
+            const hasOpps = allDetails.length > 0;
+            const clsOppIds = allDetails.map(d => d.opp.id);
+            const includedCount = clsOppIds.filter(id => !excludedOppIds.has(id)).length;
+            const allIncluded = includedCount === clsOppIds.length;
             return (
               <Fragment key={cls}>
                 <TableRow
@@ -679,21 +710,36 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                       {!hasOpps && <span className="w-4" />}
                       <Badge variant="outline">{cls}</Badge>
                       <span className="text-sm">{CLASS_LABELS[cls]}</span>
+                      {hasOpps && includedCount < clsOppIds.length && (
+                        <span className="text-xs text-muted-foreground">({includedCount}/{clsOppIds.length})</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
                   </TableCell>
-                  <TableCell className="text-right">{b?.count || 0}</TableCell>
+                  <TableCell className="text-right">{includedCount}</TableCell>
                   <TableCell className="text-right">{winRates[cls]}%</TableCell>
                   <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
                   <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
                   <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
                   <TableCell className="text-right">{formatPercent(margin)}</TableCell>
                 </TableRow>
-                {isExpanded && b?.details && (
+                {isExpanded && hasOpps && (
                   <TableRow className="bg-muted/20">
-                    <TableCell className="pl-10 text-xs font-medium text-muted-foreground">Opportunity</TableCell>
+                    <TableCell className="pl-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={includedCount === 0 ? false : allIncluded ? true : "indeterminate"}
+                          onCheckedChange={(checked) => {
+                            onToggleAllOpps(clsOppIds, checked === true || checked === "indeterminate");
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`checkbox-all-${cls}`}
+                        />
+                        <span className="text-xs font-medium text-muted-foreground">Opportunity</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-xs font-medium text-muted-foreground">Dates</TableCell>
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">Total Value</TableCell>
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">FY Period</TableCell>
@@ -703,8 +749,8 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">Margin</TableCell>
                   </TableRow>
                 )}
-                {isExpanded && b?.details && (
-                  <ClassificationProjectRows details={b.details} winRate={winRates[cls]} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginFallback} />
+                {isExpanded && hasOpps && (
+                  <ClassificationProjectRows details={allDetails} winRate={winRates[cls]} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginFallback} excludedOppIds={excludedOppIds} onToggleOpp={onToggleOpp} />
                 )}
               </Fragment>
             );
@@ -914,6 +960,14 @@ export default function Scenarios() {
   const [marginGoal, setMarginGoal] = useState(40);
   const [scenarioName, setScenarioName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [excludedOppIds, setExcludedOppIds] = useState<Set<number>>(new Set());
+  const prevFyRef = useRef(selectedFY);
+  useEffect(() => {
+    if (prevFyRef.current !== selectedFY) {
+      prevFyRef.current = selectedFY;
+      setExcludedOppIds(new Set());
+    }
+  }, [selectedFY]);
 
   const fyPeriods = useMemo(() => {
     const fromRef = (refData || []).filter(r => r.category === "fy_period").map(r => r.key);
@@ -933,10 +987,34 @@ export default function Scenarios() {
     },
   });
 
-  const filteredPipeline = useMemo(() => {
+  const allFyPipeline = useMemo(() => {
     if (!pipeline) return [];
     return pipeline.filter(o => o.fyYear === selectedFY);
   }, [pipeline, selectedFY]);
+
+  const filteredPipeline = useMemo(() => {
+    return allFyPipeline.filter(o => !excludedOppIds.has(o.id));
+  }, [allFyPipeline, excludedOppIds]);
+
+  const toggleOpp = (id: number) => {
+    setExcludedOppIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllOpps = (ids: number[], include: boolean) => {
+    setExcludedOppIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (include) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
 
   const availableFYs = useMemo(() => {
     if (!pipeline) return fyPeriods;
@@ -1032,14 +1110,21 @@ export default function Scenarios() {
 
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
-            <p className="text-xs text-muted-foreground">Click a classification to see individual projects with FY-prorated revenue</p>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
+              {excludedOppIds.size > 0 && (
+                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setExcludedOppIds(new Set())} data-testid="button-reset-opp-selection">
+                  Reset selection ({allFyPipeline.length - excludedOppIds.size}/{allFyPipeline.length} included)
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Expand a classification and use checkboxes to include/exclude individual opportunities</p>
             {ytdMarginRatio > 0 && (
               <p className="text-xs text-muted-foreground italic">GP estimated using YTD actual margin ({formatPercent(ytdMarginRatio * 100)}) where pipeline GP data is missing</p>
             )}
           </CardHeader>
           <CardContent>
-            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} />
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} allFyPipeline={allFyPipeline} excludedOppIds={excludedOppIds} onToggleOpp={toggleOpp} onToggleAllOpps={toggleAllOpps} selectedFY={selectedFY} />
           </CardContent>
         </Card>
       </div>
