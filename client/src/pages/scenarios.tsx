@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +29,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRight, ChevronDown, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -37,8 +38,8 @@ import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
 import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-const CLASSIFICATIONS = ["C", "S", "DVF", "DF", "Q", "A"];
-const CLASS_LABELS: Record<string, string> = { C: "Contracted", S: "Selected", DVF: "Shortlisted", DF: "Submitted", Q: "Qualified", A: "Activity" };
+const CLASSIFICATIONS = ["S", "DVF", "DF", "Q", "A"];
+const CLASS_LABELS: Record<string, string> = { S: "Selected", DVF: "Shortlisted", DF: "Submitted", Q: "Qualified", A: "Activity" };
 const DEFAULT_WIN_RATES: Record<string, number> = { C: 100, S: 80, DVF: 50, DF: 30, Q: 15, A: 5 };
 const FY_PERIODS = ["24-25", "25-26", "26-27"];
 
@@ -214,14 +215,23 @@ function computeOverlapFyRange(opp: PipelineOpportunity, fyDates: { fyStart: Dat
   };
 }
 
+function hasAnyMonthlyGP(opp: PipelineOpportunity): boolean {
+  for (let m = 1; m <= 12; m++) {
+    if (getMonthlyGP(opp, m) > 0) return true;
+  }
+  return false;
+}
+
 function processOppForScenario(
   detail: OppFyDetail,
   rate: number,
   monthlyRevenue: number[],
   monthlyGP: number[],
   fyDates: { fyStart: Date; fyEnd: Date } | null,
+  ytdMarginFallback: number,
 ): { rev: number; gp: number; rawRev: number; rawGP: number } {
   const { opp, fyRevenue, fyGP } = detail;
+  const useMarginFallback = !hasAnyMonthlyGP(opp) && ytdMarginFallback > 0;
 
   if (hasMonthlyData(opp)) {
     let clsRev = 0;
@@ -230,7 +240,7 @@ function processOppForScenario(
     let rawGP = 0;
     for (let m = 1; m <= 12; m++) {
       const rev = getMonthlyRevenue(opp, m);
-      const gp = getMonthlyGP(opp, m);
+      const gp = useMarginFallback ? rev * ytdMarginFallback : getMonthlyGP(opp, m);
       monthlyRevenue[m - 1] += rev * rate;
       monthlyGP[m - 1] += gp * rate;
       clsRev += rev * rate;
@@ -243,15 +253,16 @@ function processOppForScenario(
 
   if (fyRevenue <= 0) return { rev: 0, gp: 0, rawRev: 0, rawGP: 0 };
 
+  const effectiveFyGP = fyGP > 0 ? fyGP : fyRevenue * ytdMarginFallback;
   const { startIdx, endIdx } = computeOverlapFyRange(opp, fyDates);
   const spreadMonths = endIdx - startIdx + 1;
   const perMonth = fyRevenue / spreadMonths;
-  const gpPerMonth = fyGP / spreadMonths;
+  const gpPerMonth = effectiveFyGP / spreadMonths;
   for (let m = startIdx; m <= endIdx; m++) {
     monthlyRevenue[m] += perMonth * rate;
     monthlyGP[m] += gpPerMonth * rate;
   }
-  return { rev: fyRevenue * rate, gp: fyGP * rate, rawRev: fyRevenue, rawGP: fyGP };
+  return { rev: fyRevenue * rate, gp: effectiveFyGP * rate, rawRev: fyRevenue, rawGP: effectiveFyGP };
 }
 
 function computeScenarioResults(
@@ -262,6 +273,7 @@ function computeScenarioResults(
   marginGoal: number,
   isOpenOpps: boolean,
   selectedFY: string,
+  ytdMarginFallback: number,
 ) {
   if (!pipeline) return null;
 
@@ -282,7 +294,7 @@ function computeScenarioResults(
     for (const opp of opps) {
       const detail = computeOppFyDetail(opp, selectedFY, isOpenOpps);
       details.push(detail);
-      const result = processOppForScenario(detail, rate, monthlyRevenue, monthlyGP, fyDates);
+      const result = processOppForScenario(detail, rate, monthlyRevenue, monthlyGP, fyDates, ytdMarginFallback);
       clsRev += result.rev;
       clsGP += result.gp;
       rawRev += result.rawRev;
@@ -488,47 +500,45 @@ function WinRatePanel({ winRates, setWinRates, revenueGoal, setRevenueGoal, marg
   setMarginGoal: (val: number) => void;
 }>) {
   return (
-    <Card className="lg:col-span-1">
-      <CardHeader>
-        <CardTitle className="text-base">Win Rate Assumptions</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {CLASSIFICATIONS.map(cls => (
-          <div key={cls} className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs">{cls}</Badge>
-                <span className="text-sm">{CLASS_LABELS[cls]}</span>
-              </div>
-              <span className="text-sm font-medium w-12 text-right" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
+    <Card>
+      <CardContent className="pt-4 pb-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-sm font-medium shrink-0">Win Rates</span>
+          {CLASSIFICATIONS.map(cls => (
+            <div key={cls} className="flex items-center gap-1.5 min-w-[120px]">
+              <span className="text-xs font-medium w-8 shrink-0">{cls}</span>
+              <Slider
+                className="flex-1 min-w-[60px]"
+                value={[winRates[cls]]}
+                onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
+                max={100}
+                step={5}
+                data-testid={`slider-winrate-${cls}`}
+              />
+              <span className="text-xs font-mono w-8 text-right shrink-0" data-testid={`text-winrate-${cls}`}>{winRates[cls]}%</span>
             </div>
-            <Slider
-              value={[winRates[cls]]}
-              onValueChange={([v]) => setWinRates(prev => ({ ...prev, [cls]: v }))}
-              max={100}
-              step={5}
-              data-testid={`slider-winrate-${cls}`}
-            />
-          </div>
-        ))}
-        <div className="border-t pt-4 space-y-3">
-          <div>
-            <Label className="text-sm">Revenue Goal</Label>
-            <Input
-              type="number"
-              value={revenueGoal}
-              onChange={e => setRevenueGoal(Number(e.target.value))}
-              data-testid="input-revenue-goal"
-            />
-          </div>
-          <div>
-            <Label className="text-sm">Margin Goal (%)</Label>
-            <Input
-              type="number"
-              value={marginGoal}
-              onChange={e => setMarginGoal(Number(e.target.value))}
-              data-testid="input-margin-goal"
-            />
+          ))}
+          <div className="border-l pl-4 flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs shrink-0">Revenue Goal</Label>
+              <Input
+                className="h-7 text-xs w-28"
+                type="number"
+                value={revenueGoal}
+                onChange={e => setRevenueGoal(Number(e.target.value))}
+                data-testid="input-revenue-goal"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs shrink-0">Margin %</Label>
+              <Input
+                className="h-7 text-xs w-16"
+                type="number"
+                value={marginGoal}
+                onChange={e => setMarginGoal(Number(e.target.value))}
+                data-testid="input-margin-goal"
+              />
+            </div>
           </div>
         </div>
       </CardContent>
@@ -547,59 +557,96 @@ function formatDateShort(dateStr: string | null | undefined): string {
   return d.toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
-function ClassificationProjectRows({ details, winRate, isOpenOpps }: Readonly<{
+function getEffectiveGP(d: OppFyDetail, ytdMarginFallback: number): number {
+  if (d.fyGP > 0) return d.fyGP;
+  if (d.fyRevenue > 0 && ytdMarginFallback > 0) return d.fyRevenue * ytdMarginFallback;
+  return 0;
+}
+
+function getEffectiveMargin(d: OppFyDetail, ytdMarginFallback: number): number {
+  if (d.marginPercent > 0) return d.marginPercent;
+  if (ytdMarginFallback > 0) return ytdMarginFallback;
+  return 0;
+}
+
+function ClassificationProjectRows({ details, winRate, isOpenOpps, ytdMarginFallback, excludedOppIds, onToggleOpp }: Readonly<{
   details: OppFyDetail[];
   winRate: number;
   isOpenOpps: boolean;
+  ytdMarginFallback: number;
+  excludedOppIds: Set<number>;
+  onToggleOpp: (id: number) => void;
 }>) {
   const rate = winRate / 100;
   const sorted = [...details].sort((a, b) => b.fyRevenue - a.fyRevenue);
 
   return (
     <>
-      {sorted.map((d, idx) => (
-        <TableRow key={`detail-${d.opp.id || idx}`} className="bg-muted/30" data-testid={`row-opp-detail-${d.opp.id || idx}`}>
-          <TableCell className="pl-10">
-            <span className="text-sm">{d.opp.name}</span>
-          </TableCell>
-          <TableCell>
-            <span className="text-xs text-muted-foreground">
-              {formatDateShort(d.opp.startDate || d.opp.dueDate)} — {formatDateShort(d.opp.expiryDate)}
-            </span>
-          </TableCell>
-          <TableCell className="text-right text-sm text-muted-foreground">
-            {d.totalValue > 0 ? formatCurrency(d.totalValue) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {!isOpenOpps && d.totalMonths !== d.fyMonths ? (
-              <span className="text-muted-foreground">{d.fyMonths}/{d.totalMonths} mo</span>
-            ) : (
-              <span className="text-muted-foreground">12 mo</span>
-            )}
-          </TableCell>
-          <TableCell className="text-right text-sm font-medium">
-            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue * rate) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm">
-            {d.fyGP > 0 ? formatCurrency(d.fyGP * rate) : "\u2014"}
-          </TableCell>
-          <TableCell className="text-right text-sm text-muted-foreground">
-            {d.marginPercent > 0 ? formatPercent(d.marginPercent * 100) : "\u2014"}
-          </TableCell>
-        </TableRow>
-      ))}
+      {sorted.map((d, idx) => {
+        const oppId = d.opp.id;
+        const isExcluded = excludedOppIds.has(oppId);
+        const effGP = getEffectiveGP(d, ytdMarginFallback);
+        const effMargin = getEffectiveMargin(d, ytdMarginFallback);
+        const isEstimated = d.fyGP <= 0 && ytdMarginFallback > 0 && d.fyRevenue > 0;
+        const dimClass = isExcluded ? "opacity-40" : "";
+        return (
+          <TableRow key={`detail-${oppId || idx}`} className={`bg-muted/30 ${dimClass}`} data-testid={`row-opp-detail-${oppId || idx}`}>
+            <TableCell className="pl-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={!isExcluded}
+                  onCheckedChange={() => onToggleOpp(oppId)}
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`checkbox-opp-${oppId}`}
+                />
+                <span className="text-sm">{d.opp.name}</span>
+              </div>
+            </TableCell>
+            <TableCell>
+              <span className="text-xs text-muted-foreground">
+                {formatDateShort(d.opp.startDate || d.opp.dueDate)} — {formatDateShort(d.opp.expiryDate)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right text-sm text-muted-foreground">
+              {d.totalValue > 0 ? formatCurrency(d.totalValue) : "\u2014"}
+            </TableCell>
+            <TableCell className="text-right text-sm">
+              {!isOpenOpps && d.totalMonths !== d.fyMonths ? (
+                <span className="text-muted-foreground">{d.fyMonths}/{d.totalMonths} mo</span>
+              ) : (
+                <span className="text-muted-foreground">12 mo</span>
+              )}
+            </TableCell>
+            <TableCell className="text-right text-sm font-medium">
+              {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue) : "\u2014"}
+            </TableCell>
+            <TableCell className="text-right text-sm">
+              {d.fyRevenue > 0 ? formatCurrency(d.fyRevenue * rate) : "\u2014"}
+            </TableCell>
+            <TableCell className={`text-right text-sm ${isEstimated ? "italic" : ""}`}>
+              {effGP > 0 ? formatCurrency(effGP * rate) : "\u2014"}
+            </TableCell>
+            <TableCell className={`text-right text-sm text-muted-foreground ${isEstimated ? "italic" : ""}`}>
+              {effMargin > 0 ? formatPercent(effMargin * 100) : "\u2014"}
+            </TableCell>
+          </TableRow>
+        );
+      })}
     </>
   );
 }
 
-function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps }: Readonly<{
+function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, isOpenOpps, ytdMarginFallback, allFyPipeline, excludedOppIds, onToggleOpp, onToggleAllOpps, selectedFY }: Readonly<{
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   winRates: Record<string, number>;
   isLoading: boolean;
   isOpenOpps: boolean;
+  ytdMarginFallback: number;
+  allFyPipeline: PipelineOpportunity[];
+  excludedOppIds: Set<number>;
+  onToggleOpp: (id: number) => void;
+  onToggleAllOpps: (ids: number[], include: boolean) => void;
+  selectedFY: string;
 }>) {
   const [expandedCls, setExpandedCls] = useState<Set<string>>(new Set());
 
@@ -611,6 +658,15 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
       return next;
     });
   };
+
+  const allDetailsByCls = useMemo(() => {
+    const result: Record<string, OppFyDetail[]> = {};
+    for (const cls of CLASSIFICATIONS) {
+      const opps = allFyPipeline.filter(o => o.classification === cls);
+      result[cls] = opps.map(opp => computeOppFyDetail(opp, selectedFY, isOpenOpps));
+    }
+    return result;
+  }, [allFyPipeline, selectedFY, isOpenOpps]);
 
   if (isLoading) return <Skeleton className="h-60 w-full" />;
   return (
@@ -631,9 +687,13 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
         <TableBody>
           {CLASSIFICATIONS.map(cls => {
             const b = scenarioResults?.classBreakdown[cls] as ClassBreakdown | undefined;
+            const allDetails = allDetailsByCls[cls] || [];
             const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
             const isExpanded = expandedCls.has(cls);
-            const hasOpps = (b?.count || 0) > 0;
+            const hasOpps = allDetails.length > 0;
+            const clsOppIds = allDetails.map(d => d.opp.id);
+            const includedCount = clsOppIds.filter(id => !excludedOppIds.has(id)).length;
+            const allIncluded = includedCount === clsOppIds.length;
             return (
               <Fragment key={cls}>
                 <TableRow
@@ -650,21 +710,36 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                       {!hasOpps && <span className="w-4" />}
                       <Badge variant="outline">{cls}</Badge>
                       <span className="text-sm">{CLASS_LABELS[cls]}</span>
+                      {hasOpps && includedCount < clsOppIds.length && (
+                        <span className="text-xs text-muted-foreground">({includedCount}/{clsOppIds.length})</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <span className={`text-sm font-medium ${riskColorClass(cls)}`}>{riskLabel(cls)}</span>
                   </TableCell>
-                  <TableCell className="text-right">{b?.count || 0}</TableCell>
+                  <TableCell className="text-right">{includedCount}</TableCell>
                   <TableCell className="text-right">{winRates[cls]}%</TableCell>
                   <TableCell className="text-right text-muted-foreground">{b ? formatCurrency(b.rawRevenue) : "$0"}</TableCell>
                   <TableCell className="text-right font-medium">{b ? formatCurrency(b.revenue) : "$0"}</TableCell>
                   <TableCell className="text-right">{b ? formatCurrency(b.gp) : "$0"}</TableCell>
                   <TableCell className="text-right">{formatPercent(margin)}</TableCell>
                 </TableRow>
-                {isExpanded && b?.details && (
+                {isExpanded && hasOpps && (
                   <TableRow className="bg-muted/20">
-                    <TableCell className="pl-10 text-xs font-medium text-muted-foreground">Opportunity</TableCell>
+                    <TableCell className="pl-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={includedCount === 0 ? false : allIncluded ? true : "indeterminate"}
+                          onCheckedChange={(checked) => {
+                            onToggleAllOpps(clsOppIds, checked === true || checked === "indeterminate");
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          data-testid={`checkbox-all-${cls}`}
+                        />
+                        <span className="text-xs font-medium text-muted-foreground">Opportunity</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-xs font-medium text-muted-foreground">Dates</TableCell>
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">Total Value</TableCell>
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">FY Period</TableCell>
@@ -674,8 +749,8 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                     <TableCell className="text-right text-xs font-medium text-muted-foreground">Margin</TableCell>
                   </TableRow>
                 )}
-                {isExpanded && b?.details && (
-                  <ClassificationProjectRows details={b.details} winRate={winRates[cls]} isOpenOpps={isOpenOpps} />
+                {isExpanded && hasOpps && (
+                  <ClassificationProjectRows details={allDetails} winRate={winRates[cls]} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginFallback} excludedOppIds={excludedOppIds} onToggleOpp={onToggleOpp} />
                 )}
               </Fragment>
             );
@@ -885,6 +960,14 @@ export default function Scenarios() {
   const [marginGoal, setMarginGoal] = useState(40);
   const [scenarioName, setScenarioName] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [excludedOppIds, setExcludedOppIds] = useState<Set<number>>(new Set());
+  const prevFyRef = useRef(selectedFY);
+  useEffect(() => {
+    if (prevFyRef.current !== selectedFY) {
+      prevFyRef.current = selectedFY;
+      setExcludedOppIds(new Set());
+    }
+  }, [selectedFY]);
 
   const fyPeriods = useMemo(() => {
     const fromRef = (refData || []).filter(r => r.category === "fy_period").map(r => r.key);
@@ -904,10 +987,34 @@ export default function Scenarios() {
     },
   });
 
-  const filteredPipeline = useMemo(() => {
+  const allFyPipeline = useMemo(() => {
     if (!pipeline) return [];
     return pipeline.filter(o => o.fyYear === selectedFY);
   }, [pipeline, selectedFY]);
+
+  const filteredPipeline = useMemo(() => {
+    return allFyPipeline.filter(o => !excludedOppIds.has(o.id));
+  }, [allFyPipeline, excludedOppIds]);
+
+  const toggleOpp = (id: number) => {
+    setExcludedOppIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllOpps = (ids: number[], include: boolean) => {
+    setExcludedOppIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (include) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
 
   const availableFYs = useMemo(() => {
     if (!pipeline) return fyPeriods;
@@ -918,11 +1025,13 @@ export default function Scenarios() {
 
   const isOpenOpps = selectedFY === "open_opps";
 
-  const scenarioResults = useMemo(() => computeScenarioResults(
-    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY,
-  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY]);
-
   const ytdActuals = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
+
+  const ytdMarginRatio = ytdActuals.totalRevenue > 0 ? (ytdActuals.totalGP / ytdActuals.totalRevenue) : 0;
+
+  const scenarioResults = useMemo(() => computeScenarioResults(
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio,
+  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio]);
 
   const isLoading = loadingPipeline || loadingScenarios || loadingMonthly;
 
@@ -996,19 +1105,27 @@ export default function Scenarios() {
 
       <ProjectedSummaryCards ytd={ytdActuals} scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
+      <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
-            <p className="text-xs text-muted-foreground">Click a classification to see individual projects with FY-prorated revenue</p>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
+              {excludedOppIds.size > 0 && (
+                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setExcludedOppIds(new Set())} data-testid="button-reset-opp-selection">
+                  Reset selection ({allFyPipeline.length - excludedOppIds.size}/{allFyPipeline.length} included)
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Expand a classification and use checkboxes to include/exclude individual opportunities</p>
+            {ytdMarginRatio > 0 && (
+              <p className="text-xs text-muted-foreground italic">GP estimated using YTD actual margin ({formatPercent(ytdMarginRatio * 100)}) where pipeline GP data is missing</p>
+            )}
           </CardHeader>
           <CardContent>
-            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} />
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} allFyPipeline={allFyPipeline} excludedOppIds={excludedOppIds} onToggleOpp={toggleOpp} onToggleAllOpps={toggleAllOpps} selectedFY={selectedFY} />
           </CardContent>
         </Card>
-      </div>
 
       <ProjectedMonthlyTable ytd={ytdActuals} scenarioResults={scenarioResults} revenueGoal={revenueGoal} selectedFY={selectedFY} isLoading={isLoading} />
 
