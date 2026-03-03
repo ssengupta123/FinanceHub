@@ -261,20 +261,30 @@ function buildEmpAllocationsForEmployee(
   return allocations;
 }
 
+function findLatestTimesheetDate(fyTimesheets: Timesheet[], today: Date): Date {
+  let latest: Date | null = null;
+  for (const t of fyTimesheets) {
+    const d = new Date(t.weekEnding);
+    if (d <= today && (!latest || d > latest)) latest = d;
+  }
+  return latest || today;
+}
+
 function buildEmpProjectAllocationsMap(
   permanentEmployees: Employee[],
   fyTimesheets: Timesheet[],
   activeProjects: Project[],
   today: Date
 ): Map<number, EmpAllocation[]> {
-  const recentWindowStart = new Date(today);
+  const latestData = fyTimesheets.length > 0 ? findLatestTimesheetDate(fyTimesheets, today) : today;
+  const recentWindowStart = new Date(latestData);
   recentWindowStart.setDate(recentWindowStart.getDate() - 28);
-  const twoWeeksAgo = new Date(today);
+  const twoWeeksAgo = new Date(latestData);
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
   const result = new Map<number, EmpAllocation[]>();
   for (const emp of permanentEmployees) {
-    result.set(emp.id, buildEmpAllocationsForEmployee(emp.id, fyTimesheets, activeProjects, recentWindowStart, today, twoWeeksAgo));
+    result.set(emp.id, buildEmpAllocationsForEmployee(emp.id, fyTimesheets, activeProjects, recentWindowStart, latestData, twoWeeksAgo));
   }
   return result;
 }
@@ -435,7 +445,8 @@ function computeUtilizationData(
   const futureWeeks = buildFutureWeeks(currentWeekStart);
   const weekCols = futureWeeks.map(w => ({ key: w.key, label: w.label }));
 
-  const recentCutoff = new Date(today);
+  const latestDataDate = fyTimesheets.length > 0 ? findLatestTimesheetDate(fyTimesheets, today) : today;
+  const recentCutoff = new Date(latestDataDate);
   recentCutoff.setDate(recentCutoff.getDate() - 28);
   const recentData = weeklyData.filter(row => {
     if (!permanentIds.has(row.employee_id)) return false;
