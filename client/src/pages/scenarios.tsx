@@ -29,12 +29,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRight, ChevronDown, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentFy } from "@/lib/fy-utils";
-import type { PipelineOpportunity, Scenario } from "@shared/schema";
+import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
+import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 const CLASSIFICATIONS = ["C", "S", "DVF", "DF", "Q", "A"];
@@ -60,27 +60,17 @@ function formatPercent(val: number) {
 }
 
 function riskLabel(cls: string): string {
-  switch (cls) {
-    case "C": return "Low";
-    case "S": return "Low-Med";
-    case "DVF": return "Medium";
-    case "DF": return "Med-High";
-    case "Q": return "High";
-    case "A": return "Very High";
-    default: return "Unknown";
-  }
+  const labels: Record<string, string> = { C: "Low", S: "Low-Med", DVF: "Medium", DF: "Med-High", Q: "High", A: "Very High" };
+  return labels[cls] || "Unknown";
 }
 
 function riskColorClass(cls: string): string {
-  switch (cls) {
-    case "C": return "text-green-600 dark:text-green-400";
-    case "S": return "text-green-600 dark:text-green-400";
-    case "DVF": return "text-amber-600 dark:text-amber-400";
-    case "DF": return "text-amber-600 dark:text-amber-400";
-    case "Q": return "text-red-600 dark:text-red-400";
-    case "A": return "text-red-600 dark:text-red-400";
-    default: return "";
-  }
+  const colors: Record<string, string> = {
+    C: "text-green-600 dark:text-green-400", S: "text-green-600 dark:text-green-400",
+    DVF: "text-amber-600 dark:text-amber-400", DF: "text-amber-600 dark:text-amber-400",
+    Q: "text-red-600 dark:text-red-400", A: "text-red-600 dark:text-red-400",
+  };
+  return colors[cls] || "";
 }
 
 function getOppValue(opp: PipelineOpportunity): number {
@@ -183,22 +173,20 @@ function computeOppFyDetail(opp: PipelineOpportunity, fy: string, isOpenOpps: bo
     if (startDate > fyEnd || endDate < fyStart) {
       return { opp, totalValue, marginPercent, totalMonths: monthsBetween(startDate, endDate), fyMonths: 0, fyRevenue: 0, fyGP: 0 };
     }
-    const totalMonths = monthsBetween(startDate, endDate);
+    const totalMo = monthsBetween(startDate, endDate);
     const fyOverlap = overlapMonths(startDate, endDate, fyStart, fyEnd);
-    const fyRevenue = totalMonths > 0 ? totalValue * (fyOverlap / totalMonths) : 0;
-    return { opp, totalValue, marginPercent, totalMonths, fyMonths: fyOverlap, fyRevenue, fyGP: fyRevenue * marginPercent };
+    const fyRevenue = totalMo > 0 ? totalValue * (fyOverlap / totalMo) : 0;
+    return { opp, totalValue, marginPercent, totalMonths: totalMo, fyMonths: fyOverlap, fyRevenue, fyGP: fyRevenue * marginPercent };
   }
 
   if (startDate && !endDate) {
     if (startDate > fyEnd) {
       return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 0, fyRevenue: 0, fyGP: 0 };
     }
-    if (startDate <= fyEnd) {
-      const effectiveStart = startDate > fyStart ? startDate : fyStart;
-      const remainingFyMonths = monthsBetween(effectiveStart, fyEnd);
-      const ratio = remainingFyMonths / 12;
-      return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: remainingFyMonths, fyRevenue: totalValue * ratio, fyGP: totalValue * marginPercent * ratio };
-    }
+    const effectiveStart = startDate > fyStart ? startDate : fyStart;
+    const remainingFyMonths = monthsBetween(effectiveStart, fyEnd);
+    const ratio = remainingFyMonths / 12;
+    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: remainingFyMonths, fyRevenue: totalValue * ratio, fyGP: totalValue * marginPercent * ratio };
   }
 
   return fullResult;
@@ -329,12 +317,38 @@ function computeScenarioResults(
   };
 }
 
-function getMarginStatusText(scenarioResults: ReturnType<typeof computeScenarioResults>) {
-  if (scenarioResults?.meetsMarginGoal) {
-    return "Meets margin goal";
+type YtdActuals = {
+  monthlyRevenue: number[];
+  monthlyGP: number[];
+  totalRevenue: number;
+  totalCost: number;
+  totalGP: number;
+  elapsedMonths: number;
+};
+
+function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY: string): YtdActuals {
+  const monthlyRevenue = new Array(12).fill(0);
+  const monthlyGP = new Array(12).fill(0);
+  const elapsedMonths = getElapsedFyMonths(selectedFY);
+
+  if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths };
+
+  const fyRows = monthlyData.filter(m => m.fyYear === selectedFY);
+  let totalRevenue = 0;
+  let totalCost = 0;
+
+  for (const row of fyRows) {
+    const month = row.month ?? 0;
+    if (month < 1 || month > 12 || month > elapsedMonths) continue;
+    const rev = Number(row.revenue) || 0;
+    const cost = Number(row.cost) || 0;
+    monthlyRevenue[month - 1] += rev;
+    monthlyGP[month - 1] += rev - cost;
+    totalRevenue += rev;
+    totalCost += cost;
   }
-  const gapText = scenarioResults ? formatPercent(scenarioResults.marginGap) : "0%";
-  return `${gapText} below target`;
+
+  return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
 }
 
 function ScenarioMetricValue({ isLoading, value, fallback, testId, className, skeletonWidth = "w-24" }: Readonly<{
@@ -349,56 +363,118 @@ function ScenarioMetricValue({ isLoading, value, fallback, testId, className, sk
   return <div className={`text-2xl font-bold ${className || ""}`} data-testid={testId}>{value || fallback}</div>;
 }
 
-function ScenarioSummaryCards({ scenarioResults, isLoading, revenueGoal, marginGoal }: Readonly<{
+function computeRemainingPipeline(scenarioResults: ReturnType<typeof computeScenarioResults>, elapsedMonths: number) {
+  if (!scenarioResults) return { rev: 0, gp: 0 };
+  let rev = 0;
+  let gp = 0;
+  for (let i = elapsedMonths; i < 12; i++) {
+    rev += scenarioResults.monthlyRevenue[i];
+    gp += scenarioResults.monthlyGP[i];
+  }
+  return { rev, gp };
+}
+
+function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, marginGoal }: Readonly<{
+  ytd: YtdActuals;
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   isLoading: boolean;
   revenueGoal: number;
   marginGoal: number;
 }>) {
-  const meetsGoal = scenarioResults?.meetsRevenueGoal;
+  const remaining = computeRemainingPipeline(scenarioResults, ytd.elapsedMonths);
+  const pipelineRev = remaining.rev;
+  const pipelineGP = remaining.gp;
+  const projectedRev = ytd.totalRevenue + pipelineRev;
+  const projectedGP = ytd.totalGP + pipelineGP;
+  const projectedMargin = projectedRev > 0 ? (projectedGP / projectedRev) * 100 : 0;
+  const gap = revenueGoal - projectedRev;
+  const meetsGoal = projectedRev >= revenueGoal;
+  const meetsMargin = projectedMargin >= marginGoal;
   const gapClass = meetsGoal ? "text-green-600 dark:text-green-400" : "";
+
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Weighted Revenue</CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.totalRev) : ""} fallback="$0" testId="text-weighted-revenue" />
-          <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Weighted Margin</CardTitle>
-          <Target className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatPercent(scenarioResults.totalMargin) : ""} fallback="0%" testId="text-weighted-margin" skeletonWidth="w-16" />
-          <p className="text-xs text-muted-foreground">Goal: {marginGoal}%</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Revenue Gap</CardTitle>
-          {meetsGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
-        </CardHeader>
-        <CardContent>
-          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.revenueGap) : ""} fallback="$0" testId="text-revenue-gap" className={gapClass} />
-          <p className="text-xs text-muted-foreground">{meetsGoal ? "Exceeds goal" : "Below target"}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent>
-          <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(scenarioResults.totalGP) : ""} fallback="$0" testId="text-gross-profit" />
-          <p className="text-xs text-muted-foreground">{getMarginStatusText(scenarioResults)}</p>
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">YTD Actual Revenue</CardTitle>
+            <BarChart3 className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(ytd.totalRevenue)} fallback="$0" testId="text-ytd-revenue" />
+            <p className="text-xs text-muted-foreground">{ytd.elapsedMonths} of 12 months elapsed</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-amber-500">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Pipeline Weighted</CardTitle>
+            <DollarSign className="h-4 w-4 text-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(pipelineRev) : ""} fallback="$0" testId="text-weighted-revenue" />
+            <p className="text-xs text-muted-foreground">{scenarioResults?.pipelineCount || 0} opps, {12 - ytd.elapsedMonths} months remaining</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-green-500">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Projected Total</CardTitle>
+            <Target className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(projectedRev)} fallback="$0" testId="text-projected-revenue" className={meetsGoal ? "text-green-600 dark:text-green-400" : ""} />
+            <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-red-500">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Revenue Gap</CardTitle>
+            {meetsGoal ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-destructive" />}
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(gap)} fallback="$0" testId="text-revenue-gap" className={gapClass} />
+            <p className="text-xs text-muted-foreground">{meetsGoal ? "Exceeds goal" : "Below target"}</p>
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">YTD Gross Profit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(ytd.totalGP)} fallback="$0" testId="text-ytd-gp" />
+            <p className="text-xs text-muted-foreground">
+              {ytd.totalRevenue > 0 ? formatPercent((ytd.totalGP / ytd.totalRevenue) * 100) : "0%"} margin
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Projected GP</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(projectedGP)} fallback="$0" testId="text-projected-gp" />
+            <p className="text-xs text-muted-foreground">{formatPercent(projectedMargin)} projected margin</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Margin Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue
+              isLoading={isLoading}
+              value={formatPercent(projectedMargin)}
+              fallback="0%"
+              testId="text-weighted-margin"
+              className={meetsMargin ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}
+            />
+            <p className="text-xs text-muted-foreground">
+              Goal: {marginGoal}% — {meetsMargin ? "On track" : `${formatPercent(marginGoal - projectedMargin)} below`}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -622,16 +698,37 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
   );
 }
 
-function MonthlyForecastTable({ scenarioResults, revenueGoal, selectedFY, isLoading }: Readonly<{
+function ProjectedMonthlyTable({ ytd, scenarioResults, revenueGoal, selectedFY, isLoading }: Readonly<{
+  ytd: YtdActuals;
   scenarioResults: ReturnType<typeof computeScenarioResults>;
   revenueGoal: number;
   selectedFY: string;
   isLoading: boolean;
 }>) {
+  const combined = FY_MONTHS.map((_, i) => {
+    const actual = ytd.monthlyRevenue[i];
+    const pipeline = scenarioResults?.monthlyRevenue[i] || 0;
+    return i < ytd.elapsedMonths ? actual : pipeline;
+  });
+  const combinedGP = FY_MONTHS.map((_, i) => {
+    const actual = ytd.monthlyGP[i];
+    const pipeline = scenarioResults?.monthlyGP[i] || 0;
+    return i < ytd.elapsedMonths ? actual : pipeline;
+  });
+  const cumulative: number[] = [];
+  combined.forEach((v, i) => {
+    cumulative[i] = (i > 0 ? cumulative[i - 1] : 0) + v;
+  });
+  const projectedTotal = combined.reduce((s, v) => s + v, 0);
+  const projectedGPTotal = combinedGP.reduce((s, v) => s + v, 0);
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Monthly Forecast — {formatFyLabel(selectedFY)} (Cumulative Weighted Revenue)</CardTitle>
+        <CardTitle className="text-base">Monthly Projection — {formatFyLabel(selectedFY)}</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Months 1–{ytd.elapsedMonths} show actuals, months {ytd.elapsedMonths + 1}–12 show weighted pipeline forecast
+        </p>
       </CardHeader>
       <CardContent>
         {isLoading ? <Skeleton className="h-40 w-full" /> : (
@@ -639,37 +736,84 @@ function MonthlyForecastTable({ scenarioResults, revenueGoal, selectedFY, isLoad
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[140px]">Measure</TableHead>
-                  {FY_MONTHS.map(m => (
-                    <TableHead key={m} className="text-right min-w-[80px]">{m}</TableHead>
+                  <TableHead className="min-w-[160px]">Measure</TableHead>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableHead key={m} className={`text-right min-w-[80px] ${i < ytd.elapsedMonths ? "bg-blue-50 dark:bg-blue-950/30" : ""}`}>
+                      {m}
+                    </TableHead>
                   ))}
                   <TableHead className="text-right min-w-[90px]">FY Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow>
-                  <TableCell className="font-medium">Monthly Revenue</TableCell>
-                  {scenarioResults?.monthlyRevenue.map((v, i) => (
-                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                      YTD Actual
+                    </div>
+                  </TableCell>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableCell key={m} className={`text-right text-sm ${i < ytd.elapsedMonths ? "bg-blue-50 dark:bg-blue-950/30 font-medium" : "text-muted-foreground"}`}>
+                      {i < ytd.elapsedMonths ? formatCurrency(ytd.monthlyRevenue[i]) : "\u2014"}
+                    </TableCell>
                   ))}
-                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrency(ytd.totalRevenue)}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="font-medium">Cumulative Revenue</TableCell>
-                  {scenarioResults?.cumulativeRev.map((v, i) => (
-                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                      Pipeline Forecast
+                    </div>
+                  </TableCell>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableCell key={m} className={`text-right text-sm ${i >= ytd.elapsedMonths ? "font-medium" : "text-muted-foreground"}`}>
+                      {i >= ytd.elapsedMonths ? formatCurrency(scenarioResults?.monthlyRevenue[i] || 0) : "\u2014"}
+                    </TableCell>
                   ))}
-                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalRev) : "$0"}</TableCell>
+                  <TableCell className="text-right font-medium">
+                    {(() => {
+                      let remainingRev = 0;
+                      for (let i = ytd.elapsedMonths; i < 12; i++) remainingRev += scenarioResults?.monthlyRevenue[i] || 0;
+                      return formatCurrency(remainingRev);
+                    })()}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-t-2 font-bold">
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                      Projected
+                    </div>
+                  </TableCell>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableCell key={m} className={`text-right text-sm ${i < ytd.elapsedMonths ? "bg-blue-50 dark:bg-blue-950/30" : ""}`}>
+                      {formatCurrency(combined[i])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right">{formatCurrency(projectedTotal)}</TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="font-medium">Monthly GP</TableCell>
-                  {scenarioResults?.monthlyGP.map((v, i) => (
-                    <TableCell key={FY_MONTHS[i]} className="text-right text-sm">{formatCurrency(v)}</TableCell>
+                  <TableCell className="font-medium">Cumulative</TableCell>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableCell key={m} className={`text-right text-sm ${i < ytd.elapsedMonths ? "bg-blue-50 dark:bg-blue-950/30" : ""}`}>
+                      {formatCurrency(cumulative[i])}
+                    </TableCell>
                   ))}
-                  <TableCell className="text-right font-medium">{scenarioResults ? formatCurrency(scenarioResults.totalGP) : "$0"}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrency(projectedTotal)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium">Projected GP</TableCell>
+                  {FY_MONTHS.map((m, i) => (
+                    <TableCell key={m} className={`text-right text-sm ${i < ytd.elapsedMonths ? "bg-blue-50 dark:bg-blue-950/30" : ""}`}>
+                      {formatCurrency(combinedGP[i])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium">{formatCurrency(projectedGPTotal)}</TableCell>
                 </TableRow>
                 <TableRow className="border-t">
-                  <TableCell className="font-medium">Goal</TableCell>
+                  <TableCell className="font-medium text-muted-foreground">Goal (cumulative)</TableCell>
                   {FY_MONTHS.map((month, i) => (
                     <TableCell key={month} className="text-right text-sm text-muted-foreground">{formatCurrency(revenueGoal / 12 * (i + 1))}</TableCell>
                   ))}
@@ -733,6 +877,7 @@ export default function Scenarios() {
   const { data: pipeline, isLoading: loadingPipeline } = useQuery<PipelineOpportunity[]>({ queryKey: ["/api/pipeline-opportunities"] });
   const { data: scenarios, isLoading: loadingScenarios } = useQuery<Scenario[]>({ queryKey: ["/api/scenarios"] });
   const { data: refData } = useQuery<ReferenceData[]>({ queryKey: ["/api/reference-data"] });
+  const { data: monthlyData, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
 
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [winRates, setWinRates] = useState<Record<string, number>>({ ...DEFAULT_WIN_RATES });
@@ -777,7 +922,9 @@ export default function Scenarios() {
     pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY,
   ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY]);
 
-  const isLoading = loadingPipeline || loadingScenarios;
+  const ytdActuals = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
+
+  const isLoading = loadingPipeline || loadingScenarios || loadingMonthly;
 
   const applyPreset = (preset: string) => {
     const rates = WIN_RATE_PRESETS[preset];
@@ -790,7 +937,7 @@ export default function Scenarios() {
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
-            Sales Pipeline Financial Forecast — FY-prorated revenue based on project duration
+            YTD actuals + pipeline weighted forecast = projected position
             {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${formatFyLabel(selectedFY)}`}
           </p>
         </div>
@@ -847,14 +994,14 @@ export default function Scenarios() {
         </div>
       </div>
 
-      <ScenarioSummaryCards scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
+      <ProjectedSummaryCards ytd={ytdActuals} scenarioResults={scenarioResults} isLoading={isLoading} revenueGoal={revenueGoal} marginGoal={marginGoal} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <WinRatePanel winRates={winRates} setWinRates={setWinRates} revenueGoal={revenueGoal} setRevenueGoal={setRevenueGoal} marginGoal={marginGoal} setMarginGoal={setMarginGoal} />
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">What-If by Risk Rating</CardTitle>
+            <CardTitle className="text-base">Pipeline by Risk Rating</CardTitle>
             <p className="text-xs text-muted-foreground">Click a classification to see individual projects with FY-prorated revenue</p>
           </CardHeader>
           <CardContent>
@@ -863,7 +1010,7 @@ export default function Scenarios() {
         </Card>
       </div>
 
-      <MonthlyForecastTable scenarioResults={scenarioResults} revenueGoal={revenueGoal} selectedFY={selectedFY} isLoading={isLoading} />
+      <ProjectedMonthlyTable ytd={ytdActuals} scenarioResults={scenarioResults} revenueGoal={revenueGoal} selectedFY={selectedFY} isLoading={isLoading} />
 
       {scenarios && <SavedScenariosTable scenarios={scenarios} />}
     </div>
