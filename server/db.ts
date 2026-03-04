@@ -34,7 +34,7 @@ export async function runMigrations() {
         t.increments("id").primary();
         t.string("username", 255).notNullable().unique();
         t.text("password").notNullable();
-        t.string("role", 50).defaultTo("user");
+        t.string("role", 50).defaultTo("employee");
         t.string("email", 255);
         t.string("display_name", 255);
       });
@@ -308,7 +308,7 @@ export async function runMigrations() {
     t.increments("id").primary();
     t.string("username", 255).notNullable().unique();
     t.text("password").notNullable();
-    t.string("role", 50).defaultTo("user");
+    t.string("role", 50).defaultTo("employee");
     t.string("email", 255);
     t.string("display_name", 255);
   });
@@ -362,7 +362,7 @@ async function migrateUserRoleColumns() {
   const hasUserRole = await db.schema.hasColumn("users", "role");
   if (!hasUserRole) {
     await db.schema.alterTable("users", (t) => {
-      t.text("role").defaultTo("user");
+      t.text("role").defaultTo("employee");
       t.text("email");
       t.text("display_name");
     });

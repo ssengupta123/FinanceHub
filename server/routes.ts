@@ -1993,7 +1993,7 @@ export async function registerRoutes(
       }
       req.session.userId = user.id;
       req.session.username = user.username;
-      req.session.role = user.role || "user";
+      req.session.role = user.role || "employee";
       const { password: _, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error: any) {
@@ -2018,11 +2018,11 @@ export async function registerRoutes(
         password: hashedPassword,
         email: email || null,
         displayName: displayName || null,
-        role: "user",
+        role: "employee",
       });
       req.session.userId = user.id;
       req.session.username = user.username;
-      req.session.role = "user";
+      req.session.role = "employee";
       const { password: _, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error: any) {
@@ -2214,13 +2214,13 @@ export async function registerRoutes(
           password: randomPassword,
           email,
           displayName,
-          role: "user",
+          role: "employee",
         });
       }
 
       req.session.userId = user.id;
       req.session.username = user.username;
-      req.session.role = user.role || "user";
+      req.session.role = user.role || "employee";
       if (tokenResponse.accessToken) {
         req.session.graphAccessToken = tokenResponse.accessToken;
         req.session.graphTokenExpires = tokenResponse.expiresOn ? new Date(tokenResponse.expiresOn).getTime() : Date.now() + 3600000;
