@@ -48,12 +48,22 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+async function resolveUserRole(req: Request): Promise<string> {
+  if (!req.session?.userId) return "employee";
+  const user = await storage.getUser(req.session.userId);
+  const role = user?.role || "employee";
+  if (req.session.role !== role) {
+    req.session.role = role;
+  }
+  return role;
+}
+
 function requirePermission(resource: string, action: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    const role = req.session.role || "employee";
+    const role = await resolveUserRole(req);
     if (role === "admin") return next();
     const perms = await storage.getPermissionsByRole(role);
     const allowed = perms.some(p => p.resource === resource && p.action === action && p.allowed);
@@ -2038,6 +2048,9 @@ export async function registerRoutes(
     if (!user) {
       return res.status(401).json({ message: "User not found" });
     }
+    if (req.session.role !== user.role) {
+      req.session.role = user.role;
+    }
     const { password: _, ...userWithoutPassword } = user;
     res.json({ user: userWithoutPassword });
   });
@@ -2053,7 +2066,7 @@ export async function registerRoutes(
 
   // ─── Permissions ───
   app.get("/api/permissions", requireAuth, async (req, res) => {
-    const role = req.session.role || "employee";
+    const role = await resolveUserRole(req);
     if (role === "admin") {
       const { RESOURCE_ACTIONS } = await import("@shared/schema");
       const perms: Record<string, string[]> = {};
@@ -2074,14 +2087,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/role-permissions", requireAuth, async (req, res) => {
-    const role = req.session.role || "employee";
+    const role = await resolveUserRole(req);
     if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
     const all = await storage.getAllPermissions();
     res.json(all);
   });
 
   app.put("/api/role-permissions", requireAuth, async (req, res) => {
-    const role = req.session.role || "employee";
+    const role = await resolveUserRole(req);
     if (role !== "admin") return res.status(403).json({ message: "Admin access required" });
     const { permissions } = req.body;
     if (!Array.isArray(permissions)) return res.status(400).json({ message: "permissions array required" });
