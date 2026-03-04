@@ -115,14 +115,14 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
         password: randomPassword,
         email,
         displayName: payload.name || email.split("@")[0],
-        role: "user",
+        role: "employee",
       });
       console.log(`[SSO Handoff] Auto-provisioned user: ${email}`);
     }
 
     const sessionSecret = process.env.SESSION_SECRET || "financehub-dev-secret-key";
     const authToken = jwt.sign(
-      { userId: user.id, username: user.username, role: (user as any).role || "user", email },
+      { userId: user.id, username: user.username, role: (user as any).role || "employee", email },
       sessionSecret,
       { expiresIn: "24h", issuer: "financehub" }
     );
