@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import type { Project, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -139,6 +139,7 @@ export default function Dashboard() {
   }, [projectMonthly, selectedFY]);
 
   const elapsedMonths = getElapsedFyMonths(selectedFY);
+  const fyInfo = getElapsedFyInfo(selectedFY);
 
   const ytdProjectMonthly = useMemo(() => {
     return fyProjectMonthly.filter(m => (m.month ?? 0) <= elapsedMonths);
@@ -147,8 +148,24 @@ export default function Dashboard() {
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
 
   const totalContracted = fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.contractValue || "0"), 0);
-  const totalRevenue = ytdProjectMonthly.reduce((sum, m) => sum + Number.parseFloat(m.revenue || "0"), 0);
-  const totalCosts = ytdProjectMonthly.reduce((sum, m) => sum + Number.parseFloat(m.cost || "0"), 0);
+
+  const { totalRevenue, totalCosts } = useMemo(() => {
+    let rev = 0;
+    let cost = 0;
+    for (const m of ytdProjectMonthly) {
+      const mRev = Number.parseFloat(m.revenue || "0");
+      const mCost = Number.parseFloat(m.cost || "0");
+      if (fyInfo.isCurrentFy && (m.month ?? 0) === fyInfo.currentFyMonth) {
+        rev += mRev * fyInfo.dayFraction;
+        cost += mCost * fyInfo.dayFraction;
+      } else {
+        rev += mRev;
+        cost += mCost;
+      }
+    }
+    return { totalRevenue: rev, totalCosts: cost };
+  }, [ytdProjectMonthly, fyInfo]);
+
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
 
   const avgUtilization = utilizationData?.utilization ?? 0;
@@ -173,11 +190,13 @@ export default function Dashboard() {
     ytdProjectMonthly.forEach(m => {
       const billing = projectBillingMap.get(m.projectId) || "Other";
       if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
-      result[billing].revenue += Number.parseFloat(m.revenue || "0");
-      result[billing].cost += Number.parseFloat(m.cost || "0");
+      const isPartialMonth = fyInfo.isCurrentFy && (m.month ?? 0) === fyInfo.currentFyMonth;
+      const factor = isPartialMonth ? fyInfo.dayFraction : 1;
+      result[billing].revenue += Number.parseFloat(m.revenue || "0") * factor;
+      result[billing].cost += Number.parseFloat(m.cost || "0") * factor;
     });
     return result;
-  }, [ytdProjectMonthly, projectBillingMap]);
+  }, [ytdProjectMonthly, projectBillingMap, fyInfo]);
 
   const fixedRevenue = billingBreakdown["Fixed"]?.revenue || 0;
   const fixedCost = billingBreakdown["Fixed"]?.cost || 0;
@@ -223,8 +242,10 @@ export default function Dashboard() {
       const cost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
       cumTarget += monthlyTarget;
       if (isElapsed) {
-        cumRevenue += revenue;
-        cumCost += cost;
+        const isPartialMonth = fyInfo.isCurrentFy && monthNum === fyInfo.currentFyMonth;
+        const factor = isPartialMonth ? fyInfo.dayFraction : 1;
+        cumRevenue += revenue * factor;
+        cumCost += cost * factor;
       }
       return {
         month,
@@ -234,7 +255,7 @@ export default function Dashboard() {
         cumTarget,
       };
     });
-  }, [fyProjectMonthly, elapsedMonths, REVENUE_TARGET]);
+  }, [fyProjectMonthly, elapsedMonths, fyInfo, REVENUE_TARGET]);
 
   const isLoading = loadingProjects || loadingEmployees || loadingUtil || loadingPipeline || loadingMonthly;
 
@@ -264,16 +285,16 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * elapsedMonths / 12)}`}>
+        <Card className={`border ${ragBg(totalRevenue, REVENUE_TARGET * (fyInfo.completedMonths + fyInfo.dayFraction) / 12)}`}>
           <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
             <CardTitle className="text-xs sm:text-sm font-medium">YTD Revenue</CardTitle>
-            <RagDot actual={totalRevenue} target={REVENUE_TARGET * elapsedMonths / 12} />
+            <RagDot actual={totalRevenue} target={REVENUE_TARGET * (fyInfo.completedMonths + fyInfo.dayFraction) / 12} />
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
             {isLoading ? <Skeleton className="h-7 sm:h-8 w-16 sm:w-24" /> : (
               <div className="text-lg sm:text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenue)}</div>
             )}
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * elapsedMonths / 12)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Target: {formatCurrency(REVENUE_TARGET * (fyInfo.completedMonths + fyInfo.dayFraction) / 12)}</p>
           </CardContent>
         </Card>
 

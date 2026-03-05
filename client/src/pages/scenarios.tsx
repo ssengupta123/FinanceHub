@@ -34,7 +34,7 @@ import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRi
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
+import { getCurrentFy, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
 import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -342,6 +342,7 @@ function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY
   const monthlyRevenue = new Array(12).fill(0);
   const monthlyGP = new Array(12).fill(0);
   const elapsedMonths = getElapsedFyMonths(selectedFY);
+  const fyInfo = getElapsedFyInfo(selectedFY);
 
   if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths };
 
@@ -354,10 +355,12 @@ function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY
     if (month < 1 || month > 12 || month > elapsedMonths) continue;
     const rev = Number(row.revenue) || 0;
     const cost = Number(row.cost) || 0;
-    monthlyRevenue[month - 1] += rev;
-    monthlyGP[month - 1] += rev - cost;
-    totalRevenue += rev;
-    totalCost += cost;
+    const isPartialMonth = fyInfo.isCurrentFy && month === fyInfo.currentFyMonth;
+    const factor = isPartialMonth ? fyInfo.dayFraction : 1;
+    monthlyRevenue[month - 1] += rev * factor;
+    monthlyGP[month - 1] += (rev - cost) * factor;
+    totalRevenue += rev * factor;
+    totalCost += cost * factor;
   }
 
   return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
