@@ -13,7 +13,7 @@ import {
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { getCurrentFy, getFyOptions, getElapsedFyMonths } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
 import {
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Line,
@@ -120,11 +120,12 @@ interface VatCardProps {
   displayName: string;
   selectedMetric: MetricType;
   elapsedMonths: number;
+  prorateRatio: number;
   currentQuarterIndex: number;
   pipelineOpps: PipelineOpp[];
 }
 
-function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQuarterIndex, pipelineOpps }: Readonly<VatCardProps>) {
+function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, prorateRatio, currentQuarterIndex, pipelineOpps }: Readonly<VatCardProps>) {
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [whatIf, setWhatIf] = useState<WhatIfConfig>({
     enabled: { DVF: false, DF: false, Q: false, A: false },
@@ -254,7 +255,6 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, currentQ
   const gmTarget = getTargetForMetric("gm_contribution");
   const revTarget = getTargetForMetric("revenue");
 
-  const prorateRatio = elapsedMonths / 12;
   const gmStatus = gmTarget ? getTierStatus(ytd.gmContribution, {
     ok: Number(gmTarget.targetOk || 0) * prorateRatio,
     good: Number(gmTarget.targetGood || 0) * prorateRatio,
@@ -465,6 +465,7 @@ export default function VatOverview() {
 
   const fyOptions = getFyOptions([selectedFy]);
   const elapsedMonths = getElapsedFyMonths(selectedFy);
+  const fyInfo = getElapsedFyInfo(selectedFy);
   const currentQuarterIndex = Math.min(Math.floor((elapsedMonths - 1) / 3), 3);
 
   const { data: vats } = useQuery<VatInfo[]>({
@@ -594,6 +595,7 @@ export default function VatOverview() {
               displayName={vats?.find(v => v.name === vd.vatName)?.displayName || vd.vatName}
               selectedMetric={selectedMetric}
               elapsedMonths={elapsedMonths}
+              prorateRatio={(fyInfo.completedMonths + fyInfo.dayFraction) / 12}
               currentQuarterIndex={currentQuarterIndex}
               pipelineOpps={pipelineByVat[vd.vatName] || []}
             />

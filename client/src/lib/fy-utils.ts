@@ -36,3 +36,33 @@ export function getElapsedFyMonths(fy: string): number {
   const fyMonth = calMonth >= 6 ? calMonth - 6 + 1 : calMonth + 6 + 1;
   return fyMonth;
 }
+
+export interface FyElapsedInfo {
+  completedMonths: number;
+  currentFyMonth: number;
+  dayFraction: number;
+  isCurrentFy: boolean;
+}
+
+export function getElapsedFyInfo(fy: string): FyElapsedInfo {
+  const now = new Date();
+  const parts = fy.split("-");
+  if (parts.length !== 2) return { completedMonths: 0, currentFyMonth: 0, dayFraction: 0, isCurrentFy: false };
+  const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
+  const fyStart = new Date(fyStartYear, 6, 1);
+  const fyEnd = new Date(fyStartYear + 1, 5, 30, 23, 59, 59);
+  if (now < fyStart) return { completedMonths: 0, currentFyMonth: 0, dayFraction: 0, isCurrentFy: false };
+  if (now > fyEnd) return { completedMonths: 12, currentFyMonth: 12, dayFraction: 0, isCurrentFy: false };
+  const calMonth = now.getMonth();
+  const calYear = now.getFullYear();
+  const fyMonth = calMonth >= 6 ? calMonth - 6 + 1 : calMonth + 6 + 1;
+  const dayOfMonth = now.getDate();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const fraction = dayOfMonth / daysInMonth;
+  return {
+    completedMonths: fyMonth - 1,
+    currentFyMonth: fyMonth,
+    dayFraction: fraction,
+    isCurrentFy: true,
+  };
+}
