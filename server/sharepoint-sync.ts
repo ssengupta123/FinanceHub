@@ -152,10 +152,11 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   }
 }
 
-export function getSharePointConfig(): { domain: string; sitePath: string; listName: string } {
+export function getSharePointConfig(): { domain: string; sitePath: string; listName: string; folderPath: string } {
   const domain = process.env.SHAREPOINT_DOMAIN;
   const sitePath = process.env.SHAREPOINT_SITE_PATH;
-  const listName = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
+  const listName = process.env.SHAREPOINT_LIST_NAME || "Documents";
+  const folderPath = process.env.SHAREPOINT_FOLDER_PATH || "General/1.Open Opportunities";
 
   if (!domain || !sitePath) {
     throw new Error(
@@ -163,7 +164,7 @@ export function getSharePointConfig(): { domain: string; sitePath: string; listN
     );
   }
 
-  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName };
+  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName, folderPath };
 }
 
 async function lookupSharePointSite(token: SharePointToken, siteHost: string, sitePath: string): Promise<string> {
@@ -229,14 +230,24 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
-async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
+async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string, folderPath?: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
-  let nextUrl: string | null =
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+
+  let firstUrl: string;
+  if (folderPath) {
+    const filter = encodeURIComponent(`fields/ContentType ne 'Folder'`);
+    const folderFilter = encodeURIComponent(folderPath);
+    firstUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999&$filter=${filter}`;
+    console.log(`[SharePoint] Fetching items from list with folder path filter: ${folderPath}`);
+  } else {
+    firstUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+  }
+
+  let nextUrl: string | null = firstUrl;
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
+      headers: { Authorization: `Bearer ${token.access_token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
     });
 
     if (!resp.ok) {
@@ -256,13 +267,31 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
 
     nextUrl = data["@odata.nextLink"] || null;
   }
-  console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
-  if (allItems.length > 0) {
-    const sample = allItems[0];
+
+  let filtered = allItems;
+  if (folderPath) {
+    const normalizedFolder = folderPath.replace(/^\/+|\/+$/g, "").toLowerCase();
+    filtered = allItems.filter((item) => {
+      const reqField = item.RequiredField || item._dlc_DocIdUrl || "";
+      const path = String(reqField).toLowerCase();
+      return path.includes(normalizedFolder);
+    });
+    console.log(`[SharePoint] Filtered by folder path "${folderPath}": ${filtered.length} of ${allItems.length} items`);
+  }
+
+  console.log(`[SharePoint] Retrieved ${filtered.length} items`);
+  if (filtered.length > 0) {
+    const sample = filtered[0];
     console.log(`[SharePoint] Sample item fields: ${Object.keys(sample).join(", ")}`);
     console.log(`[SharePoint] Sample item values: ${JSON.stringify(sample).substring(0, 500)}`);
+  } else if (allItems.length > 0) {
+    const sample = allItems[0];
+    console.log(`[SharePoint] No items matched folder filter. Sample item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Sample RequiredField value: ${sample.RequiredField || "(not present)"}`);
+    const samplePaths = allItems.slice(0, 5).map((i) => i.RequiredField || "(none)");
+    console.log(`[SharePoint] First 5 RequiredField values: ${JSON.stringify(samplePaths)}`);
   }
-  return allItems;
+  return filtered;
 }
 
 export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
@@ -314,7 +343,7 @@ export async function syncSharePointOpenOpps(): Promise<{
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
   const { listId } = await findSharePointList(token, siteId, config.listName);
-  const allItems = await fetchAllSharePointItems(token, siteId, listId);
+  const allItems = await fetchAllSharePointItems(token, siteId, listId, config.folderPath);
   const { staged, errors } = stageSharePointItems(allItems);
 
   let inserted = 0;
