@@ -152,10 +152,11 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   }
 }
 
-export function getSharePointConfig(): { domain: string; sitePath: string; listName: string } {
+export function getSharePointConfig(): { domain: string; sitePath: string; listName: string; folderPath: string } {
   const domain = process.env.SHAREPOINT_DOMAIN;
   const sitePath = process.env.SHAREPOINT_SITE_PATH;
-  const listName = process.env.SHAREPOINT_LIST_NAME || "Open Opps";
+  const listName = process.env.SHAREPOINT_LIST_NAME || "Documents";
+  const folderPath = process.env.SHAREPOINT_FOLDER_PATH || "General/1.Open Opportunities";
 
   if (!domain || !sitePath) {
     throw new Error(
@@ -163,7 +164,7 @@ export function getSharePointConfig(): { domain: string; sitePath: string; listN
     );
   }
 
-  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName };
+  return { domain, sitePath: sitePath.startsWith("/") ? sitePath : `/${sitePath}`, listName, folderPath };
 }
 
 async function lookupSharePointSite(token: SharePointToken, siteHost: string, sitePath: string): Promise<string> {
@@ -236,7 +237,7 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
+      headers: { Authorization: `Bearer ${token.access_token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
     });
 
     if (!resp.ok) {
@@ -256,13 +257,38 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
 
     nextUrl = data["@odata.nextLink"] || null;
   }
-  console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
-  if (allItems.length > 0) {
-    const sample = allItems[0];
-    console.log(`[SharePoint] Sample item fields: ${Object.keys(sample).join(", ")}`);
-    console.log(`[SharePoint] Sample item values: ${JSON.stringify(sample).substring(0, 500)}`);
+
+  console.log(`[SharePoint] Retrieved ${allItems.length} total items from list`);
+
+  const pipelineItems = allItems.filter((item) => {
+    const hasPhase = !!(item.Phase || item.OppPhase);
+    const hasTitle = !!(item.Title || item.FileLeafRef);
+    const isFolder = item.ContentType === "Folder" || item.FSObjType === "1";
+    return hasTitle && (hasPhase || !isFolder);
+  });
+
+  const withPhase = pipelineItems.filter((item) => !!(item.Phase || item.OppPhase));
+
+  console.log(`[SharePoint] Items with Phase field: ${withPhase.length} of ${allItems.length}`);
+
+  if (withPhase.length > 0) {
+    const sample = withPhase[0];
+    console.log(`[SharePoint] Sample pipeline item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Sample pipeline item values: ${JSON.stringify(sample).substring(0, 500)}`);
+    return withPhase;
   }
-  return allItems;
+
+  if (allItems.length > 0 && withPhase.length === 0) {
+    const nonFolders = allItems.filter((i) => i.ContentType !== "Folder" && i.FSObjType !== "1");
+    console.log(`[SharePoint] No items with Phase field found. ${nonFolders.length} non-folder items exist.`);
+    if (nonFolders.length > 0) {
+      const sample = nonFolders[0];
+      console.log(`[SharePoint] Sample non-folder item fields: ${Object.keys(sample).join(", ")}`);
+      console.log(`[SharePoint] Sample non-folder item values: ${JSON.stringify(sample).substring(0, 500)}`);
+    }
+  }
+
+  return withPhase;
 }
 
 export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
