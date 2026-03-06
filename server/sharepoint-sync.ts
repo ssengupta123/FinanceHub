@@ -133,6 +133,8 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
   if (item.FSObjType !== undefined && !isFolder) return {};
 
+  const sharepointId = item._sharepointItemId ? String(item._sharepointItemId) : null;
+
   try {
     const value = formatNumericField(item.Value ?? item.OppValue ?? item.TotalValue, 2);
     const marginPercent = formatNumericField(item.Margin ?? item.MarginPercent ?? item.OppMargin, 3);
@@ -141,6 +143,7 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
     return {
       record: {
         name, classification, fyYear: "open_opps", value, marginPercent,
+        sharepointId,
         ...fields,
       },
     };
@@ -219,7 +222,11 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
     }
 
     const data: any = await resp.json();
-    const items = (data.value || []).map((item: any) => item.fields || item);
+    const items = (data.value || []).map((item: any) => {
+      const fields = item.fields || {};
+      fields._sharepointItemId = item.id || fields.id;
+      return fields;
+    });
     allItems.push(...items);
 
     nextUrl = data["@odata.nextLink"] || null;
@@ -242,8 +249,34 @@ export function stageSharePointItems(allItems: SharePointListItem[]): { staged: 
   return { staged, errors };
 }
 
+function recordToSnake(record: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(record)) {
+    out[k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = v;
+  }
+  return out;
+}
+
+const DELTA_COMPARE_FIELDS = [
+  "name", "classification", "value", "margin_percent", "work_type", "status",
+  "due_date", "start_date", "expiry_date", "comment", "cas_lead", "csd_lead",
+  "category", "partner", "client_contact", "client_code", "vat",
+];
+
+function hasChanges(existing: Record<string, any>, incoming: Record<string, any>): boolean {
+  for (const field of DELTA_COMPARE_FIELDS) {
+    const oldVal = existing[field] ?? null;
+    const newVal = incoming[field] ?? null;
+    if (String(oldVal) !== String(newVal)) return true;
+  }
+  return false;
+}
+
 export async function syncSharePointOpenOpps(): Promise<{
   imported: number;
+  updated: number;
+  removed: number;
+  unchanged: number;
   errors: string[];
   message: string;
 }> {
@@ -254,18 +287,84 @@ export async function syncSharePointOpenOpps(): Promise<{
   const allItems = await fetchAllSharePointItems(token, siteId, listId);
   const { staged, errors } = stageSharePointItems(allItems);
 
-  let imported = 0;
+  let inserted = 0;
+  let updated = 0;
+  let removed = 0;
+  let unchanged = 0;
+
   await db.transaction(async (trx) => {
-    await trx("pipeline_opportunities").where("fy_year", "open_opps").del();
+    const existingRows = await trx("pipeline_opportunities").where("fy_year", "open_opps").select("*");
+    const existingBySpId = new Map<string, any>();
+    const existingWithoutSpId: any[] = [];
+    for (const row of existingRows) {
+      if (row.sharepoint_id) {
+        existingBySpId.set(String(row.sharepoint_id), row);
+      } else {
+        existingWithoutSpId.push(row);
+      }
+    }
+
+    const incomingSpIds = new Set<string>();
+
     for (const record of staged) {
-      await trx("pipeline_opportunities").insert(record);
-      imported++;
+      const snakeRecord = recordToSnake(record);
+      const spId = snakeRecord.sharepoint_id;
+
+      if (!spId) {
+        await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
+        inserted++;
+        continue;
+      }
+
+      incomingSpIds.add(String(spId));
+      const existing = existingBySpId.get(String(spId));
+
+      if (existing) {
+        if (hasChanges(existing, snakeRecord)) {
+          await trx("pipeline_opportunities").where("id", existing.id).update(snakeRecord);
+          updated++;
+        } else {
+          unchanged++;
+        }
+      } else {
+        await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
+        inserted++;
+      }
+    }
+
+    for (const [spId, row] of existingBySpId) {
+      if (!incomingSpIds.has(spId)) {
+        await trx("pipeline_opportunities").where("id", row.id).del();
+        removed++;
+      }
+    }
+
+    if (existingWithoutSpId.length > 0 && staged.length > 0) {
+      const incomingNames = new Set(staged.map((r: any) => r.name));
+      for (const row of existingWithoutSpId) {
+        if (!incomingNames.has(row.name)) {
+          await trx("pipeline_opportunities").where("id", row.id).del();
+          removed++;
+        }
+      }
     }
   });
 
+  const parts = [];
+  if (inserted > 0) parts.push(`${inserted} added`);
+  if (updated > 0) parts.push(`${updated} updated`);
+  if (removed > 0) parts.push(`${removed} removed`);
+  if (unchanged > 0) parts.push(`${unchanged} unchanged`);
+  if (errors.length > 0) parts.push(`${errors.length} errors`);
+
+  console.log(`[SharePoint] Delta sync complete: ${parts.join(", ")}`);
+
   return {
-    imported,
+    imported: inserted,
+    updated,
+    removed,
+    unchanged,
     errors,
-    message: `Synced ${imported} opportunities from SharePoint. ${errors.length} errors.`,
+    message: `SharePoint sync: ${parts.join(", ")}.`,
   };
 }

@@ -201,8 +201,42 @@ httpServer.on("close", () => {
 
 httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
   log(`serving on port ${port}`);
+  startSharePointScheduler();
 });
 
+}
+
+function startSharePointScheduler() {
+  const SYNC_INTERVAL_MS = 60 * 60 * 1000;
+
+  async function runScheduledSync() {
+    try {
+      const dataSources = await storage.getDataSources();
+      const spSource = dataSources.find(
+        (ds: any) => ds.name?.includes("SharePoint") || ds.name?.includes("Open Opps")
+      );
+      if (!spSource) return;
+
+      const hasConfig = process.env.SHAREPOINT_DOMAIN && process.env.SHAREPOINT_SITE_PATH;
+      if (!hasConfig) return;
+
+      console.log("[Scheduler] Starting hourly SharePoint sync...");
+      const { syncSharePointOpenOpps } = await import("./sharepoint-sync");
+      const result = await syncSharePointOpenOpps();
+      console.log(`[Scheduler] SharePoint sync done: ${result.message}`);
+
+      await storage.updateDataSource(spSource.id, {
+        status: result.errors.length > 0 ? "error" : "active",
+        recordsProcessed: (result.imported || 0) + (result.updated || 0) + (result.unchanged || 0),
+        lastSyncAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error("[Scheduler] SharePoint sync failed:", err.message);
+    }
+  }
+
+  setInterval(runScheduledSync, SYNC_INTERVAL_MS);
+  console.log("[Scheduler] SharePoint hourly sync scheduled (every 60 min)");
 }
 
 startServer().catch((err) => { // NOSONAR - CJS build format does not support top-level await

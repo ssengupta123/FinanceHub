@@ -64,13 +64,18 @@ export default function DataSources() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      if (data?.imported == null) {
-        toast({ title: "Sync result", description: data?.message || "Sync completed." });
+      if (data?.message) {
+        toast({ title: "Sync complete", description: data.message });
+      } else if (data?.imported != null) {
+        const parts = [];
+        if (data.imported > 0) parts.push(`${data.imported} added`);
+        if (data.updated > 0) parts.push(`${data.updated} updated`);
+        if (data.removed > 0) parts.push(`${data.removed} removed`);
+        if (data.unchanged > 0) parts.push(`${data.unchanged} unchanged`);
+        if (data.errors?.length > 0) parts.push(`${data.errors.length} errors`);
+        toast({ title: "Sync complete", description: parts.join(", ") || "No changes" });
       } else {
-        toast({
-          title: "Sync complete",
-          description: `${data.imported} records imported. ${data.errors?.length || 0} errors.`,
-        });
+        toast({ title: "Sync result", description: "Sync completed." });
       }
     },
     onError: (error: Error) => {
