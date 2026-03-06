@@ -106,19 +106,19 @@ export function formatNumericField(raw: any, decimals: number): string | null {
 
 export function extractItemFields(item: SharePointListItem): Record<string, any> {
   return {
-    workType: item.WorkType || item.OppWorkType || null,
-    status: item.Status || item.OppStatus || item.RAGStatus || null,
+    workType: item.Work_x0020_Type || item.WorkType || item.OppWorkType || null,
+    status: item.RAGStatus || item.OppStatus || null,
     comment: item.Comment || item.Comments || item.OppComment || null,
-    casLead: item.CASLead || item.CAS_x0020_Lead || null,
-    csdLead: cleanMultiValueField(item.CSDLead || item.CSD_x0020_Lead || null),
+    casLead: item.CAS_x0020_Lead || item.CASLead || null,
+    csdLead: cleanMultiValueField(item.CSD_x0020_Lead || item.CSDLead || null),
     category: cleanMultiValueField(item.Category || item.OppCategory || null),
     partner: cleanMultiValueField(item.Partner || item.OppPartner || null),
-    clientContact: item.ClientContact || item.Client_x0020_Contact || null,
-    clientCode: item.ClientCode || item.Client_x0020_Code || null,
-    vat: cleanVat(item.VAT || item.VATCategory || null),
-    dueDate: parseSharePointDate(item.DueDate || item.OppDueDate),
-    startDate: parseSharePointDate(item.StartDate || item.OppStartDate),
-    expiryDate: parseSharePointDate(item.ExpiryDate || item.OppExpiryDate),
+    clientContact: item.Client_x0020_Contact || item.ClientContact || null,
+    clientCode: item.Client_x0020_Code || item.ClientCode || null,
+    vat: cleanVat(item.VAT || item.VATCategory || item.VAT_x0020_Category || null),
+    dueDate: parseSharePointDate(item.Due || item.DueDate || item.OppDueDate),
+    startDate: parseSharePointDate(item.Start_x0020_Date || item.StartDate || item.OppStartDate),
+    expiryDate: parseSharePointDate(item.Expiry_x0020_Date || item.ExpiryDate || item.OppExpiryDate),
   };
 }
 
@@ -126,18 +126,19 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   const name = item.Title || item.FileLeafRef || "";
   if (!name) return {};
 
-  const phaseRaw = item.Phase || item.OppPhase || "";
+  const phaseRaw = item.Status || item.Phase || item.OppPhase || "";
   const classification = PHASE_MAP[phaseRaw];
   if (!classification) return {};
 
+  const isOpenOpp = item.ContentType === "Open Opps Content Type" || item.ContentType === "Panel Content Type";
   const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
-  if (item.FSObjType !== undefined && !isFolder) return {};
+  if (!isOpenOpp && item.FSObjType !== undefined && !isFolder) return {};
 
   const sharepointId = item._sharepointItemId ? String(item._sharepointItemId) : null;
 
   try {
-    const value = formatNumericField(item.Value ?? item.OppValue ?? item.TotalValue, 2);
-    const marginPercent = formatNumericField(item.Margin ?? item.MarginPercent ?? item.OppMargin, 3);
+    const value = formatNumericField(item.Value_x0020__x0024__x0020_est_ ?? item["Value $ est."] ?? item.Value ?? item.OppValue ?? item.TotalValue, 2);
+    const marginPercent = formatNumericField(item.Margin ?? item.MarginPercent ?? item.Margin_x0025_ ?? item.OppMargin, 3);
     const fields = extractItemFields(item);
 
     return {
@@ -378,10 +379,10 @@ export async function syncSharePointOpenOpps(): Promise<{
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
   const { listId } = await findSharePointList(token, siteId, config.listName);
 
-  await discoverListContentTypes(token, siteId, listId);
   await discoverListColumns(token, siteId, listId);
 
-  const allItems = await fetchListItemsFiltered(token, siteId, listId);
+  const contentType = process.env.SHAREPOINT_CONTENT_TYPE || "Open Opps Content Type";
+  const allItems = await fetchListItemsFiltered(token, siteId, listId, contentType);
   const { staged, errors } = stageSharePointItems(allItems);
 
   let inserted = 0;
