@@ -127,8 +127,7 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   if (!name) return {};
 
   const phaseRaw = item.Status || item.Phase || item.OppPhase || "";
-  const classification = PHASE_MAP[phaseRaw];
-  if (!classification) return {};
+  const classification = PHASE_MAP[phaseRaw] || null;
 
   const isOpenOpp = item.ContentType === "Open Opps Content Type" || item.ContentType === "Panel Content Type";
   const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
@@ -397,7 +396,15 @@ export async function syncSharePointOpenOpps(): Promise<{
 
   const contentType = process.env.SHAREPOINT_CONTENT_TYPE || "Open Opps Content Type";
   const allItems = await fetchListItemsFiltered(token, siteId, listId, contentType);
-  const { staged, errors } = stageSharePointItems(allItems);
+
+  const folderPath = config.folderPath;
+  const filteredItems = allItems.filter((item) => {
+    const reqField = item.RequiredField || item.FileRef || "";
+    return reqField.includes(folderPath);
+  });
+  console.log(`[SharePoint] Filtered to ${filteredItems.length} items in folder "${folderPath}" (from ${allItems.length} total)`);
+
+  const { staged, errors } = stageSharePointItems(filteredItems);
 
   let inserted = 0;
   let updated = 0;
