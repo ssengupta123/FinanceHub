@@ -261,6 +261,38 @@ async function discoverListColumns(token: SharePointToken, siteId: string, listI
   }
 }
 
+async function fetchFolderChildren(token: SharePointToken, siteId: string, folderPath: string): Promise<SharePointListItem[]> {
+  const allItems: SharePointListItem[] = [];
+  const encodedPath = encodeURIComponent(folderPath).replace(/%2F/g, "/");
+  let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$expand=listItem($expand=fields)&$top=999`;
+  console.log(`[SharePoint] Fetching folder children: ${folderPath}`);
+
+  while (nextUrl) {
+    const resp: Response = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error(`[SharePoint] Folder API error (HTTP ${resp.status}): ${errBody.substring(0, 500)}`);
+      throw new Error(`SharePoint folder API error (HTTP ${resp.status}).`);
+    }
+
+    const data: any = await resp.json();
+    for (const driveItem of (data.value || [])) {
+      const fields = driveItem.listItem?.fields || {};
+      fields._sharepointItemId = driveItem.listItem?.id || driveItem.id;
+      if (!fields.FileLeafRef && driveItem.name) fields.FileLeafRef = driveItem.name;
+      allItems.push(fields);
+    }
+
+    nextUrl = data["@odata.nextLink"] || null;
+  }
+
+  console.log(`[SharePoint] Retrieved ${allItems.length} folder children`);
+  return allItems;
+}
+
 async function fetchListItemsFiltered(token: SharePointToken, siteId: string, listId: string, contentTypeName?: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
   let baseUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
@@ -401,37 +433,29 @@ export async function syncSharePointOpenOpps(): Promise<{
 
   await discoverListColumns(token, siteId, listId);
 
-  const contentType = process.env.SHAREPOINT_CONTENT_TYPE || "Open Opps Content Type";
-  const allItems = await fetchListItemsFiltered(token, siteId, listId, contentType);
+  const folderPath = config.folderPath;
+  const allItems = await fetchFolderChildren(token, siteId, folderPath);
 
-  const knownNames = ["ABSXXX ServiceNow PPM", "ACRXXX RFQ DOD", "ACTXXX RFI Cultural", "AGDXXX ERP", "AFPXXX ServiceNow"];
-  const foundItems = allItems.filter((item) => {
-    const name = item.Title || item.FileLeafRef || item.NameOrTitle || "";
-    return knownNames.some((kn) => name.includes(kn.split(" ")[0]));
-  });
-  console.log(`[SharePoint] Search for known open opps: found ${foundItems.length} matches`);
-  for (const item of foundItems.slice(0, 5)) {
-    const name = item.Title || item.FileLeafRef || "";
-    const keys = Object.keys(item).filter((k) => !k.startsWith("@") && !k.startsWith("_") && item[k] != null && item[k] !== "" && !(Array.isArray(item[k]) && item[k].length === 0));
-    console.log(`[SharePoint] === KNOWN ITEM: "${name}" ===`);
+  const statusValues = new Map<string, number>();
+  for (const item of allItems) {
+    const s = item.Status || "(empty)";
+    statusValues.set(s, (statusValues.get(s) || 0) + 1);
+  }
+  console.log(`[SharePoint] Phase breakdown: ${[...statusValues.entries()].map(([k, v]) => `"${k}": ${v}`).join(", ")}`);
+
+  if (allItems.length > 0) {
+    const sample = allItems.find((i) => i.Status && !i.Status.startsWith("6.") && !i.Status.startsWith("7.") && !i.Status.startsWith("8.") && !i.Status.startsWith("9.")) || allItems[0];
+    const keys = Object.keys(sample).filter((k) => !k.startsWith("@") && !k.startsWith("_") && sample[k] != null && sample[k] !== "" && !(Array.isArray(sample[k]) && sample[k].length === 0));
+    console.log(`[SharePoint] === SAMPLE ITEM: "${sample.Title || sample.FileLeafRef}" ===`);
     for (let i = 0; i < keys.length; i += 5) {
       const entries = keys.slice(i, i + 5).map((k) => {
-        const v = item[k];
+        const v = sample[k];
         const val = typeof v === "object" ? JSON.stringify(v) : String(v);
         return `${k}=${val.substring(0, 100)}`;
       });
       console.log(`[SharePoint] > ${entries.join(" | ")}`);
     }
-  }
-  if (foundItems.length === 0) {
-    console.log(`[SharePoint] WARNING: Known open opp names not found in ${allItems.length} items. These items may not have ContentType "Open Opps Content Type"`);
-    const noTitleCount = allItems.filter((i) => !i.Title).length;
-    const hasTitle = allItems.filter((i) => !!i.Title);
-    console.log(`[SharePoint] Items without Title: ${noTitleCount}, with Title: ${hasTitle.length}`);
-    if (hasTitle.length > 0) {
-      const sampleTitles = hasTitle.slice(0, 10).map((i) => `"${i.Title}"`);
-      console.log(`[SharePoint] Sample titles: ${sampleTitles.join(", ")}`);
-    }
+    console.log(`[SharePoint] === END SAMPLE ===`);
   }
 
   const { staged, errors } = stageSharePointItems(allItems);
