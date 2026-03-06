@@ -1706,7 +1706,7 @@ export async function registerRoutes(
     
 
     try {
-      let result: { imported: number; errors: string[]; message: string };
+      let result: { imported: number; updated?: number; removed?: number; unchanged?: number; errors: string[]; message: string };
 
       const connInfo = ds.connectionInfo ? JSON.parse(ds.connectionInfo) : {};
       const syncTarget = connInfo.syncTarget || "";
@@ -1722,9 +1722,10 @@ export async function registerRoutes(
         });
       }
 
+      const totalProcessed = (result.imported || 0) + (result.updated || 0) + (result.unchanged || 0);
       await storage.updateDataSource(id, {
         status: result.errors.length > 0 ? "error" : "active",
-        recordsProcessed: result.imported,
+        recordsProcessed: totalProcessed,
         lastSyncAt: new Date().toISOString(),
       });
 
