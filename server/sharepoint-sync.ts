@@ -230,43 +230,101 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
-async function fetchDriveFolderChildren(token: SharePointToken, siteId: string, folderPath: string): Promise<SharePointListItem[]> {
-  const encodedPath = folderPath.split("/").map(encodeURIComponent).join("/");
-  const allItems: SharePointListItem[] = [];
-  let nextUrl: string | null =
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$expand=listItem($expand=fields)&$top=999`;
+async function discoverListContentTypes(token: SharePointToken, siteId: string, listId: string): Promise<void> {
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/contentTypes`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const types = (data.value || []).map((ct: any) => `"${ct.name}" (id: ${ct.id})`);
+    console.log(`[SharePoint] Content types on list: ${types.join(", ")}`);
+  }
+}
 
-  console.log(`[SharePoint] Fetching children of drive folder: ${folderPath}`);
+async function discoverListColumns(token: SharePointToken, siteId: string, listId: string): Promise<void> {
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const cols = (data.value || []).map((c: any) => `${c.displayName} [${c.name}]`);
+    console.log(`[SharePoint] List columns (display [internal]): ${cols.join(", ")}`);
+  }
+}
+
+async function fetchListItemsFiltered(token: SharePointToken, siteId: string, listId: string, contentTypeName?: string): Promise<SharePointListItem[]> {
+  const allItems: SharePointListItem[] = [];
+  let baseUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+  if (contentTypeName) {
+    baseUrl += `&$filter=fields/ContentType eq '${contentTypeName}'`;
+  }
+
+  let nextUrl: string | null = baseUrl;
+  console.log(`[SharePoint] Fetching list items${contentTypeName ? ` (ContentType: ${contentTypeName})` : ""}...`);
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
+      headers: { Authorization: `Bearer ${token.access_token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
     });
 
     if (!resp.ok) {
       const errBody = await resp.text();
-      console.error(`[SharePoint] Drive API error (HTTP ${resp.status}): ${errBody.substring(0, 500)}`);
-      throw new Error(`SharePoint Drive API error (HTTP ${resp.status}). Check SHAREPOINT_FOLDER_PATH (current: "${folderPath}").`);
+      console.error(`[SharePoint] API error (HTTP ${resp.status}): ${errBody.substring(0, 500)}`);
+      if (contentTypeName && resp.status === 400) {
+        console.log(`[SharePoint] Content type filter failed, falling back to unfiltered fetch...`);
+        return fetchListItemsFiltered(token, siteId, listId);
+      }
+      throw new Error(`SharePoint API error (HTTP ${resp.status}).`);
     }
 
     const data: any = await resp.json();
-    for (const item of (data.value || [])) {
-      const fields = item.listItem?.fields || {};
-      fields._sharepointItemId = item.listItem?.id || item.id;
-      if (!fields.FileLeafRef && item.name) fields.FileLeafRef = item.name;
-      if (!fields.Title && item.name) fields.Title = item.name;
-      allItems.push(fields);
-    }
+    const items = (data.value || []).map((item: any) => {
+      const fields = item.fields || {};
+      fields._sharepointItemId = item.id || fields.id;
+      return fields;
+    });
+    allItems.push(...items);
 
     nextUrl = data["@odata.nextLink"] || null;
+    if (allItems.length > 0 && allItems.length % 5000 === 0) {
+      console.log(`[SharePoint] Fetched ${allItems.length} items so far...`);
+    }
   }
 
-  console.log(`[SharePoint] Retrieved ${allItems.length} items from folder "${folderPath}"`);
-  if (allItems.length > 0) {
-    const sample = allItems[0];
-    console.log(`[SharePoint] Sample item fields: ${Object.keys(sample).join(", ")}`);
-    console.log(`[SharePoint] Sample item values: ${JSON.stringify(sample).substring(0, 800)}`);
+  console.log(`[SharePoint] Retrieved ${allItems.length} total items`);
+
+  const contentTypes = new Map<string, number>();
+  for (const item of allItems) {
+    const ct = item.ContentType || "(none)";
+    contentTypes.set(ct, (contentTypes.get(ct) || 0) + 1);
   }
+  console.log(`[SharePoint] Content type breakdown: ${[...contentTypes.entries()].map(([k, v]) => `${k}: ${v}`).join(", ")}`);
+
+  if (allItems.length > 0) {
+    const fieldCounts = new Map<string, number>();
+    for (const item of allItems) {
+      for (const key of Object.keys(item)) {
+        if (item[key] != null && item[key] !== "" && !key.startsWith("@") && !key.startsWith("_")) {
+          fieldCounts.set(key, (fieldCounts.get(key) || 0) + 1);
+        }
+      }
+    }
+    const relevantFields = [...fieldCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, count]) => `${name}(${count})`);
+    console.log(`[SharePoint] Fields with values (name(count)): ${relevantFields.join(", ")}`);
+
+    const sample = allItems.find((i) => {
+      const keys = Object.keys(i).filter((k) => !k.startsWith("@") && !k.startsWith("_"));
+      return keys.length > 15;
+    }) || allItems[0];
+    console.log(`[SharePoint] Richest sample item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Richest sample item values: ${JSON.stringify(sample).substring(0, 1000)}`);
+  }
+
   return allItems;
 }
 
@@ -318,7 +376,12 @@ export async function syncSharePointOpenOpps(): Promise<{
   const config = getSharePointConfig();
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
-  const allItems = await fetchDriveFolderChildren(token, siteId, config.folderPath);
+  const { listId } = await findSharePointList(token, siteId, config.listName);
+
+  await discoverListContentTypes(token, siteId, listId);
+  await discoverListColumns(token, siteId, listId);
+
+  const allItems = await fetchListItemsFiltered(token, siteId, listId);
   const { staged, errors } = stageSharePointItems(allItems);
 
   let inserted = 0;
