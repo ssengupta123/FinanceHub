@@ -403,6 +403,33 @@ export async function syncSharePointOpenOpps(): Promise<{
 
   const contentType = process.env.SHAREPOINT_CONTENT_TYPE || "Open Opps Content Type";
   const allItems = await fetchListItemsFiltered(token, siteId, listId, contentType);
+
+  const openOppFolder = allItems.filter((item) => {
+    const req = item.RequiredField || "";
+    return req.includes("1.Open Opportunities") && item.Title !== "1.Open Opportunities";
+  });
+  console.log(`[SharePoint] Items inside 1.Open Opportunities folder: ${openOppFolder.length}`);
+  if (openOppFolder.length > 0) {
+    const sample = openOppFolder[0];
+    const keys = Object.keys(sample).filter((k) => !k.startsWith("@"));
+    console.log(`[SharePoint] === OPEN OPP FOLDER ITEM (${keys.length} fields) ===`);
+    for (let i = 0; i < keys.length; i += 5) {
+      const entries = keys.slice(i, i + 5).map((k) => {
+        const v = sample[k];
+        const val = v === null || v === undefined ? "(null)" : typeof v === "object" ? JSON.stringify(v) : String(v);
+        return `${k}=${val.substring(0, 80)}`;
+      });
+      console.log(`[SharePoint] Item: ${entries.join(" | ")}`);
+    }
+    console.log(`[SharePoint] === END OPEN OPP FOLDER ITEM ===`);
+    const statuses = new Map<string, number>();
+    for (const item of openOppFolder) {
+      const s = item.Status || "(empty)";
+      statuses.set(s, (statuses.get(s) || 0) + 1);
+    }
+    console.log(`[SharePoint] Open Opp folder Status breakdown: ${[...statuses.entries()].map(([k, v]) => `"${k}": ${v}`).join(", ")}`);
+  }
+
   const { staged, errors } = stageSharePointItems(allItems);
   console.log(`[SharePoint] Staged ${staged.length} items with valid Phase from ${allItems.length} total (${errors.length} errors)`);
 
