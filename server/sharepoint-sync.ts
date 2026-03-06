@@ -254,36 +254,6 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
-async function discoverListContentTypes(token: SharePointToken, siteId: string, listId: string): Promise<void> {
-  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/contentTypes`;
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token.access_token}` },
-  });
-  if (resp.ok) {
-    const data = await resp.json();
-    const types = (data.value || []).map((ct: any) => `"${ct.name}" (id: ${ct.id})`);
-    console.log(`[SharePoint] Content types on list: ${types.join(", ")}`);
-  }
-}
-
-async function discoverListColumns(token: SharePointToken, siteId: string, listId: string): Promise<void> {
-  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns`;
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${token.access_token}` },
-  });
-  if (resp.ok) {
-    const data = await resp.json();
-    const cols = (data.value || []);
-    console.log(`[SharePoint] === FULL COLUMN LIST (${cols.length} columns) ===`);
-    const BATCH = 10;
-    for (let i = 0; i < cols.length; i += BATCH) {
-      const batch = cols.slice(i, i + BATCH).map((c: any) => `${c.displayName} [${c.name}]`);
-      console.log(`[SharePoint] Columns ${i + 1}-${Math.min(i + BATCH, cols.length)}: ${batch.join(" | ")}`);
-    }
-    console.log(`[SharePoint] === END COLUMN LIST ===`);
-  }
-}
-
 async function fetchFolderChildren(token: SharePointToken, siteId: string, folderPath: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
   const encodedPath = encodeURIComponent(folderPath).replace(/%2F/g, "/");
@@ -356,51 +326,6 @@ async function fetchListItemsFiltered(token: SharePointToken, siteId: string, li
   }
 
   console.log(`[SharePoint] Retrieved ${allItems.length} total items`);
-
-  const contentTypes = new Map<string, number>();
-  for (const item of allItems) {
-    const ct = item.ContentType || "(none)";
-    contentTypes.set(ct, (contentTypes.get(ct) || 0) + 1);
-  }
-  console.log(`[SharePoint] Content type breakdown: ${[...contentTypes.entries()].map(([k, v]) => `${k}: ${v}`).join(", ")}`);
-
-  const statusValues = new Map<string, number>();
-  for (const item of allItems) {
-    const s = item.Status || "(empty)";
-    statusValues.set(s, (statusValues.get(s) || 0) + 1);
-  }
-  console.log(`[SharePoint] Status (Phase) value breakdown: ${[...statusValues.entries()].map(([k, v]) => `"${k}": ${v}`).join(", ")}`);
-
-  const itemWithStatus = allItems.find((i) => i.Status && i.Status !== "(empty)");
-  if (itemWithStatus) {
-    console.log(`[SharePoint] Sample item WITH Status: ${JSON.stringify(itemWithStatus).substring(0, 1000)}`);
-  } else {
-    console.log(`[SharePoint] WARNING: No items have a Status field value`);
-  }
-
-  if (allItems.length > 0) {
-    const fieldCounts = new Map<string, number>();
-    for (const item of allItems) {
-      for (const key of Object.keys(item)) {
-        if (item[key] != null && item[key] !== "" && !key.startsWith("@") && !key.startsWith("_")) {
-          fieldCounts.set(key, (fieldCounts.get(key) || 0) + 1);
-        }
-      }
-    }
-    const relevantFields = [...fieldCounts.entries()]
-      .filter(([, count]) => count > 1)
-      .sort(([, a], [, b]) => b - a)
-      .map(([name, count]) => `${name}(${count})`);
-    console.log(`[SharePoint] Fields with values (name(count)): ${relevantFields.join(", ")}`);
-
-    const sample = allItems.find((i) => {
-      const keys = Object.keys(i).filter((k) => !k.startsWith("@") && !k.startsWith("_"));
-      return keys.length > 15;
-    }) || allItems[0];
-    console.log(`[SharePoint] Richest sample item fields: ${Object.keys(sample).join(", ")}`);
-    console.log(`[SharePoint] Richest sample item values: ${JSON.stringify(sample).substring(0, 1000)}`);
-  }
-
   return allItems;
 }
 
@@ -454,35 +379,11 @@ export async function syncSharePointOpenOpps(): Promise<{
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
   const { listId } = await findSharePointList(token, siteId, config.listName);
 
-  await discoverListColumns(token, siteId, listId);
-
   const folderPath = config.folderPath;
   const allItems = await fetchFolderChildren(token, siteId, folderPath);
 
-  const statusValues = new Map<string, number>();
-  for (const item of allItems) {
-    const s = item.Status || "(empty)";
-    statusValues.set(s, (statusValues.get(s) || 0) + 1);
-  }
-  console.log(`[SharePoint] Phase breakdown: ${[...statusValues.entries()].map(([k, v]) => `"${k}": ${v}`).join(", ")}`);
-
-  if (allItems.length > 0) {
-    const sample = allItems.find((i) => i.Status && !i.Status.startsWith("6.") && !i.Status.startsWith("7.") && !i.Status.startsWith("8.") && !i.Status.startsWith("9.")) || allItems[0];
-    const keys = Object.keys(sample).filter((k) => !k.startsWith("@") && !k.startsWith("_") && sample[k] != null && sample[k] !== "" && !(Array.isArray(sample[k]) && sample[k].length === 0));
-    console.log(`[SharePoint] === SAMPLE ITEM: "${sample.Title || sample.FileLeafRef}" ===`);
-    for (let i = 0; i < keys.length; i += 5) {
-      const entries = keys.slice(i, i + 5).map((k) => {
-        const v = sample[k];
-        const val = typeof v === "object" ? JSON.stringify(v) : String(v);
-        return `${k}=${val.substring(0, 100)}`;
-      });
-      console.log(`[SharePoint] > ${entries.join(" | ")}`);
-    }
-    console.log(`[SharePoint] === END SAMPLE ===`);
-  }
-
   const { staged, errors } = stageSharePointItems(allItems);
-  console.log(`[SharePoint] Staged ${staged.length} items with valid Phase from ${allItems.length} total (${errors.length} errors)`);
+  console.log(`[SharePoint] Staged ${staged.length} items from ${allItems.length} total (${errors.length} errors)`);
   if (errors.length > 0) {
     console.log(`[SharePoint] First 5 errors: ${errors.slice(0, 5).join(" | ")}`);
   }
