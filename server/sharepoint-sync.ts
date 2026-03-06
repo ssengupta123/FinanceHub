@@ -29,6 +29,11 @@ interface SharePointListItem {
 }
 
 const PHASE_MAP: Record<string, string> = {
+  "1.Activity": "A",
+  "2.Qualified": "Q",
+  "3.Submitted": "DF",
+  "4.Shortlisted": "DVF",
+  "5.Selected": "S",
   "1.A - Activity": "A",
   "2.Q - Qualified": "Q",
   "3.DF - Submitted": "DF",
@@ -127,7 +132,8 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   if (!name) return {};
 
   const phaseRaw = item.Status || item.Phase || item.OppPhase || "";
-  const classification = PHASE_MAP[phaseRaw] || null;
+  const classification = PHASE_MAP[phaseRaw];
+  if (!classification) return {};
 
   const isOpenOpp = item.ContentType === "Open Opps Content Type" || item.ContentType === "Panel Content Type";
   const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
