@@ -61,4 +61,4 @@ SHAREPOINT_LIST_NAME = "Documents"
 [userenv.production]
 SHAREPOINT_DOMAIN = "reasongroup.sharepoint.com"
 SHAREPOINT_SITE_PATH = "/sites/RGSales"
-SHAREPOINT_LIST_NAME = "Documents"
+SHAREPOINT_LIST_NAME = "Opportunity qualification tracker"
