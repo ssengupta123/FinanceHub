@@ -1,0 +1,42 @@
+2026-03-06T23:43:23.4804721Z Incremental migrations completed
+2026-03-06T23:43:23.6113876Z 11:43:23 PM [express] serving on port 8080
+2026-03-06T23:43:23.6115773Z [Scheduler] SharePoint hourly sync scheduled (every 60 min)
+2026-03-06T23:44:03.4541284Z 11:44:03 PM [express] GET /api/auth/me 304 in 29ms
+2026-03-06T23:44:03.5345078Z 11:44:03 PM [express] GET /api/permissions 304 in 42ms
+2026-03-06T23:44:03.5566068Z 11:44:03 PM [express] GET /api/data-sources 304 in 43ms
+2026-03-06T23:44:05.5548411Z [SharePoint] Graph token acquired successfully
+2026-03-06T23:44:05.5623256Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-06T23:44:05.6812227Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-06T23:44:05.8091416Z [SharePoint] Found list "Documents" with ID: 775579a0-0a65-42dd-a416-1a309cb5f656
+2026-03-06T23:44:05.9448648Z [SharePoint] === FULL COLUMN LIST (124 columns) ===
+2026-03-06T23:44:05.9492892Z [SharePoint] Columns 1-10: Modified [Modified] | Name [FileLeafRef] | Compliance Asset Id [ComplianceAssetId] | Title [Title] | KeyPoints [MediaServiceKeyPoints] | Tags [MediaServiceAutoTags] | Location [MediaServiceLocation] | Extracted Text [MediaServiceOCR] | Shared With [SharedWithUsers] | Shared With Details [SharedWithDetails]
+2026-03-06T23:44:05.9493178Z [SharePoint] Columns 11-20: Description [Description] | Phase [Status] | Description [_ExtendedDescription] | Image Tags [MediaServiceImageTags] | Color Tag [_ColorTag] | Due [Due] | Client contact [Planner] | Category  [Business] | Value $ ex GST [Value_x0024_exGST] | Modified By [Editor]
+2026-03-06T23:44:05.9493332Z [SharePoint] Columns 21-30: Bid Team [BidLead] | CSD Lead [ClientManager] | VAT [Team] | CAS Lead [BidLead0] | Contributor [_Contributor] | Coverage [_Coverage] | Creator [_Author] | Date Created [_DCDateCreated] | Date Modified [_DCDateModified] | Description [_Comments]
+2026-03-06T23:44:05.9493369Z [SharePoint] Columns 31-40: Format [_Format] | Resource Identifier [_Identifier] | Language [Language] | Publisher [_Publisher] | Relation [_Relation] | Rights Management [_RightsManagement] | Source [_Source] | Keywords [Keywords] | Subject [Subject] | Resource Type [_ResourceType]
+2026-03-06T23:44:05.9493437Z [SharePoint] Columns 41-50: URL [URL] | Category [XSLStyleCategory] | Target Web Part [XSLStyleWPType] | Icon URL [XSLStyleIconUrl] | View Style ID [XSLStyleBaseView] | Required Fields [XSLStyleRequiredFields] | Description [Comments] | UI Version [UIVersion] | Default CSS File [DefaultCssFile] | Picture Width [ImageWidth]
+2026-03-06T23:44:05.9495867Z [SharePoint] Columns 51-60: Picture Height [ImageHeight] | Date Picture Taken [ImageCreateDate] | Preview Image URL [AlternateThumbnailUrl] | Preview [PreviewOnForm] | File Type [FileType] | Picture Size [ImageSize] | Selection Checkbox [SelectedFlag] | Name [NameOrTitle] | Required Field [RequiredField] | Thumbnail [Thumbnail]
+2026-03-06T23:44:05.9496077Z [SharePoint] Columns 61-70: Web Preview [Preview] | Authoring Canvas Content [CanvasContent1] | Banner Image URL [BannerImageUrl] | Description [Description0] | Promoted State [PromotedState] | First Published Date [FirstPublishedDate] | Page Layout Content [LayoutWebpartsContent] | Author Byline [_AuthorByline] | Topic header [_TopicHeader] | Site Page Flags [_SPSitePageFlags]
+2026-03-06T23:44:05.9496122Z [SharePoint] Columns 71-80: Original Source Url [_OriginalSourceUrl] | Original Source Site ID [_OriginalSourceSiteId] | Original Source Web ID [_OriginalSourceWebId] | Original Source List ID [_OriginalSourceListId] | Original Source Item ID [_OriginalSourceItemId] | Call To Action [_SPCallToAction] | Title [LinkTitle] | Priority [Priority] | Contact [Contact] | Key contact [Keycontact]
+2026-03-06T23:44:05.9496156Z [SharePoint] Columns 81-90: Badges [Badges] | Partner contact [Partnercontact] | Rating (0-5) [AverageRating] | Number of Ratings [RatingCount] | Number of Likes [LikesCount] | Expiry Date [ExpiryDate] | Folder Type [PanelCategory] | Status [Status0] | Image [Image] | Work Type [WorkType_x0028_FTorContract_x0029_]
+2026-03-06T23:44:05.9496186Z [SharePoint] Columns 91-100: Comment [ChimComment] | KAMS Comment [KAMSCooment] | Rate/Salary [Rate_x002f_Salary] | CC [CC] | Type [DocIcon] | Created By [Author] | Margin [Margin] | Start Date [StartDate] | Partner [Partner] | ID [ID]
+2026-03-06T23:44:05.9496219Z [SharePoint] Columns 101-110: Content Type [ContentType] | Created [Created] | Copy Source [_CopySource] | Checked Out To [CheckoutUser] | Check In Comment [_CheckinComment] | Name [LinkFilenameNoMenu] | Name [LinkFilename] | File Size [FileSizeDisplay] | Item Child Count [ItemChildCount] | Folder Child Count [FolderChildCount]
+2026-03-06T23:44:05.9499037Z [SharePoint] Columns 111-120: Label setting [_ComplianceFlags] | Retention label [_ComplianceTag] | Retention label Applied [_ComplianceTagWrittenTime] | Label applied by [_ComplianceTagUserId] | Item is a Record [_IsRecord] | Comment count [_CommentCount] | Like count [_LikeCount] | Sensitivity [_DisplayName] | App Created By [AppAuthor] | App Modified By [AppEditor]
+2026-03-06T23:44:05.9499136Z [SharePoint] Columns 121-124: Edit [Edit] | Version [_UIVersionString] | Source Version (Converted Document) [ParentVersionString] | Source Name (Converted Document) [ParentLeafName]
+2026-03-06T23:44:05.9499162Z [SharePoint] === END COLUMN LIST ===
+2026-03-06T23:44:05.9502084Z [SharePoint] Fetching folder children: General/1.Open Opportunities
+2026-03-06T23:44:06.4869695Z [SharePoint] Retrieved 106 folder children
+2026-03-06T23:44:06.4870731Z [SharePoint] Phase breakdown: "1.A - Activity": 58, "3.DF - Submitted": 14, "2.Q - Qualified": 17, "8.R - Rejected": 1, "9.FYI": 3, "4.DVF - Shortlisted": 9, "5.S - Selected": 1, "7.L - Lost": 2, "(empty)": 1
+2026-03-06T23:44:06.487266Z [SharePoint] === SAMPLE ITEM: "ABSXXX ServiceNow PPM & IRM 202504" ===
+2026-03-06T23:44:06.4873805Z [SharePoint] > Modified=2026-02-27T03:30:33Z | FileLeafRef=ABSXXX ServiceNow PPM & IRM 202504 | Status=1.A - Activity | Due=2026-03-31T12:59:00Z | Planner={"Description":"Ian Scensor","Url":"https://planner.cloud.microsoft/webui/v1/plan/QPKQTCe4H0y_0R4P2Q
+2026-03-06T23:44:06.4874629Z [SharePoint] > Business=["Hunt","Partner"] | EditorLookupId=17 | ClientManager=[{"LookupId":36,"LookupValue":"Alex Kocz","Email":"alex.kocz@reason.com.au"},{"LookupId":187,"Lookup | Team=GROWTH | BidLead0LookupId=183
+2026-03-06T23:44:06.4874697Z [SharePoint] > PreviewOnForm=1 | SelectedFlag=1 | NameOrTitle=ABSXXX ServiceNow PPM & IRM 202504 | RequiredField=sites/RGSales/Shared Documents/General/1.Open Opportunities/ABSXXX ServiceNow PPM & IRM 202504 | Partnercontact={"Description":"Daniel Outten","Url":"https://planner.cloud.microsoft/webui/v1/plan/5zhyynG6a0SKClW1
+2026-03-06T23:44:06.4874731Z [SharePoint] > Status0=Risk | WorkType_x0028_FTorContract_x0029_=Delivery | ChimComment=Will or AV to follow up with Ian and include ABS in joint planning. PPM and IRM Contract with SNOW,  | CC=TSY-ABS | AuthorLookupId=17
+2026-03-06T23:44:06.4875967Z [SharePoint] > Partner=["SNoW"] | id=155202 | ContentType=Folder | Created=2025-04-08T13:27:59Z | LinkFilenameNoMenu=ABSXXX ServiceNow PPM & IRM 202504
+2026-03-06T23:44:06.4876056Z [SharePoint] > LinkFilename=ABSXXX ServiceNow PPM & IRM 202504 | ItemChildCount=1 | FolderChildCount=8 | Edit=0 | ParentVersionStringLookupId=155202
+2026-03-06T23:44:06.4876081Z [SharePoint] > ParentLeafNameLookupId=155202
+2026-03-06T23:44:06.4876131Z [SharePoint] === END SAMPLE ===
+2026-03-06T23:44:06.4970645Z [SharePoint] Staged 99 items with valid Phase from 106 total (0 errors)
+2026-03-06T23:44:07.2367576Z [SharePoint] Delta sync complete: 81 added, 18 updated
+2026-03-06T23:44:07.2539036Z 11:44:07 PM [express] POST /api/data-sources/31/sync 200 in 1970ms
+2026-03-06T23:44:07.2945217Z 11:44:07 PM [express] GET /api/data-sources 200 in 16ms
+2026-03-06T23:44:25.3891378Z 11:44:25 PM [express] GET /api/pipeline-opportunities 200 in 83ms
