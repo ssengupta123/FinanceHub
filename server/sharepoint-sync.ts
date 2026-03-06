@@ -303,6 +303,20 @@ async function fetchListItemsFiltered(token: SharePointToken, siteId: string, li
   }
   console.log(`[SharePoint] Content type breakdown: ${[...contentTypes.entries()].map(([k, v]) => `${k}: ${v}`).join(", ")}`);
 
+  const statusValues = new Map<string, number>();
+  for (const item of allItems) {
+    const s = item.Status || "(empty)";
+    statusValues.set(s, (statusValues.get(s) || 0) + 1);
+  }
+  console.log(`[SharePoint] Status (Phase) value breakdown: ${[...statusValues.entries()].map(([k, v]) => `"${k}": ${v}`).join(", ")}`);
+
+  const itemWithStatus = allItems.find((i) => i.Status && i.Status !== "(empty)");
+  if (itemWithStatus) {
+    console.log(`[SharePoint] Sample item WITH Status: ${JSON.stringify(itemWithStatus).substring(0, 1000)}`);
+  } else {
+    console.log(`[SharePoint] WARNING: No items have a Status field value`);
+  }
+
   if (allItems.length > 0) {
     const fieldCounts = new Map<string, number>();
     for (const item of allItems) {
