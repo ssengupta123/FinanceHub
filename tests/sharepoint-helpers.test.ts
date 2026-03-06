@@ -27,9 +27,17 @@ describe("transformSharePointItem", () => {
     expect(result.error).toBeUndefined();
   });
 
-  it("returns empty for invalid phase", () => {
+  it("returns record with null classification for unknown phase", () => {
     const result = transformSharePointItem({ Title: "Test", Status: "INVALID" });
-    expect(result.record).toBeUndefined();
+    expect(result.record).toBeDefined();
+    expect(result.record!.classification).toBeNull();
+  });
+
+  it("returns record with null classification for empty phase", () => {
+    const result = transformSharePointItem({ Title: "Open Opp" });
+    expect(result.record).toBeDefined();
+    expect(result.record!.classification).toBeNull();
+    expect(result.record!.name).toBe("Open Opp");
   });
 
   it("handles full phase names", () => {
@@ -269,13 +277,15 @@ describe("stageSharePointItems", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("handles mix of valid and skipped items", () => {
+  it("handles mix of items with and without classification", () => {
     const items = [
       { Title: "Good Opp", Status: "S", Value: 50000, VAT: "SAU" },
-      { Title: "Bad Phase", Status: "UNKNOWN" },
+      { Title: "No Phase Opp", Status: "UNKNOWN" },
     ];
     const result = stageSharePointItems(items);
-    expect(result.staged.length).toBe(1);
+    expect(result.staged.length).toBe(2);
+    expect(result.staged[0].classification).toBe("S");
+    expect(result.staged[1].classification).toBeNull();
   });
 });
 
