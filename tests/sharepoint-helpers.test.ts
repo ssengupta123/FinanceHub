@@ -6,11 +6,11 @@ describe("transformSharePointItem", () => {
     const item = {
       Title: "New Opportunity",
       Status: "S",
-      Value: 50000,
+      "Value_x0024_exGST": 50000,
       Margin: 0.25,
-      WorkType: "Advisory",
-      RAGStatus: "Active",
-      VAT: "DAFF",
+      "WorkType_x0028_FTorContract_x0029_": "Advisory",
+      Status0: "Active",
+      Team: "DAFF",
     };
     const result = transformSharePointItem(item);
     expect(result.record).toBeDefined();
@@ -19,6 +19,7 @@ describe("transformSharePointItem", () => {
     expect(result.record!.value).toBe("50000.00");
     expect(result.record!.marginPercent).toBe("0.250");
     expect(result.record!.workType).toBe("Advisory");
+    expect(result.record!.vat).toBe("DAFF");
   });
 
   it("returns empty for item without title", () => {
@@ -27,17 +28,14 @@ describe("transformSharePointItem", () => {
     expect(result.error).toBeUndefined();
   });
 
-  it("returns record with null classification for unknown phase", () => {
+  it("returns empty for invalid phase", () => {
     const result = transformSharePointItem({ Title: "Test", Status: "INVALID" });
-    expect(result.record).toBeDefined();
-    expect(result.record!.classification).toBeNull();
+    expect(result.record).toBeUndefined();
   });
 
-  it("returns record with null classification for empty phase", () => {
+  it("returns empty for missing phase", () => {
     const result = transformSharePointItem({ Title: "Open Opp" });
-    expect(result.record).toBeDefined();
-    expect(result.record!.classification).toBeNull();
-    expect(result.record!.name).toBe("Open Opp");
+    expect(result.record).toBeUndefined();
   });
 
   it("handles full phase names", () => {
@@ -131,20 +129,28 @@ describe("formatNumericField", () => {
 });
 
 describe("extractItemFields", () => {
-  it("extracts standard fields", () => {
+  it("extracts standard fields using correct internal names", () => {
     const item = {
-      WorkType: "Advisory",
-      RAGStatus: "Active",
-      Comment: "Test",
-      CASLead: "John",
-      VAT: "DAFF",
+      "WorkType_x0028_FTorContract_x0029_": "Advisory",
+      Status0: "Active",
+      ChimComment: "Test",
+      BidLead0: "John",
+      ClientManager: "Jane",
+      Team: "DAFF",
+      Planner: "Client Person",
+      CC: "CLT001",
+      Business: ["Hunt"],
     };
     const result = extractItemFields(item);
     expect(result.workType).toBe("Advisory");
     expect(result.status).toBe("Active");
     expect(result.comment).toBe("Test");
     expect(result.casLead).toBe("John");
+    expect(result.csdLead).toBe("Jane");
     expect(result.vat).toBe("DAFF");
+    expect(result.clientContact).toBe("Client Person");
+    expect(result.clientCode).toBe("CLT001");
+    expect(result.category).toBe("Hunt");
   });
 
   it("falls back to alternative field names", () => {
@@ -277,15 +283,14 @@ describe("stageSharePointItems", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("handles mix of items with and without classification", () => {
+  it("skips items with invalid phase", () => {
     const items = [
       { Title: "Good Opp", Status: "S", Value: 50000, VAT: "SAU" },
-      { Title: "No Phase Opp", Status: "UNKNOWN" },
+      { Title: "Bad Phase", Status: "UNKNOWN" },
     ];
     const result = stageSharePointItems(items);
-    expect(result.staged.length).toBe(2);
+    expect(result.staged.length).toBe(1);
     expect(result.staged[0].classification).toBe("S");
-    expect(result.staged[1].classification).toBeNull();
   });
 });
 
