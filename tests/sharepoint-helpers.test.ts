@@ -5,11 +5,11 @@ describe("transformSharePointItem", () => {
   it("transforms a valid SharePoint item", () => {
     const item = {
       Title: "New Opportunity",
-      Phase: "S",
+      Status: "S",
       Value: 50000,
       Margin: 0.25,
       WorkType: "Advisory",
-      Status: "Active",
+      RAGStatus: "Active",
       VAT: "DAFF",
     };
     const result = transformSharePointItem(item);
@@ -28,12 +28,12 @@ describe("transformSharePointItem", () => {
   });
 
   it("returns empty for invalid phase", () => {
-    const result = transformSharePointItem({ Title: "Test", Phase: "INVALID" });
+    const result = transformSharePointItem({ Title: "Test", Status: "INVALID" });
     expect(result.record).toBeUndefined();
   });
 
   it("handles full phase names", () => {
-    const result = transformSharePointItem({ Title: "Test", Phase: "1.A - Activity" });
+    const result = transformSharePointItem({ Title: "Test", Status: "1.A - Activity" });
     expect(result.record).toBeDefined();
     expect(result.record!.classification).toBe("A");
   });
@@ -41,7 +41,7 @@ describe("transformSharePointItem", () => {
   it("handles alternative field names", () => {
     const item = {
       Title: "Alt Opp",
-      Phase: "Q",
+      OppPhase: "Q",
       OppValue: 100000,
       MarginPercent: 0.3,
       OppWorkType: "Delivery",
@@ -56,7 +56,7 @@ describe("transformSharePointItem", () => {
   });
 
   it("handles null value fields", () => {
-    const result = transformSharePointItem({ Title: "No Values", Phase: "A" });
+    const result = transformSharePointItem({ Title: "No Values", Status: "A" });
     expect(result.record).toBeDefined();
     expect(result.record!.value).toBeNull();
     expect(result.record!.marginPercent).toBeNull();
@@ -64,30 +64,30 @@ describe("transformSharePointItem", () => {
   });
 
   it("sets fyYear to open_opps", () => {
-    const result = transformSharePointItem({ Title: "Opp", Phase: "DF" });
+    const result = transformSharePointItem({ Title: "Opp", Status: "DF" });
     expect(result.record).toBeDefined();
     expect(result.record!.fyYear).toBe("open_opps");
   });
 
   it("handles FileLeafRef as fallback name", () => {
-    const result = transformSharePointItem({ FileLeafRef: "Fallback Name", Phase: "S" });
+    const result = transformSharePointItem({ FileLeafRef: "Fallback Name", Status: "S" });
     expect(result.record).toBeDefined();
     expect(result.record!.name).toBe("Fallback Name");
   });
 
   it("handles DVF phase", () => {
-    const result = transformSharePointItem({ Title: "DVF Item", Phase: "4.DVF - Shortlisted" });
+    const result = transformSharePointItem({ Title: "DVF Item", Status: "4.DVF - Shortlisted" });
     expect(result.record).toBeDefined();
     expect(result.record!.classification).toBe("DVF");
   });
 
   it("handles comment fields", () => {
-    const result = transformSharePointItem({ Title: "Commented", Phase: "Q", Comment: "Some note" });
+    const result = transformSharePointItem({ Title: "Commented", Status: "Q", Comment: "Some note" });
     expect(result.record!.comment).toBe("Some note");
   });
 
   it("handles alternative comment fields", () => {
-    const result = transformSharePointItem({ Title: "Commented", Phase: "Q", Comments: "Alt note" });
+    const result = transformSharePointItem({ Title: "Commented", Status: "Q", Comments: "Alt note" });
     expect(result.record!.comment).toBe("Alt note");
   });
 });
@@ -126,7 +126,7 @@ describe("extractItemFields", () => {
   it("extracts standard fields", () => {
     const item = {
       WorkType: "Advisory",
-      Status: "Active",
+      RAGStatus: "Active",
       Comment: "Test",
       CASLead: "John",
       VAT: "DAFF",
@@ -247,7 +247,7 @@ describe("stageSharePointItems", () => {
   it("stages valid items", () => {
     const items = [{
       Title: "Opp 1",
-      Phase: "S",
+      Status: "S",
       Value: 100000,
       VAT: "DAFF",
     }];
@@ -271,8 +271,8 @@ describe("stageSharePointItems", () => {
 
   it("handles mix of valid and skipped items", () => {
     const items = [
-      { Title: "Good Opp", Phase: "S", Value: 50000, VAT: "SAU" },
-      { Title: "Bad Phase", Phase: "UNKNOWN" },
+      { Title: "Good Opp", Status: "S", Value: 50000, VAT: "SAU" },
+      { Title: "Bad Phase", Status: "UNKNOWN" },
     ];
     const result = stageSharePointItems(items);
     expect(result.staged.length).toBe(1);
