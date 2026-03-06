@@ -230,10 +230,39 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
-async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
+async function discoverListContentTypes(token: SharePointToken, siteId: string, listId: string): Promise<void> {
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/contentTypes`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const types = (data.value || []).map((ct: any) => `"${ct.name}" (id: ${ct.id})`);
+    console.log(`[SharePoint] Content types on list: ${types.join(", ")}`);
+  }
+}
+
+async function discoverListColumns(token: SharePointToken, siteId: string, listId: string): Promise<void> {
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const cols = (data.value || []).map((c: any) => `${c.displayName} [${c.name}]`);
+    console.log(`[SharePoint] List columns (display [internal]): ${cols.join(", ")}`);
+  }
+}
+
+async function fetchListItemsFiltered(token: SharePointToken, siteId: string, listId: string, contentTypeName?: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
-  let nextUrl: string | null =
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+  let baseUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+  if (contentTypeName) {
+    baseUrl += `&$filter=fields/ContentType eq '${contentTypeName}'`;
+  }
+
+  let nextUrl: string | null = baseUrl;
+  console.log(`[SharePoint] Fetching list items${contentTypeName ? ` (ContentType: ${contentTypeName})` : ""}...`);
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
@@ -242,9 +271,12 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
 
     if (!resp.ok) {
       const errBody = await resp.text();
-      console.error(`[SharePoint] API error (HTTP ${resp.status}) for URL: ${nextUrl}`);
-      console.error(`[SharePoint] Response body: ${errBody.substring(0, 500)}`);
-      throw new Error(`SharePoint API error (HTTP ${resp.status}). Check SharePoint domain, site path, and list name configuration.`);
+      console.error(`[SharePoint] API error (HTTP ${resp.status}): ${errBody.substring(0, 500)}`);
+      if (contentTypeName && resp.status === 400) {
+        console.log(`[SharePoint] Content type filter failed, falling back to unfiltered fetch...`);
+        return fetchListItemsFiltered(token, siteId, listId);
+      }
+      throw new Error(`SharePoint API error (HTTP ${resp.status}).`);
     }
 
     const data: any = await resp.json();
@@ -256,39 +288,44 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
     allItems.push(...items);
 
     nextUrl = data["@odata.nextLink"] || null;
-  }
-
-  console.log(`[SharePoint] Retrieved ${allItems.length} total items from list`);
-
-  const pipelineItems = allItems.filter((item) => {
-    const hasPhase = !!(item.Phase || item.OppPhase);
-    const hasTitle = !!(item.Title || item.FileLeafRef);
-    const isFolder = item.ContentType === "Folder" || item.FSObjType === "1";
-    return hasTitle && (hasPhase || !isFolder);
-  });
-
-  const withPhase = pipelineItems.filter((item) => !!(item.Phase || item.OppPhase));
-
-  console.log(`[SharePoint] Items with Phase field: ${withPhase.length} of ${allItems.length}`);
-
-  if (withPhase.length > 0) {
-    const sample = withPhase[0];
-    console.log(`[SharePoint] Sample pipeline item fields: ${Object.keys(sample).join(", ")}`);
-    console.log(`[SharePoint] Sample pipeline item values: ${JSON.stringify(sample).substring(0, 500)}`);
-    return withPhase;
-  }
-
-  if (allItems.length > 0 && withPhase.length === 0) {
-    const nonFolders = allItems.filter((i) => i.ContentType !== "Folder" && i.FSObjType !== "1");
-    console.log(`[SharePoint] No items with Phase field found. ${nonFolders.length} non-folder items exist.`);
-    if (nonFolders.length > 0) {
-      const sample = nonFolders[0];
-      console.log(`[SharePoint] Sample non-folder item fields: ${Object.keys(sample).join(", ")}`);
-      console.log(`[SharePoint] Sample non-folder item values: ${JSON.stringify(sample).substring(0, 500)}`);
+    if (allItems.length > 0 && allItems.length % 5000 === 0) {
+      console.log(`[SharePoint] Fetched ${allItems.length} items so far...`);
     }
   }
 
-  return withPhase;
+  console.log(`[SharePoint] Retrieved ${allItems.length} total items`);
+
+  const contentTypes = new Map<string, number>();
+  for (const item of allItems) {
+    const ct = item.ContentType || "(none)";
+    contentTypes.set(ct, (contentTypes.get(ct) || 0) + 1);
+  }
+  console.log(`[SharePoint] Content type breakdown: ${[...contentTypes.entries()].map(([k, v]) => `${k}: ${v}`).join(", ")}`);
+
+  if (allItems.length > 0) {
+    const fieldCounts = new Map<string, number>();
+    for (const item of allItems) {
+      for (const key of Object.keys(item)) {
+        if (item[key] != null && item[key] !== "" && !key.startsWith("@") && !key.startsWith("_")) {
+          fieldCounts.set(key, (fieldCounts.get(key) || 0) + 1);
+        }
+      }
+    }
+    const relevantFields = [...fieldCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, count]) => `${name}(${count})`);
+    console.log(`[SharePoint] Fields with values (name(count)): ${relevantFields.join(", ")}`);
+
+    const sample = allItems.find((i) => {
+      const keys = Object.keys(i).filter((k) => !k.startsWith("@") && !k.startsWith("_"));
+      return keys.length > 15;
+    }) || allItems[0];
+    console.log(`[SharePoint] Richest sample item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Richest sample item values: ${JSON.stringify(sample).substring(0, 1000)}`);
+  }
+
+  return allItems;
 }
 
 export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
@@ -340,7 +377,11 @@ export async function syncSharePointOpenOpps(): Promise<{
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
   const { listId } = await findSharePointList(token, siteId, config.listName);
-  const allItems = await fetchAllSharePointItems(token, siteId, listId);
+
+  await discoverListContentTypes(token, siteId, listId);
+  await discoverListColumns(token, siteId, listId);
+
+  const allItems = await fetchListItemsFiltered(token, siteId, listId);
   const { staged, errors } = stageSharePointItems(allItems);
 
   let inserted = 0;
