@@ -257,6 +257,11 @@ async function fetchAllSharePointItems(token: SharePointToken, siteId: string, l
     nextUrl = data["@odata.nextLink"] || null;
   }
   console.log(`[SharePoint] Retrieved ${allItems.length} items from list`);
+  if (allItems.length > 0) {
+    const sample = allItems[0];
+    console.log(`[SharePoint] Sample item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Sample item values: ${JSON.stringify(sample).substring(0, 500)}`);
+  }
   return allItems;
 }
 
