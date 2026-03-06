@@ -309,7 +309,7 @@ describe("getSharePointConfig", () => {
     const cfg = getSharePointConfig();
     expect(cfg.domain).toBe("example.sharepoint.com");
     expect(cfg.sitePath).toBe("/sites/Finance");
-    expect(cfg.listName).toBe("Open Opps");
+    expect(cfg.listName).toBe("Documents");
   });
 
   it("prepends slash to sitePath if missing", () => {
