@@ -106,19 +106,19 @@ export function formatNumericField(raw: any, decimals: number): string | null {
 
 export function extractItemFields(item: SharePointListItem): Record<string, any> {
   return {
-    workType: item.Work_x0020_Type || item.WorkType || item.OppWorkType || null,
-    status: item.RAGStatus || item.OppStatus || null,
-    comment: item.Comment || item.Comments || item.OppComment || null,
-    casLead: item.CAS_x0020_Lead || item.CASLead || null,
-    csdLead: cleanMultiValueField(item.CSD_x0020_Lead || item.CSDLead || null),
-    category: cleanMultiValueField(item.Category || item.OppCategory || null),
+    workType: item["WorkType_x0028_FTorContract_x0029_"] || item.WorkType || item.Work_x0020_Type || item.OppWorkType || null,
+    status: item.Status0 || item.RAGStatus || item.OppStatus || null,
+    comment: item.ChimComment || item.Comment || item.Comments || item.OppComment || null,
+    casLead: item.BidLead0 || item.CAS_x0020_Lead || item.CASLead || null,
+    csdLead: cleanMultiValueField(item.ClientManager || item.CSD_x0020_Lead || item.CSDLead || null),
+    category: cleanMultiValueField(item.Business ? (Array.isArray(item.Business) ? item.Business.join("; ") : item.Business) : item.Category || item.OppCategory || null),
     partner: cleanMultiValueField(item.Partner || item.OppPartner || null),
-    clientContact: item.Client_x0020_Contact || item.ClientContact || null,
-    clientCode: item.Client_x0020_Code || item.ClientCode || null,
-    vat: cleanVat(item.VAT || item.VATCategory || item.VAT_x0020_Category || null),
+    clientContact: item.Planner || item.Client_x0020_Contact || item.ClientContact || null,
+    clientCode: item.CC || item.Client_x0020_Code || item.ClientCode || null,
+    vat: cleanVat(item.Team || item.VAT || item.VATCategory || item.VAT_x0020_Category || null),
     dueDate: parseSharePointDate(item.Due || item.DueDate || item.OppDueDate),
-    startDate: parseSharePointDate(item.Start_x0020_Date || item.StartDate || item.OppStartDate),
-    expiryDate: parseSharePointDate(item.Expiry_x0020_Date || item.ExpiryDate || item.OppExpiryDate),
+    startDate: parseSharePointDate(item.StartDate || item.Start_x0020_Date || item.OppStartDate),
+    expiryDate: parseSharePointDate(item.ExpiryDate || item.Expiry_x0020_Date || item.OppExpiryDate),
   };
 }
 
@@ -127,7 +127,8 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   if (!name) return {};
 
   const phaseRaw = item.Status || item.Phase || item.OppPhase || "";
-  const classification = PHASE_MAP[phaseRaw] || null;
+  const classification = PHASE_MAP[phaseRaw];
+  if (!classification) return {};
 
   const isOpenOpp = item.ContentType === "Open Opps Content Type" || item.ContentType === "Panel Content Type";
   const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
@@ -136,7 +137,7 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   const sharepointId = item._sharepointItemId ? String(item._sharepointItemId) : null;
 
   try {
-    const value = formatNumericField(item.Value_x0020__x0024__x0020_est_ ?? item["Value $ est."] ?? item.Value ?? item.OppValue ?? item.TotalValue, 2);
+    const value = formatNumericField(item["Value_x0024_exGST"] ?? item.Value_x0020__x0024__x0020_est_ ?? item["Value $ est."] ?? item.Value ?? item.OppValue ?? item.TotalValue, 2);
     const marginPercent = formatNumericField(item.Margin ?? item.MarginPercent ?? item.Margin_x0025_ ?? item.OppMargin, 3);
     const fields = extractItemFields(item);
 
@@ -402,31 +403,8 @@ export async function syncSharePointOpenOpps(): Promise<{
 
   const contentType = process.env.SHAREPOINT_CONTENT_TYPE || "Open Opps Content Type";
   const allItems = await fetchListItemsFiltered(token, siteId, listId, contentType);
-
-  const folderPath = config.folderPath;
-  const filteredItems = allItems.filter((item) => {
-    const reqField = item.RequiredField || item.FileRef || "";
-    return reqField.includes(folderPath);
-  });
-  console.log(`[SharePoint] Filtered to ${filteredItems.length} items in folder "${folderPath}" (from ${allItems.length} total)`);
-
-  if (filteredItems.length > 0) {
-    const sampleItem = filteredItems.find((i) => i.Title && i.Title !== folderPath.split("/").pop()) || filteredItems[0];
-    const keys = Object.keys(sampleItem).filter((k) => !k.startsWith("_") && !k.startsWith("@"));
-    console.log(`[SharePoint] === SAMPLE OPEN OPP ITEM (all fields) ===`);
-    const BATCH = 5;
-    for (let i = 0; i < keys.length; i += BATCH) {
-      const entries = keys.slice(i, i + BATCH).map((k) => {
-        const v = sampleItem[k];
-        const val = v === null || v === undefined ? "(null)" : typeof v === "object" ? JSON.stringify(v) : String(v);
-        return `${k}=${val.substring(0, 100)}`;
-      });
-      console.log(`[SharePoint] Fields: ${entries.join(" | ")}`);
-    }
-    console.log(`[SharePoint] === END SAMPLE ===`);
-  }
-
-  const { staged, errors } = stageSharePointItems(filteredItems);
+  const { staged, errors } = stageSharePointItems(allItems);
+  console.log(`[SharePoint] Staged ${staged.length} items with valid Phase from ${allItems.length} total (${errors.length} errors)`);
 
   let inserted = 0;
   let updated = 0;
