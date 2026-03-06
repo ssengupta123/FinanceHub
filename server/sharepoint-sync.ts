@@ -230,65 +230,44 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
-async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
+async function fetchDriveFolderChildren(token: SharePointToken, siteId: string, folderPath: string): Promise<SharePointListItem[]> {
+  const encodedPath = folderPath.split("/").map(encodeURIComponent).join("/");
   const allItems: SharePointListItem[] = [];
   let nextUrl: string | null =
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$expand=listItem($expand=fields)&$top=999`;
+
+  console.log(`[SharePoint] Fetching children of drive folder: ${folderPath}`);
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${token.access_token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
+      headers: { Authorization: `Bearer ${token.access_token}` },
     });
 
     if (!resp.ok) {
       const errBody = await resp.text();
-      console.error(`[SharePoint] API error (HTTP ${resp.status}) for URL: ${nextUrl}`);
-      console.error(`[SharePoint] Response body: ${errBody.substring(0, 500)}`);
-      throw new Error(`SharePoint API error (HTTP ${resp.status}). Check SharePoint domain, site path, and list name configuration.`);
+      console.error(`[SharePoint] Drive API error (HTTP ${resp.status}): ${errBody.substring(0, 500)}`);
+      throw new Error(`SharePoint Drive API error (HTTP ${resp.status}). Check SHAREPOINT_FOLDER_PATH (current: "${folderPath}").`);
     }
 
     const data: any = await resp.json();
-    const items = (data.value || []).map((item: any) => {
-      const fields = item.fields || {};
-      fields._sharepointItemId = item.id || fields.id;
-      return fields;
-    });
-    allItems.push(...items);
+    for (const item of (data.value || [])) {
+      const fields = item.listItem?.fields || {};
+      fields._sharepointItemId = item.listItem?.id || item.id;
+      if (!fields.FileLeafRef && item.name) fields.FileLeafRef = item.name;
+      if (!fields.Title && item.name) fields.Title = item.name;
+      allItems.push(fields);
+    }
 
     nextUrl = data["@odata.nextLink"] || null;
   }
 
-  console.log(`[SharePoint] Retrieved ${allItems.length} total items from list`);
-
-  const pipelineItems = allItems.filter((item) => {
-    const hasPhase = !!(item.Phase || item.OppPhase);
-    const hasTitle = !!(item.Title || item.FileLeafRef);
-    const isFolder = item.ContentType === "Folder" || item.FSObjType === "1";
-    return hasTitle && (hasPhase || !isFolder);
-  });
-
-  const withPhase = pipelineItems.filter((item) => !!(item.Phase || item.OppPhase));
-
-  console.log(`[SharePoint] Items with Phase field: ${withPhase.length} of ${allItems.length}`);
-
-  if (withPhase.length > 0) {
-    const sample = withPhase[0];
-    console.log(`[SharePoint] Sample pipeline item fields: ${Object.keys(sample).join(", ")}`);
-    console.log(`[SharePoint] Sample pipeline item values: ${JSON.stringify(sample).substring(0, 500)}`);
-    return withPhase;
+  console.log(`[SharePoint] Retrieved ${allItems.length} items from folder "${folderPath}"`);
+  if (allItems.length > 0) {
+    const sample = allItems[0];
+    console.log(`[SharePoint] Sample item fields: ${Object.keys(sample).join(", ")}`);
+    console.log(`[SharePoint] Sample item values: ${JSON.stringify(sample).substring(0, 800)}`);
   }
-
-  if (allItems.length > 0 && withPhase.length === 0) {
-    const nonFolders = allItems.filter((i) => i.ContentType !== "Folder" && i.FSObjType !== "1");
-    console.log(`[SharePoint] No items with Phase field found. ${nonFolders.length} non-folder items exist.`);
-    if (nonFolders.length > 0) {
-      const sample = nonFolders[0];
-      console.log(`[SharePoint] Sample non-folder item fields: ${Object.keys(sample).join(", ")}`);
-      console.log(`[SharePoint] Sample non-folder item values: ${JSON.stringify(sample).substring(0, 500)}`);
-    }
-  }
-
-  return withPhase;
+  return allItems;
 }
 
 export function stageSharePointItems(allItems: SharePointListItem[]): { staged: any[]; errors: string[] } {
@@ -339,8 +318,7 @@ export async function syncSharePointOpenOpps(): Promise<{
   const config = getSharePointConfig();
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
-  const { listId } = await findSharePointList(token, siteId, config.listName);
-  const allItems = await fetchAllSharePointItems(token, siteId, listId);
+  const allItems = await fetchDriveFolderChildren(token, siteId, config.folderPath);
   const { staged, errors } = stageSharePointItems(allItems);
 
   let inserted = 0;
