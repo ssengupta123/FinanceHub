@@ -249,8 +249,14 @@ async function discoverListColumns(token: SharePointToken, siteId: string, listI
   });
   if (resp.ok) {
     const data = await resp.json();
-    const cols = (data.value || []).map((c: any) => `${c.displayName} [${c.name}]`);
-    console.log(`[SharePoint] List columns (display [internal]): ${cols.join(", ")}`);
+    const cols = (data.value || []);
+    console.log(`[SharePoint] === FULL COLUMN LIST (${cols.length} columns) ===`);
+    const BATCH = 10;
+    for (let i = 0; i < cols.length; i += BATCH) {
+      const batch = cols.slice(i, i + BATCH).map((c: any) => `${c.displayName} [${c.name}]`);
+      console.log(`[SharePoint] Columns ${i + 1}-${Math.min(i + BATCH, cols.length)}: ${batch.join(" | ")}`);
+    }
+    console.log(`[SharePoint] === END COLUMN LIST ===`);
   }
 }
 
@@ -403,6 +409,22 @@ export async function syncSharePointOpenOpps(): Promise<{
     return reqField.includes(folderPath);
   });
   console.log(`[SharePoint] Filtered to ${filteredItems.length} items in folder "${folderPath}" (from ${allItems.length} total)`);
+
+  if (filteredItems.length > 0) {
+    const sampleItem = filteredItems.find((i) => i.Title && i.Title !== folderPath.split("/").pop()) || filteredItems[0];
+    const keys = Object.keys(sampleItem).filter((k) => !k.startsWith("_") && !k.startsWith("@"));
+    console.log(`[SharePoint] === SAMPLE OPEN OPP ITEM (all fields) ===`);
+    const BATCH = 5;
+    for (let i = 0; i < keys.length; i += BATCH) {
+      const entries = keys.slice(i, i + BATCH).map((k) => {
+        const v = sampleItem[k];
+        const val = v === null || v === undefined ? "(null)" : typeof v === "object" ? JSON.stringify(v) : String(v);
+        return `${k}=${val.substring(0, 100)}`;
+      });
+      console.log(`[SharePoint] Fields: ${entries.join(" | ")}`);
+    }
+    console.log(`[SharePoint] === END SAMPLE ===`);
+  }
 
   const { staged, errors } = stageSharePointItems(filteredItems);
 
