@@ -50,4 +50,4 @@ integrations = ["github:1.0.0", "javascript_openai_ai_integrations:2.0.0"]
 [userenv.shared]
 SHAREPOINT_DOMAIN = "reasongroup.sharepoint.com"
 SHAREPOINT_SITE_PATH = "/sites/RGSales"
-SHAREPOINT_LIST_NAME = "Open Opps"
+SHAREPOINT_LIST_NAME = "Shared Documents"

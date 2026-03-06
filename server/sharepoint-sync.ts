@@ -182,7 +182,7 @@ async function lookupSharePointSite(token: SharePointToken, siteHost: string, si
   return siteData.id;
 }
 
-async function findSharePointList(token: SharePointToken, siteId: string, listName: string): Promise<string> {
+async function findSharePointList(token: SharePointToken, siteId: string, listName: string): Promise<{ listId: string; isDrive: boolean }> {
   const listsUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`;
   const listsResp = await fetch(listsUrl, {
     headers: { Authorization: `Bearer ${token.access_token}` },
@@ -193,15 +193,40 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
     throw new Error(`Failed to retrieve SharePoint lists (HTTP ${listsResp.status}).`);
   }
   const listsData = await listsResp.json();
-  const targetList = (listsData.value || []).find((l: any) =>
+  const allLists = listsData.value || [];
+
+  const targetList = allLists.find((l: any) =>
     l.displayName === listName || l.name === listName
   );
-  if (!targetList) {
-    const available = (listsData.value || []).map((l: any) => l.displayName).join(", ");
-    throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
+  if (targetList) {
+    console.log(`[SharePoint] Found list "${listName}" with ID: ${targetList.id}`);
+    return { listId: targetList.id, isDrive: false };
   }
-  console.log(`[SharePoint] Found list "${listName}" with ID: ${targetList.id}`);
-  return targetList.id;
+
+  const drivesUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives`;
+  const drivesResp = await fetch(drivesUrl, {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  if (drivesResp.ok) {
+    const drivesData = await drivesResp.json();
+    const drives = drivesData.value || [];
+    const targetDrive = drives.find((d: any) =>
+      d.name === listName || d.name === "Shared Documents"
+    );
+    if (targetDrive) {
+      const driveList = allLists.find((l: any) => l.name === targetDrive.name || l.displayName === targetDrive.name);
+      if (driveList) {
+        console.log(`[SharePoint] Found document library "${targetDrive.name}" as list ID: ${driveList.id}`);
+        return { listId: driveList.id, isDrive: true };
+      }
+    }
+    const driveNames = drives.map((d: any) => `${d.name} (drive)`).join(", ");
+    const listNames = allLists.map((l: any) => l.displayName).join(", ");
+    throw new Error(`SharePoint list "${listName}" not found. Available: ${listNames}, ${driveNames}`);
+  }
+
+  const available = allLists.map((l: any) => l.displayName).join(", ");
+  throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
 async function fetchAllSharePointItems(token: SharePointToken, siteId: string, listId: string): Promise<SharePointListItem[]> {
@@ -283,7 +308,7 @@ export async function syncSharePointOpenOpps(): Promise<{
   const config = getSharePointConfig();
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
-  const listId = await findSharePointList(token, siteId, config.listName);
+  const { listId } = await findSharePointList(token, siteId, config.listName);
   const allItems = await fetchAllSharePointItems(token, siteId, listId);
   const { staged, errors } = stageSharePointItems(allItems);
 
