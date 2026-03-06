@@ -134,23 +134,25 @@ describe("extractItemFields", () => {
       "WorkType_x0028_FTorContract_x0029_": "Advisory",
       Status0: "Active",
       ChimComment: "Test",
-      BidLead0: "John",
-      ClientManager: "Jane",
+      BidLead0: [{ LookupId: 183, LookupValue: "John Smith" }],
+      ClientManager: [{ LookupId: 36, LookupValue: "Jane Doe", Email: "jane@example.com" }],
       Team: "DAFF",
-      Planner: "Client Person",
+      Planner: { Description: "Client Person", Url: "https://example.com" },
       CC: "CLT001",
-      Business: ["Hunt"],
+      Business: ["Hunt", "Partner"],
+      Partner: ["SNoW"],
     };
     const result = extractItemFields(item);
     expect(result.workType).toBe("Advisory");
     expect(result.status).toBe("Active");
     expect(result.comment).toBe("Test");
-    expect(result.casLead).toBe("John");
-    expect(result.csdLead).toBe("Jane");
+    expect(result.casLead).toBe("John Smith");
+    expect(result.csdLead).toBe("Jane Doe");
     expect(result.vat).toBe("DAFF");
     expect(result.clientContact).toBe("Client Person");
     expect(result.clientCode).toBe("CLT001");
-    expect(result.category).toBe("Hunt");
+    expect(result.category).toBe("Hunt; Partner");
+    expect(result.partner).toBe("SNoW");
   });
 
   it("falls back to alternative field names", () => {

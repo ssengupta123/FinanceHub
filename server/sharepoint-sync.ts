@@ -104,21 +104,48 @@ export function formatNumericField(raw: any, decimals: number): string | null {
   return raw != null && !Number.isNaN(num) ? String(num.toFixed(decimals)) : null;
 }
 
+function extractFieldText(val: any): string | null {
+  if (val == null) return null;
+  if (typeof val === "string") return val || null;
+  if (typeof val === "number") return String(val);
+  if (Array.isArray(val)) {
+    const parts = val.map((v) => {
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object") return v.LookupValue || v.Description || v.Email || v.Title || v.displayName || JSON.stringify(v);
+      return String(v);
+    }).filter(Boolean);
+    return parts.length > 0 ? parts.join("; ") : null;
+  }
+  if (typeof val === "object") {
+    return val.LookupValue || val.Description || val.Email || val.Title || val.displayName || null;
+  }
+  return String(val) || null;
+}
+
+function extractLookupId(item: SharePointListItem, baseName: string): string | null {
+  const lookupIdKey = `${baseName}LookupId`;
+  const lookupId = item[lookupIdKey];
+  const directVal = item[baseName];
+  if (directVal && typeof directVal !== "number") return extractFieldText(directVal);
+  if (lookupId) return String(lookupId);
+  return null;
+}
+
 export function extractItemFields(item: SharePointListItem): Record<string, any> {
   return {
-    workType: item["WorkType_x0028_FTorContract_x0029_"] || item.WorkType || item.Work_x0020_Type || item.OppWorkType || null,
-    status: item.Status0 || item.RAGStatus || item.OppStatus || null,
-    comment: item.ChimComment || item.Comment || item.Comments || item.OppComment || null,
-    casLead: item.BidLead0 || item.CAS_x0020_Lead || item.CASLead || null,
-    csdLead: cleanMultiValueField(item.ClientManager || item.CSD_x0020_Lead || item.CSDLead || null),
-    category: cleanMultiValueField(item.Business ? (Array.isArray(item.Business) ? item.Business.join("; ") : item.Business) : item.Category || item.OppCategory || null),
-    partner: cleanMultiValueField(item.Partner || item.OppPartner || null),
-    clientContact: item.Planner || item.Client_x0020_Contact || item.ClientContact || null,
-    clientCode: item.CC || item.Client_x0020_Code || item.ClientCode || null,
-    vat: cleanVat(item.Team || item.VAT || item.VATCategory || item.VAT_x0020_Category || null),
-    dueDate: parseSharePointDate(item.Due || item.DueDate || item.OppDueDate),
-    startDate: parseSharePointDate(item.StartDate || item.Start_x0020_Date || item.OppStartDate),
-    expiryDate: parseSharePointDate(item.ExpiryDate || item.Expiry_x0020_Date || item.OppExpiryDate),
+    workType: extractFieldText(item["WorkType_x0028_FTorContract_x0029_"] || item.WorkType || item.Work_x0020_Type || item.OppWorkType),
+    status: extractFieldText(item.Status0 || item.RAGStatus || item.OppStatus),
+    comment: extractFieldText(item.ChimComment || item.Comment || item.Comments || item.OppComment),
+    casLead: extractLookupId(item, "BidLead0") || extractFieldText(item.CAS_x0020_Lead || item.CASLead),
+    csdLead: extractFieldText(item.ClientManager || item.CSD_x0020_Lead || item.CSDLead),
+    category: extractFieldText(item.Business || item.Category || item.OppCategory),
+    partner: extractFieldText(item.Partner || item.OppPartner),
+    clientContact: extractFieldText(item.Planner || item.Client_x0020_Contact || item.ClientContact),
+    clientCode: extractFieldText(item.CC || item.Client_x0020_Code || item.ClientCode),
+    vat: cleanVat(extractFieldText(item.Team || item.VAT || item.VATCategory || item.VAT_x0020_Category)),
+    dueDate: parseSharePointDate(typeof item.Due === "string" ? item.Due : null),
+    startDate: parseSharePointDate(typeof item.StartDate === "string" ? item.StartDate : null),
+    expiryDate: parseSharePointDate(typeof item.ExpiryDate === "string" ? item.ExpiryDate : null),
   };
 }
 
@@ -129,10 +156,6 @@ export function transformSharePointItem(item: SharePointListItem): { record?: an
   const phaseRaw = item.Status || item.Phase || item.OppPhase || "";
   const classification = PHASE_MAP[phaseRaw];
   if (!classification) return {};
-
-  const isOpenOpp = item.ContentType === "Open Opps Content Type" || item.ContentType === "Panel Content Type";
-  const isFolder = item.FSObjType === "1" || item.ContentType === "Folder" || item.ItemType === "Folder";
-  if (!isOpenOpp && item.FSObjType !== undefined && !isFolder) return {};
 
   const sharepointId = item._sharepointItemId ? String(item._sharepointItemId) : null;
 
@@ -460,6 +483,9 @@ export async function syncSharePointOpenOpps(): Promise<{
 
   const { staged, errors } = stageSharePointItems(allItems);
   console.log(`[SharePoint] Staged ${staged.length} items with valid Phase from ${allItems.length} total (${errors.length} errors)`);
+  if (errors.length > 0) {
+    console.log(`[SharePoint] First 5 errors: ${errors.slice(0, 5).join(" | ")}`);
+  }
 
   let inserted = 0;
   let updated = 0;
