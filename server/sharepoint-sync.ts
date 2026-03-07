@@ -658,6 +658,32 @@ export async function syncSharePointInflightProjects(): Promise<{
         removed++;
       }
     }
+
+    const now = new Date();
+    const fyStartYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    const currentFy = String(fyStartYear).slice(2) + "-" + String(fyStartYear + 1).slice(2);
+    const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+    const fyMonthNums = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+
+    const allSyncedProjects = await trx("projects").whereNotNull("sharepoint_id").select("id");
+    for (const proj of allSyncedProjects) {
+      const existingMonthly = await trx("project_monthly").where({ project_id: proj.id, fy_year: currentFy }).select("month");
+      const existingMonthSet = new Set(existingMonthly.map((m: any) => m.month));
+
+      for (let i = 0; i < 12; i++) {
+        if (!existingMonthSet.has(fyMonthNums[i])) {
+          await trx("project_monthly").insert({
+            project_id: proj.id,
+            fy_year: currentFy,
+            month: fyMonthNums[i],
+            month_label: fyMonthLabels[i],
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+          });
+        }
+      }
+    }
   });
 
   const parts = [];
