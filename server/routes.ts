@@ -1630,88 +1630,93 @@ export async function registerRoutes(
   // ─── Data Sources ───
   app.get("/api/data-sources", requirePermission("data_sources", "view"), async (_req, res) => {
     let data = await storage.getDataSources();
-    if (data.length === 0) {
-      const defaultSources = [
-        {
-          name: "Open Opps (SharePoint)",
-          type: "SharePoint API",
-          connectionInfo: JSON.stringify({
-            description: "SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads",
-            endpoint: "https://{tenant}.sharepoint.com/sites/{site}/_api/web/lists/getbytitle('Open Opps')/items",
-            authMethod: "Azure AD OAuth2 (Client Credentials)",
-            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
-            sheetName: "query",
-            syncTarget: "pipeline_opportunities",
-            frequency: "Hourly",
-          }),
-          status: "configured",
-          recordsProcessed: 300,
-          syncFrequency: "hourly",
-        },
-        {
-          name: "iTimesheets",
-          type: "REST API",
-          connectionInfo: JSON.stringify({
-            description: "Employee timesheet entries — hours worked per project, leave, and internal operations",
-            endpoint: "https://api.itimesheets.com.au/v1/timesheets",
-            authMethod: "API Key",
-            requiredSecrets: ["ITIMESHEETS_API_KEY"],
-            syncTarget: "timesheets",
-            frequency: "Daily",
-          }),
-          status: "configured",
-          recordsProcessed: 0,
-          syncFrequency: "daily",
-        },
-        {
-          name: "Employment Hero",
-          type: "REST API",
-          connectionInfo: JSON.stringify({
-            description: "Employee records — staff details, cost bands, schedules, and contact information",
-            endpoint: "https://api.employmenthero.com/api/v1/organisations/{org_id}/employees",
-            authMethod: "OAuth2 Bearer Token",
-            requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
-            syncTarget: "employees",
-            frequency: "Daily",
-          }),
-          status: "configured",
-          recordsProcessed: 0,
-          syncFrequency: "daily",
-        },
-        {
-          name: "Inflight Projects (SharePoint)",
-          type: "SharePoint API",
-          connectionInfo: JSON.stringify({
-            description: "Inflight engagement projects — project code, name, VAT, leads, contract value from RGSales",
-            endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/2. Inflight Engagements:/children",
-            authMethod: "Azure AD OAuth2 (Client Credentials)",
-            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
-            syncTarget: "projects",
-            frequency: "Daily",
-          }),
-          status: "configured",
-          recordsProcessed: 0,
-          syncFrequency: "daily",
-        },
-        {
-          name: "Job Plans (SharePoint)",
-          type: "SharePoint API",
-          connectionInfo: JSON.stringify({
-            description: "Resource allocation plans from Excel files — employee/month/days allocations from RGDelivery",
-            endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/00.Mgmt/Job Plans/01.Active plans:/children",
-            authMethod: "Azure AD OAuth2 (Client Credentials)",
-            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
-            syncTarget: "resource_plans",
-            frequency: "Daily",
-          }),
-          status: "configured",
-          recordsProcessed: 0,
-          syncFrequency: "daily",
-        },
-      ];
-      for (const src of defaultSources) {
+    const defaultSources = [
+      {
+        name: "Open Opps (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "SharePoint pipeline export — opportunities with value, margin, work type, RAG status, leads",
+          endpoint: "https://{tenant}.sharepoint.com/sites/{site}/_api/web/lists/getbytitle('Open Opps')/items",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          sheetName: "query",
+          syncTarget: "pipeline_opportunities",
+          frequency: "Hourly",
+        }),
+        status: "configured",
+        recordsProcessed: 300,
+        syncFrequency: "hourly",
+      },
+      {
+        name: "iTimesheets",
+        type: "REST API",
+        connectionInfo: JSON.stringify({
+          description: "Employee timesheet entries — hours worked per project, leave, and internal operations",
+          endpoint: "https://api.itimesheets.com.au/v1/timesheets",
+          authMethod: "API Key",
+          requiredSecrets: ["ITIMESHEETS_API_KEY"],
+          syncTarget: "timesheets",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Employment Hero",
+        type: "REST API",
+        connectionInfo: JSON.stringify({
+          description: "Employee records — staff details, cost bands, schedules, and contact information",
+          endpoint: "https://api.employmenthero.com/api/v1/organisations/{org_id}/employees",
+          authMethod: "OAuth2 Bearer Token",
+          requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
+          syncTarget: "employees",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Inflight Projects (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "Inflight engagement projects — project code, name, VAT, leads, contract value from RGSales",
+          endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/2. Inflight Engagements:/children",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          syncTarget: "projects",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Job Plans (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "Resource allocation plans from Excel files — employee/month/days allocations from RGDelivery",
+          endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/00.Mgmt/Job Plans/01.Active plans:/children",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          syncTarget: "resource_plans",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+    ];
+    const existingNames = new Set(data.map((d: any) => d.name));
+    let added = false;
+    for (const src of defaultSources) {
+      if (!existingNames.has(src.name)) {
         await storage.createDataSource(src as any);
+        added = true;
       }
+    }
+    if (added) {
       data = await storage.getDataSources();
     }
     res.json(data);
