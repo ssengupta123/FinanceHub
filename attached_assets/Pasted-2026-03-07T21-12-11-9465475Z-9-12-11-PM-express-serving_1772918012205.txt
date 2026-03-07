@@ -1,0 +1,21 @@
+2026-03-07T21:12:11.9465475Z 9:12:11 PM [express] serving on port 8080
+2026-03-07T21:12:11.9516596Z [Scheduler] SharePoint hourly sync scheduled (every 60 min)
+2026-03-07T21:12:44.6775462Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:12:44.6792182Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-07T21:12:44.8242226Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-07T21:12:44.824499Z [SharePoint] Fetching folder children: General/2. Inflight Engagements (encoded: General/2.%20Inflight%20Engagements)
+2026-03-07T21:12:44.9776013Z [SharePoint] Folder API error (HTTP 404): {"error":{"code":"itemNotFound","message":"The resource could not be found.","innerError":{"date":"2026-03-07T21:12:44","request-id":"8ff2b2a8-e6b7-496a-a9aa-bf0cd066cbd8","client-request-id":"8ff2b2a8-e6b7-496a-a9aa-bf0cd066cbd8"}}}
+2026-03-07T21:12:44.9775933Z [SharePoint] Inflight: folder "General/2. Inflight Engagements" not found, trying next...
+2026-03-07T21:12:44.9776404Z [SharePoint] Fetching folder children: General/2.Inflight Engagements (encoded: General/2.Inflight%20Engagements)
+2026-03-07T21:12:45.2784016Z [SharePoint] Retrieved 33 folder children
+2026-03-07T21:12:45.2785129Z [SharePoint] Inflight: Retrieved 33 items from General/2.Inflight Engagements
+2026-03-07T21:12:45.2800839Z [SharePoint] Inflight: Staged 11 projects (0 errors)
+2026-03-07T21:12:45.411308Z [SharePoint] Inflight sync complete: 10 updated, 1 unchanged
+2026-03-07T21:12:45.4338453Z 9:12:45 PM [express] POST /api/data-sources/34/sync 200 in 1025ms
+2026-03-07T21:12:45.4921572Z 9:12:45 PM [express] GET /api/data-sources 200 in 24ms
+2026-03-07T21:13:03.7448245Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:13:03.7452749Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGDelivery
+2026-03-07T21:13:03.8656061Z [SharePoint] Found site ID: reasongroup.sharepoint.com,82c7a907-31b2-40fc-b14c-77723c2cde5b,b85f4c7b-5480-4e2c-bd2d-78a3c1c92a57
+2026-03-07T21:13:04.0682117Z [SharePoint] Job Plans: Found 30 Excel files in General/00.Mgmt/Job Plans/01.Active plans
+2026-03-07T21:13:04.0988228Z 9:13:04 PM [express] POST /api/data-sources/35/sync 500 in 448ms
+2026-03-07T21:13:04.1420502Z 9:13:04 PM [express] GET /api/data-sources 200 in 19ms
