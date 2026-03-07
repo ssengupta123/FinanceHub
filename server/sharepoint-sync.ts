@@ -552,17 +552,24 @@ export async function syncSharePointInflightProjects(): Promise<{
   const staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[] = [];
   const errors: string[] = [];
 
+  const skippedNames: string[] = [];
+  const noSpId: string[] = [];
+
   for (const item of allItems) {
     const folderName = item.Title || item.FileLeafRef || "";
     if (!folderName) continue;
 
     const parsed = parseProjectCode(folderName);
     if (!parsed) {
+      skippedNames.push(folderName);
       continue;
     }
 
     const spId = item._sharepointItemId ? String(item._sharepointItemId) : null;
-    if (!spId) continue;
+    if (!spId) {
+      noSpId.push(folderName);
+      continue;
+    }
 
     try {
       const fields = extractItemFields(item);
@@ -588,7 +595,13 @@ export async function syncSharePointInflightProjects(): Promise<{
     }
   }
 
-  console.log(`[SharePoint] Inflight: Staged ${staged.length} projects (${errors.length} errors)`);
+  console.log(`[SharePoint] Inflight: Staged ${staged.length} projects (${errors.length} errors, ${skippedNames.length} skipped by name parse, ${noSpId.length} no SP id)`);
+  if (skippedNames.length > 0) {
+    console.log(`[SharePoint] Inflight skipped names: ${skippedNames.join(" | ")}`);
+  }
+  if (noSpId.length > 0) {
+    console.log(`[SharePoint] Inflight no SP id: ${noSpId.join(" | ")}`);
+  }
   if (errors.length > 0) {
     console.log(`[SharePoint] Inflight first 5 errors: ${errors.slice(0, 5).join(" | ")}`);
   }
