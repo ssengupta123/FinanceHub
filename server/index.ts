@@ -33,8 +33,8 @@ if (isProduction) {
 
 const sessionStore = new ConnectSessionKnexStore({
   knex: db as any,
-  createtable: true,
-  tablename: "sessions",
+  createTable: true,
+  tableName: "sessions",
 });
 
 app.use(

@@ -1043,6 +1043,7 @@ export class DatabaseStorage implements IStorage {
     vatName: string;
     targets: VatTarget[];
     actuals: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
+    forecast: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[];
   }[]> {
     const targets = await this.getVatTargetsByFy(fyYear);
     const quarterFyMonths: Record<string, number[]> = {

@@ -242,13 +242,13 @@ function buildEmpAllocationsForEmployee(
   const { projectWeekHours, projectLastSeen } = buildProjectTimeMaps(empRecentTimesheets, activeProjects);
 
   const allocations: EmpAllocation[] = [];
-  for (const [projId, weekMap] of projectWeekHours) {
+  for (const [projId, weekMap] of Array.from(projectWeekHours)) {
     const proj = activeProjects.find(p => p.id === projId);
     if (!proj) continue;
     const lastSeen = projectLastSeen.get(projId);
     if (!lastSeen || lastSeen < twoWeeksAgo) continue;
     const weekHours = Array.from(weekMap.values());
-    const avgPerWeek = weekHours.length > 0 ? weekHours.reduce((s, h) => s + h, 0) / weekHours.length : 0;
+    const avgPerWeek = weekHours.length > 0 ? weekHours.reduce((s: number, h: number) => s + h, 0) / weekHours.length : 0;
     if (avgPerWeek < 0.5) continue;
 
     allocations.push({
@@ -907,7 +907,7 @@ export default function UtilizationDashboard() {
             <SelectContent>
               <SelectItem value="all">All Teams</SelectItem>
               {availableTeams.map(t => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
+                <SelectItem key={t} value={t || "unknown"}>{t}</SelectItem>
               ))}
             </SelectContent>
           </Select>

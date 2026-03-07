@@ -2702,7 +2702,7 @@ export async function registerRoutes(
         projectTotals.set(row.project_id, pt);
       }
 
-      for (const [projectId, totals] of projectTotals) {
+      for (const [projectId, totals] of Array.from(projectTotals)) {
         const project = await db("projects").where("id", projectId).first();
         if (!project) continue;
 
@@ -2954,7 +2954,7 @@ Rules:
     res.json(data);
   });
   app.get("/api/vat-reports/vat/:vatName", requirePermission("vat_reports", "view"), async (req, res) => {
-    const data = await storage.getVatReportsByVat(req.params.vatName);
+    const data = await storage.getVatReportsByVat(req.params.vatName as string);
     res.json(data);
   });
   app.get("/api/vat-reports/:id", requirePermission("vat_reports", "view"), async (req, res) => {
@@ -3651,7 +3651,7 @@ Rules:
   app.get("/api/vat-targets/:vatName", requireAuth, async (req, res) => {
     const fyYear = (req.query.fy as string) || "";
     if (!fyYear) return res.status(400).json({ message: "fy query parameter required" });
-    const data = await storage.getVatTargets(req.params.vatName, fyYear);
+    const data = await storage.getVatTargets(req.params.vatName as string, fyYear);
     res.json(data);
   });
 

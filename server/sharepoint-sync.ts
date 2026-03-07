@@ -450,7 +450,7 @@ export async function syncSharePointOpenOpps(): Promise<{
       }
     }
 
-    for (const [spId, row] of existingBySpId) {
+    for (const [spId, row] of Array.from(existingBySpId)) {
       if (!incomingSpIds.has(spId)) {
         await trx("pipeline_opportunities").where("id", row.id).del();
         removed++;
@@ -673,7 +673,7 @@ export async function syncSharePointInflightProjects(): Promise<{
       }
     }
 
-    for (const [spId, row] of existingBySpId) {
+    for (const [spId, row] of Array.from(existingBySpId)) {
       if (!incomingSpIds.has(spId)) {
         await trx("projects").where("id", row.id).update({ status: "completed", sharepoint_id: null });
         removed++;
@@ -924,7 +924,7 @@ export async function syncSharePointJobPlans(): Promise<{
     const reversed = n.split(/,\s*/).reverse().join(" ").trim();
     if (employeeByName.has(reversed)) return employeeByName.get(reversed);
 
-    for (const [key, emp] of employeeByName) {
+    for (const [key, emp] of Array.from(employeeByName)) {
       if (key.includes(n) || n.includes(key)) return emp;
     }
     return null;
