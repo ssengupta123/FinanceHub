@@ -2588,8 +2588,9 @@ export async function registerRoutes(
           const payrollTax = String(r[3] || "").toLowerCase() === "yes";
           const baseCost = Number(r[4] || 0);
           const activeStatus = String(r[5] || "active").trim().toLowerCase();
-          const grossCost = Number(r[6] || 0);
           const jid = r[7] ? String(r[7]).trim() : null;
+          const scheduleStart = r[8] ? parseExcelDate(r[8]) : null;
+          const scheduleEnd = r[9] ? parseExcelDate(r[9]) : null;
           const team = r[10] ? String(r[10]).trim() : null;
           const location = r[12] ? String(r[12]).trim() : null;
 
@@ -2602,9 +2603,10 @@ export async function registerRoutes(
               staff_type: staffType,
               payroll_tax: payrollTax,
               base_cost: baseCost.toFixed(2),
-              gross_cost_rate: grossCost.toFixed(2),
               status,
               jid,
+              schedule_start: scheduleStart,
+              schedule_end: scheduleEnd,
               team,
               location,
             });
@@ -2621,10 +2623,10 @@ export async function registerRoutes(
               costCenter: null, securityClearance: null,
               payrollTax, payrollTaxRate: null,
               baseCost: baseCost.toFixed(2),
-              grossCost: grossCost.toFixed(2),
+              grossCost: "0",
               baseSalary: null,
               status, startDate: null, endDate: null,
-              scheduleStart: null, scheduleEnd: null,
+              scheduleStart, scheduleEnd,
               resourceGroup: null, team, jid,
               onboardingStatus: "completed",
             });
@@ -3859,6 +3861,17 @@ export function parseCSVLine(line: string): string[] {
   }
   result.push(current);
   return result;
+}
+
+function parseExcelDate(val: any): string | null {
+  if (val == null || val === "") return null;
+  if (typeof val === "number" && val > 40000 && val < 60000) {
+    const d = new Date((val - 25569) * 86400 * 1000);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  return parseStringDate(s);
 }
 
 export function parseStringDate(s: string): string | null {
