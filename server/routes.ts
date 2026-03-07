@@ -2448,6 +2448,288 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Timesheet CSV Import ───
+  app.post("/api/import/timesheets-csv", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const csvText = req.file.buffer.toString("utf-8");
+      const lines = csvText.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length < 2) return res.status(400).json({ message: "CSV file is empty" });
+
+      const allEmployees = await storage.getEmployees();
+      const { empMap, empCodes } = buildEmployeeLookupMaps(allEmployees);
+      const empCounter = { value: Date.now() % 100000 };
+
+      const allProjects = await storage.getProjects();
+      const { projMap, projCodes } = buildProjectLookupMaps(allProjects);
+      const projCounter = { value: Date.now() % 100000 };
+
+      let imported = 0;
+      const errors: string[] = [];
+      const batchSize = 500;
+      let batch: any[] = [];
+
+      const clearMode = req.body.clearExisting === "true";
+      if (clearMode) {
+        await db("timesheets").where("source", "itimesheets").del();
+      }
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]);
+        if (cols.length < 12) continue;
+        try {
+          const firstName = cols[10]?.trim();
+          const lastName = cols[11]?.trim();
+          if (!firstName && !lastName) continue;
+
+          const employeeId = await findOrCreateEmployeeForImport(
+            empMap, empCodes, empCounter, firstName, lastName,
+            cols[12]?.trim() || null
+          );
+
+          const dateStr = parseStringDate(cols[0]?.trim());
+          if (!dateStr) continue;
+
+          const projDesc = cols[9]?.trim();
+          if (!projDesc) continue;
+          let projectId = projMap.get(projDesc.toLowerCase()) ?? null;
+          if (!projectId) {
+            projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projDesc);
+          }
+
+          const hours = Number.parseFloat(cols[1] || "0") || 0;
+          const saleVal = Number.parseFloat(cols[2] || "0") || 0;
+          const costVal = Number.parseFloat(cols[3] || "0") || 0;
+          const taskDesc = cols[5]?.trim() || null;
+
+          const d = new Date(dateStr);
+          const calMonth = d.getMonth();
+          const calYear = d.getFullYear();
+          const fyStartYear = calMonth >= 6 ? calYear : calYear - 1;
+          const fyYear = `${String(fyStartYear).slice(2)}-${String(fyStartYear + 1).slice(2)}`;
+          const fyMonth = calMonth >= 6 ? calMonth - 5 : calMonth + 7;
+
+          const dayOfWeek = d.getDay();
+          const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+          const weekEnd = new Date(d);
+          weekEnd.setDate(weekEnd.getDate() + daysToSunday);
+          const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+          batch.push({
+            employee_id: employeeId,
+            project_id: projectId,
+            week_ending: weekEndStr,
+            hours_worked: hours.toFixed(2),
+            sale_value: saleVal.toFixed(2),
+            cost_value: costVal.toFixed(2),
+            days_worked: (hours / 8).toFixed(1),
+            billable: saleVal > 0,
+            activity_type: taskDesc?.substring(0, 100) || null,
+            source: "itimesheets",
+            status: "submitted",
+            fy_month: fyMonth,
+            fy_year: fyYear,
+          });
+
+          if (batch.length >= batchSize) {
+            await db("timesheets").insert(batch);
+            imported += batch.length;
+            batch = [];
+          }
+        } catch (err: any) {
+          if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
+        }
+      }
+      if (batch.length > 0) {
+        await db("timesheets").insert(batch);
+        imported += batch.length;
+      }
+
+      res.json({ imported, errors, total: lines.length - 1 });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "CSV import failed" });
+    }
+  });
+
+  // ─── Staff SOT Import (Upsert) ───
+  app.post("/api/import/staff-sot", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const ws = wb.Sheets["Staff SOT"] || wb.Sheets[wb.SheetNames[0]];
+      if (!ws) return res.status(400).json({ message: "No Staff SOT sheet found" });
+
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      let created = 0;
+      let updated = 0;
+      const errors: string[] = [];
+
+      const existingEmployees = await storage.getEmployees();
+      const empByName = new Map<string, any>();
+      const existingCodes = new Set<string>();
+      for (const e of existingEmployees) {
+        empByName.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e);
+        existingCodes.add(e.employeeCode);
+      }
+      let codeCounter = Date.now() % 100000;
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r?.[0] || String(r[0]).toLowerCase() === "name") continue;
+        try {
+          const fullName = String(r[0]).trim();
+          const parts = fullName.split(/\s+/);
+          if (parts.length < 2) continue;
+          const firstName = parts[0];
+          const lastName = parts.slice(1).join(" ");
+
+          const costBandLevel = r[1] ? String(r[1]).trim() : null;
+          const staffType = r[2] ? String(r[2]).trim() : null;
+          const payrollTax = String(r[3] || "").toLowerCase() === "yes";
+          const baseCost = Number(r[4] || 0);
+          const activeStatus = String(r[5] || "active").trim().toLowerCase();
+          const grossCost = Number(r[6] || 0);
+          const jid = r[7] ? String(r[7]).trim() : null;
+          const team = r[10] ? String(r[10]).trim() : null;
+          const location = r[12] ? String(r[12]).trim() : null;
+
+          const status = activeStatus === "inactive" ? "inactive" : "active";
+
+          const existing = empByName.get(fullName.toLowerCase());
+          if (existing) {
+            await db("employees").where("id", existing.id).update({
+              cost_band_level: costBandLevel,
+              staff_type: staffType,
+              payroll_tax: payrollTax,
+              base_cost: baseCost.toFixed(2),
+              gross_cost_rate: grossCost.toFixed(2),
+              status,
+              jid,
+              team,
+              location,
+            });
+            updated++;
+          } else {
+            let empCode = jid || `E${codeCounter++}`;
+            while (existingCodes.has(empCode)) empCode = `E${codeCounter++}`;
+            existingCodes.add(empCode);
+
+            const newEmp = await storage.createEmployee({
+              employeeCode: empCode, firstName, lastName,
+              email: null, role: costBandLevel || "Staff",
+              costBandLevel, staffType, grade: null, location,
+              costCenter: null, securityClearance: null,
+              payrollTax, payrollTaxRate: null,
+              baseCost: baseCost.toFixed(2),
+              grossCost: grossCost.toFixed(2),
+              baseSalary: null,
+              status, startDate: null, endDate: null,
+              scheduleStart: null, scheduleEnd: null,
+              resourceGroup: null, team, jid,
+              onboardingStatus: "completed",
+            });
+            empByName.set(fullName.toLowerCase(), newEmp);
+            created++;
+          }
+        } catch (err: any) {
+          if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
+        }
+      }
+      res.json({ created, updated, errors });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Staff SOT import failed" });
+    }
+  });
+
+  // ─── Derive Project Financials from Timesheets ───
+  app.post("/api/derive/project-financials", requirePermission("projects", "create"), async (req, res) => {
+    try {
+      const timesheetAgg = await db("timesheets")
+        .select("project_id", "fy_year", "fy_month")
+        .sum("sale_value as total_revenue")
+        .sum("cost_value as total_cost")
+        .sum("hours_worked as total_hours")
+        .groupBy("project_id", "fy_year", "fy_month");
+
+      const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+      const fyMonthNums = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+
+      let monthlyUpdated = 0;
+      let monthlyCreated = 0;
+      let projectsUpdated = 0;
+
+      const projectTotals = new Map<number, { revenue: number; cost: number; hours: number }>();
+
+      for (const row of timesheetAgg) {
+        if (!row.fy_year || !row.fy_month || !row.project_id) continue;
+
+        const revenue = Number(row.total_revenue || 0);
+        const cost = Number(row.total_cost || 0);
+        const profit = revenue - cost;
+        const calMonth = fyMonthNums[row.fy_month - 1];
+        const monthLabel = fyMonthLabels[row.fy_month - 1];
+
+        const existing = await db("project_monthly")
+          .where({ project_id: row.project_id, fy_year: row.fy_year, month: calMonth })
+          .first();
+
+        if (existing) {
+          await db("project_monthly").where("id", existing.id).update({
+            revenue: revenue.toFixed(2),
+            cost: cost.toFixed(2),
+            profit: profit.toFixed(2),
+          });
+          monthlyUpdated++;
+        } else {
+          await db("project_monthly").insert({
+            project_id: row.project_id,
+            fy_year: row.fy_year,
+            month: calMonth,
+            month_label: monthLabel,
+            revenue: revenue.toFixed(2),
+            cost: cost.toFixed(2),
+            profit: profit.toFixed(2),
+          });
+          monthlyCreated++;
+        }
+
+        const pt = projectTotals.get(row.project_id) || { revenue: 0, cost: 0, hours: 0 };
+        pt.revenue += revenue;
+        pt.cost += cost;
+        pt.hours += Number(row.total_hours || 0);
+        projectTotals.set(row.project_id, pt);
+      }
+
+      for (const [projectId, totals] of projectTotals) {
+        const project = await db("projects").where("id", projectId).first();
+        if (!project) continue;
+
+        const actualAmount = totals.revenue;
+        const workOrderAmount = Number(project.work_order_amount || 0);
+        const balanceAmount = workOrderAmount - actualAmount;
+        const grossProfit = totals.revenue - totals.cost;
+        const gmPercent = totals.revenue > 0 ? grossProfit / totals.revenue : 0;
+
+        await db("projects").where("id", projectId).update({
+          actual_amount: actualAmount.toFixed(2),
+          balance_amount: balanceAmount.toFixed(2),
+          to_date_gross_profit: grossProfit.toFixed(2),
+          to_date_gm_percent: gmPercent.toFixed(4),
+        });
+        projectsUpdated++;
+      }
+
+      res.json({
+        monthlyCreated,
+        monthlyUpdated,
+        projectsUpdated,
+        totalTimesheetGroups: timesheetAgg.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Derivation failed" });
+    }
+  });
+
   // ─── AI Insights ───
   let openai: OpenAI | null = null;
   try {
@@ -3557,6 +3839,26 @@ export function parseExcelNumericDate(val: number): string | null {
 
 export function isValidYear(yr: number): boolean {
   return yr >= 1900 && yr <= 2100;
+}
+
+export function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { current += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { result.push(current); current = ""; }
+      else { current += ch; }
+    }
+  }
+  result.push(current);
+  return result;
 }
 
 export function parseStringDate(s: string): string | null {

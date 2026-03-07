@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Database, RefreshCw, Globe, Clock, Shield, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
+import { Database, RefreshCw, Globe, Clock, Shield, AlertTriangle, CheckCircle2, Settings, Upload, FileSpreadsheet, Calculator } from "lucide-react";
 import type { DataSource } from "@shared/schema";
 
 function statusVariant(status: string | null): "default" | "secondary" | "outline" | "destructive" {
@@ -56,6 +56,9 @@ export default function DataSources() {
   const { toast } = useToast();
   const { can } = useAuth();
   const { data: dataSources, isLoading } = useQuery<DataSource[]>({ queryKey: ["/api/data-sources"] });
+  const timesheetRef = useRef<HTMLInputElement>(null);
+  const staffRef = useRef<HTMLInputElement>(null);
+  const [importResult, setImportResult] = useState<string | null>(null);
 
   const syncMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -81,6 +84,59 @@ export default function DataSources() {
     onError: (error: Error) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const timesheetImportMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("clearExisting", "true");
+      const resp = await fetch("/api/import/timesheets-csv", { method: "POST", body: formData, credentials: "include" });
+      if (!resp.ok) throw new Error((await resp.json()).message || "Import failed");
+      return resp.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
+      setImportResult(`Timesheets: ${data.imported} records imported${data.errors?.length > 0 ? `, ${data.errors.length} errors` : ""}`);
+      toast({ title: "Timesheet import complete", description: `${data.imported} records imported` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const staffImportMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const resp = await fetch("/api/import/staff-sot", { method: "POST", body: formData, credentials: "include" });
+      if (!resp.ok) throw new Error((await resp.json()).message || "Import failed");
+      return resp.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      setImportResult(`Staff SOT: ${data.created} created, ${data.updated} updated${data.errors?.length > 0 ? `, ${data.errors.length} errors` : ""}`);
+      toast({ title: "Staff import complete", description: `${data.created} created, ${data.updated} updated` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deriveMutation = useMutation({
+    mutationFn: async () => {
+      const resp = await apiRequest("POST", "/api/derive/project-financials", {});
+      return resp.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/project-monthly"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setImportResult(`Financials derived: ${data.monthlyCreated} monthly records created, ${data.monthlyUpdated} updated, ${data.projectsUpdated} projects updated`);
+      toast({ title: "Financials derived", description: `${data.projectsUpdated} projects updated from timesheet data` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Derivation failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -160,6 +216,40 @@ export default function DataSources() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {can("data_sources", "sync") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Data Imports</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-3 flex-wrap">
+              <input type="file" ref={staffRef} accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) staffImportMutation.mutate(e.target.files[0]); e.target.value = ""; }} />
+              <Button variant="outline" size="sm" disabled={staffImportMutation.isPending} onClick={() => staffRef.current?.click()} data-testid="button-import-staff">
+                <FileSpreadsheet className="mr-1 h-4 w-4" />
+                {staffImportMutation.isPending ? "Importing..." : "Import Staff (SOT)"}
+              </Button>
+              <input type="file" ref={timesheetRef} accept=".csv" className="hidden" onChange={(e) => { if (e.target.files?.[0]) timesheetImportMutation.mutate(e.target.files[0]); e.target.value = ""; }} />
+              <Button variant="outline" size="sm" disabled={timesheetImportMutation.isPending} onClick={() => timesheetRef.current?.click()} data-testid="button-import-timesheets">
+                <Upload className="mr-1 h-4 w-4" />
+                {timesheetImportMutation.isPending ? "Importing..." : "Import Timesheets (CSV)"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={deriveMutation.isPending} onClick={() => deriveMutation.mutate()} data-testid="button-derive-financials">
+                <Calculator className="mr-1 h-4 w-4" />
+                {deriveMutation.isPending ? "Calculating..." : "Recalculate Financials"}
+              </Button>
+            </div>
+            {importResult && (
+              <div className="text-sm p-3 bg-muted/40 rounded-md" data-testid="text-import-result">
+                {importResult}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Import order: 1) Staff SOT (employee master) → 2) Timesheets (CSV from iTimesheets) → 3) Recalculate Financials
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {(() => {

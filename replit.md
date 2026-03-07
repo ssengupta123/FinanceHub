@@ -25,6 +25,10 @@ The application features a React + Vite frontend with Tailwind CSS and shadcn/ui
 - **Feature Request System:** Employee-facing form for enhancement requests with admin review workflow, GitHub branch creation integration, and status tracking.
 - **Partner View & Certifications:** Displays pipeline opportunities involving partners and certified staff. Certification matching uses keyword mapping.
 - **Seed Data:** A script (`scripts/seed-data.ts`) populates the database with demo data for various entities.
+- **Live Data Import Pipeline:** Three-step import flow replaces KPI Excel: 1) Staff SOT Excel → employees, 2) iTimesheets CSV → timesheets, 3) Derivation engine → project_monthly + project summary fields. UI accessible from Data Sources page.
+  - `POST /api/import/staff-sot` — uploads Staff SOT Excel, upserts employees
+  - `POST /api/import/timesheets-csv` — uploads iTimesheets CSV, batch imports timesheets with employee/project auto-creation
+  - `POST /api/derive/project-financials` — aggregates timesheets → project_monthly (revenue/cost/profit by month) and updates project actual_amount, balance_amount, to_date_gm_percent
 
 ## External Dependencies
 - **PostgreSQL:** Development database.
