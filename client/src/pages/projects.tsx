@@ -249,7 +249,7 @@ export default function ProjectsList() {
   }, [projectMonthly]);
 
   const fyProjectIds = useMemo(() => {
-    if (!projectMonthly) return new Set<number>();
+    if (selectedFY === "all" || !projectMonthly) return null;
     return new Set(
       projectMonthly.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
     );
@@ -258,7 +258,7 @@ export default function ProjectsList() {
   const filteredProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => {
-      if (!fyProjectIds.has(p.id)) return false;
+      if (fyProjectIds && !fyProjectIds.has(p.id)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!p.name.toLowerCase().includes(q) && !p.projectCode.toLowerCase().includes(q)) return false;
@@ -359,7 +359,7 @@ export default function ProjectsList() {
           <p className="text-sm text-muted-foreground">Project portfolio with financial tracking</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} includeAll />
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           {can("projects", "create") && (
           <DialogTrigger asChild>
