@@ -1,0 +1,31 @@
+2026-03-07T21:26:59.4065541Z 9:26:59 PM [express] serving on port 8080
+2026-03-07T21:26:59.4066947Z [Scheduler] SharePoint hourly sync scheduled (every 60 min)
+2026-03-07T21:27:12.2636301Z 9:27:12 PM [express] GET /api/auth/me 304 in 28ms
+2026-03-07T21:27:12.3917397Z 9:27:12 PM [express] GET /api/project-monthly 304 in 76ms
+2026-03-07T21:27:12.4097581Z 9:27:12 PM [express] GET /api/projects 304 in 82ms
+2026-03-07T21:27:12.4668937Z 9:27:12 PM [express] GET /api/financial-targets/25-26 304 in 38ms
+2026-03-07T21:27:12.4765783Z 9:27:12 PM [express] GET /api/permissions 304 in 37ms
+2026-03-07T21:27:18.8535015Z 9:27:18 PM [express] GET /api/data-sources 304 in 24ms
+2026-03-07T21:27:22.7894944Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:27:22.791439Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-07T21:27:22.909635Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-07T21:27:22.9098785Z [SharePoint] Fetching folder children: General/2.Inflight Engagements (encoded: General/2.Inflight%20Engagements)
+2026-03-07T21:27:23.2112136Z [SharePoint] Retrieved 33 folder children
+2026-03-07T21:27:23.2112741Z [SharePoint] Inflight: Retrieved 33 items from General/2.Inflight Engagements
+2026-03-07T21:27:23.2200881Z [SharePoint] Inflight: Staged 11 projects (0 errors)
+2026-03-07T21:27:23.3201546Z [SharePoint] Inflight sync complete: 10 updated, 1 unchanged
+2026-03-07T21:27:23.3362693Z 9:27:23 PM [express] POST /api/data-sources/34/sync 200 in 849ms
+2026-03-07T21:27:23.3789817Z 9:27:23 PM [express] GET /api/data-sources 200 in 17ms
+2026-03-07T21:27:31.3942768Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:27:31.3945163Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGDelivery
+2026-03-07T21:27:31.5220785Z [SharePoint] Found site ID: reasongroup.sharepoint.com,82c7a907-31b2-40fc-b14c-77723c2cde5b,b85f4c7b-5480-4e2c-bd2d-78a3c1c92a57
+2026-03-07T21:27:31.7257183Z [SharePoint] Job Plans: Found 30 Excel files in General/00.Mgmt/Job Plans/01.Active plans
+2026-03-07T21:27:31.733286Z [SharePoint] Job Plans: 63 projects in DB for matching
+2026-03-07T21:27:31.7431668Z [SharePoint] Job Plans: 102 employees in DB for matching
+2026-03-07T21:27:31.7437097Z [SharePoint] Job Plans: downloading first file "AGD001-Plan.xlsx"...
+2026-03-07T21:27:31.9784154Z [SharePoint] Job Plans: downloaded 775828 bytes, parsing...
+2026-03-07T21:27:34.252422Z [SharePoint] Job Plans: parsed "AGD001-Plan.xlsx" -> code=AGD001, 1 rows
+2026-03-07T21:28:03.2491629Z [SharePoint] Job Plans sync complete: 19 files processed, 11 errors
+2026-03-07T21:28:03.2492215Z [SharePoint] Job Plans first 5 errors: "DAF079-02-Plan.xlsx": project DAF079 not found in DB | "DAF079-03-Plan.xlsx": project DAF079 not found in DB | "DHA002-01 Plan.xlsx": project DHA002 not found in DB | "SAU044-04-Plan (Nadh).xlsx": project SAU044 not found in DB | "SAU045-03-Plan (Sidd).xlsx": project SAU045 not found in DB
+2026-03-07T21:28:03.2698088Z 9:28:03 PM [express] POST /api/data-sources/35/sync 200 in 32016ms
+2026-03-07T21:28:03.3103486Z 9:28:03 PM [express] GET /api/data-sources 200 in 17

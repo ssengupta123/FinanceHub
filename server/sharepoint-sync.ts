@@ -851,14 +851,12 @@ export async function syncSharePointJobPlans(): Promise<{
   let filesProcessed = 0;
 
   const allProjects = await db("projects").select("id", "project_code", "name");
-  console.log(`[SharePoint] Job Plans: ${allProjects.length} projects in DB for matching`);
   const projectByCode = new Map<string, any>();
   for (const p of allProjects) {
     if (p.project_code) projectByCode.set(p.project_code.toUpperCase(), p);
   }
 
   const allEmployees = await db("employees").select("id", "first_name", "last_name");
-  console.log(`[SharePoint] Job Plans: ${allEmployees.length} employees in DB for matching`);
   const employeeByName = new Map<string, any>();
   for (const e of allEmployees) {
     const fullName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
@@ -890,11 +888,8 @@ export async function syncSharePointJobPlans(): Promise<{
   for (let fi = 0; fi < files.length; fi++) {
     const file = files[fi];
     try {
-      if (fi === 0) console.log(`[SharePoint] Job Plans: downloading first file "${file.name}"...`);
       const buffer = await downloadExcelFile(file.downloadUrl, token);
-      if (fi === 0) console.log(`[SharePoint] Job Plans: downloaded ${buffer.length} bytes, parsing...`);
       const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
-      if (fi === 0) console.log(`[SharePoint] Job Plans: parsed "${file.name}" -> code=${projectCode}, ${rows.length} rows`);
 
       const project = projectByCode.get(projectCode.toUpperCase());
       if (!project) {
