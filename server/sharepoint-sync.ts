@@ -255,10 +255,18 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
 }
 
 async function listFolderNames(token: SharePointToken, siteId: string, folderPath: string): Promise<string[]> {
-  const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
-  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$select=name,folder&$top=999`;
+  let url: string;
+  if (!folderPath) {
+    url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$select=name,folder&$top=999`;
+  } else {
+    const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
+    url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$select=name,folder&$top=999`;
+  }
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token.access_token}` } });
-  if (!resp.ok) return [];
+  if (!resp.ok) {
+    console.log(`[SharePoint] listFolderNames("${folderPath}") failed: HTTP ${resp.status}`);
+    return [];
+  }
   const data: any = await resp.json();
   return (data.value || []).filter((item: any) => item.folder).map((item: any) => item.name as string);
 }
@@ -521,18 +529,21 @@ export async function syncSharePointInflightProjects(): Promise<{
   }
 
   if (!usedPath) {
-    try {
-      const generalChildren = await listFolderNames(token, siteId, "General");
-      const inflightFolder = generalChildren.find((name) => /inflight/i.test(name));
-      if (inflightFolder) {
-        console.log(`[SharePoint] Inflight: discovered folder "${inflightFolder}" in General/`);
-        allItems = await fetchFolderChildren(token, siteId, `General/${inflightFolder}`);
-        usedPath = `General/${inflightFolder}`;
-      } else {
-        throw new Error(`Inflight folder not found. General/ contains: ${generalChildren.join(", ")}`);
+    console.log(`[SharePoint] Inflight: all candidates failed, discovering folders in General/...`);
+    const generalChildren = await listFolderNames(token, siteId, "General");
+    console.log(`[SharePoint] Inflight: General/ contains ${generalChildren.length} folders: ${generalChildren.join(", ")}`);
+
+    const inflightFolder = generalChildren.find((name) => /inflight/i.test(name));
+    if (inflightFolder) {
+      console.log(`[SharePoint] Inflight: discovered folder "${inflightFolder}"`);
+      allItems = await fetchFolderChildren(token, siteId, `General/${inflightFolder}`);
+      usedPath = `General/${inflightFolder}`;
+    } else {
+      if (generalChildren.length === 0) {
+        const rootChildren = await listFolderNames(token, siteId, "");
+        console.log(`[SharePoint] Inflight: drive root contains: ${rootChildren.join(", ")}`);
       }
-    } catch (discoverErr: any) {
-      throw new Error(`Could not find Inflight Engagements folder. ${discoverErr.message}`);
+      throw new Error(`Inflight folder not found in General/. Available folders: ${generalChildren.join(", ") || "(none)"}`);
     }
   }
 
