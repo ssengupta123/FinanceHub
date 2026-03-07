@@ -488,9 +488,17 @@ export async function syncSharePointOpenOpps(): Promise<{
 }
 
 function parseProjectCode(folderName: string): { projectCode: string; projectName: string } | null {
-  const match = folderName.match(/^([A-Z]{2,6}\d{2,4})\s+(.+)$/i);
+  const skip = /^(00\.|ZZZ)/i;
+  if (skip.test(folderName.trim())) return null;
+
+  const match = folderName.match(/^([A-Z]{2,6}[\dX]{2,4})(?:-[\dA-Z]{1,3})?\s+(.+)$/i);
   if (!match) return null;
-  return { projectCode: match[1].toUpperCase(), projectName: match[2].trim() };
+  let projectCode = match[1].toUpperCase();
+  const projectName = match[2].replace(/\s*\([\d]{1,2}-[A-Za-z]{3}-\d{2}\s*-\s*[\d]{1,2}-[A-Za-z]{3}-\d{2}\)\s*$/, "")
+    .replace(/\s*NEXT\s+FY\s*$/i, "")
+    .trim();
+
+  return { projectCode, projectName };
 }
 
 export async function syncSharePointInflightProjects(): Promise<{
