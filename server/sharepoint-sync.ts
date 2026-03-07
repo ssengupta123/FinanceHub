@@ -857,15 +857,18 @@ export async function syncSharePointJobPlans(): Promise<{
     if (p.project_code) projectByCode.set(p.project_code.toUpperCase(), p);
   }
 
-  const allEmployees = await db("employees").select("id", "name");
+  const allEmployees = await db("employees").select("id", "first_name", "last_name");
   console.log(`[SharePoint] Job Plans: ${allEmployees.length} employees in DB for matching`);
   const employeeByName = new Map<string, any>();
   for (const e of allEmployees) {
-    const normalised = e.name?.toLowerCase().trim();
-    if (normalised) employeeByName.set(normalised, e);
-    const parts = normalised?.split(/\s+/);
-    if (parts && parts.length >= 2) {
-      employeeByName.set(`${parts[parts.length - 1]}, ${parts[0]}`, e);
+    const fullName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
+    if (fullName) {
+      employeeByName.set(fullName, e);
+      if (e.first_name && e.last_name) {
+        employeeByName.set(`${e.last_name.toLowerCase()}, ${e.first_name.toLowerCase()}`, e);
+        employeeByName.set(`${e.first_name.toLowerCase()}`, e);
+        employeeByName.set(`${e.last_name.toLowerCase()}`, e);
+      }
     }
   }
 

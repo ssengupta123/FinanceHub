@@ -1,0 +1,26 @@
+2026-03-07T21:19:57.8159069Z Incremental migrations completed
+2026-03-07T21:19:57.9209256Z 9:19:57 PM [express] serving on port 8080
+2026-03-07T21:19:57.9215414Z [Scheduler] SharePoint hourly sync scheduled (every 60 min)
+2026-03-07T21:20:05.9947234Z 9:20:05 PM [express] GET /api/auth/me 304 in 26ms
+2026-03-07T21:20:06.0803603Z 9:20:06 PM [express] GET /api/data-sources 304 in 39ms
+2026-03-07T21:20:06.0816201Z 9:20:06 PM [express] GET /api/permissions 304 in 28ms
+2026-03-07T21:20:17.1013347Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:20:17.1107119Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-07T21:20:17.2451395Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-07T21:20:17.2453883Z [SharePoint] Fetching folder children: General/2. Inflight Engagements (encoded: General/2.%20Inflight%20Engagements)
+2026-03-07T21:20:17.3898743Z [SharePoint] Folder API error (HTTP 404): {"error":{"code":"itemNotFound","message":"The resource could not be found.","innerError":{"date":"2026-03-07T21:20:17","request-id":"7626bea9-48a9-4fa4-b4a0-35be1b7d1e72","client-request-id":"7626bea9-48a9-4fa4-b4a0-35be1b7d1e72"}}}
+2026-03-07T21:20:17.3900568Z [SharePoint] Inflight: folder "General/2. Inflight Engagements" not found, trying next...
+2026-03-07T21:20:17.3900637Z [SharePoint] Fetching folder children: General/2.Inflight Engagements (encoded: General/2.Inflight%20Engagements)
+2026-03-07T21:20:17.7060875Z [SharePoint] Retrieved 33 folder children
+2026-03-07T21:20:17.706156Z [SharePoint] Inflight: Retrieved 33 items from General/2.Inflight Engagements
+2026-03-07T21:20:17.7076142Z [SharePoint] Inflight: Staged 11 projects (0 errors)
+2026-03-07T21:20:17.8222552Z [SharePoint] Inflight sync complete: 10 updated, 1 unchanged
+2026-03-07T21:20:17.8362331Z 9:20:17 PM [express] POST /api/data-sources/34/sync 200 in 943ms
+2026-03-07T21:20:17.8780478Z 9:20:17 PM [express] GET /api/data-sources 200 in 18ms
+2026-03-07T21:20:32.976537Z [SharePoint] Graph token acquired successfully
+2026-03-07T21:20:32.9770074Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGDelivery
+2026-03-07T21:20:33.1763365Z [SharePoint] Found site ID: reasongroup.sharepoint.com,82c7a907-31b2-40fc-b14c-77723c2cde5b,b85f4c7b-5480-4e2c-bd2d-78a3c1c92a57
+2026-03-07T21:20:33.3686673Z [SharePoint] Job Plans: Found 30 Excel files in General/00.Mgmt/Job Plans/01.Active plans
+2026-03-07T21:20:33.3721804Z [SharePoint] Job Plans: 63 projects in DB for matching
+2026-03-07T21:20:33.400684Z 9:20:33 PM [express] POST /api/data-sources/35/sync 500 in 519ms
+2026-03-07T21:20:33.4382564Z 9:20:33 PM [express] GET /api/data-sources 200 in 16ms
