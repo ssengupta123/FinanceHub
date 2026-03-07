@@ -254,11 +254,20 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
   throw new Error(`SharePoint list "${listName}" not found. Available lists: ${available}`);
 }
 
+async function listFolderNames(token: SharePointToken, siteId: string, folderPath: string): Promise<string[]> {
+  const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
+  const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$select=name,folder&$top=999`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token.access_token}` } });
+  if (!resp.ok) return [];
+  const data: any = await resp.json();
+  return (data.value || []).filter((item: any) => item.folder).map((item: any) => item.name as string);
+}
+
 async function fetchFolderChildren(token: SharePointToken, siteId: string, folderPath: string): Promise<SharePointListItem[]> {
   const allItems: SharePointListItem[] = [];
-  const encodedPath = encodeURIComponent(folderPath).replace(/%2F/g, "/");
+  const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
   let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$expand=listItem($expand=fields)&$top=999`;
-  console.log(`[SharePoint] Fetching folder children: ${folderPath}`);
+  console.log(`[SharePoint] Fetching folder children: ${folderPath} (encoded: ${encodedPath})`);
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
@@ -488,9 +497,46 @@ export async function syncSharePointInflightProjects(): Promise<{
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
 
-  const folderPath = "General/2. Inflight Engagements";
-  const allItems = await fetchFolderChildren(token, siteId, folderPath);
-  console.log(`[SharePoint] Inflight: Retrieved ${allItems.length} items from ${folderPath}`);
+  const folderCandidates = [
+    "General/2. Inflight Engagements",
+    "General/2.Inflight Engagements",
+    "General/2. Inflight",
+    "General/2.Inflight",
+  ];
+
+  let allItems: SharePointListItem[] = [];
+  let usedPath = "";
+  for (const candidate of folderCandidates) {
+    try {
+      allItems = await fetchFolderChildren(token, siteId, candidate);
+      usedPath = candidate;
+      break;
+    } catch (err: any) {
+      if (err.message?.includes("404")) {
+        console.log(`[SharePoint] Inflight: folder "${candidate}" not found, trying next...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (!usedPath) {
+    try {
+      const generalChildren = await listFolderNames(token, siteId, "General");
+      const inflightFolder = generalChildren.find((name) => /inflight/i.test(name));
+      if (inflightFolder) {
+        console.log(`[SharePoint] Inflight: discovered folder "${inflightFolder}" in General/`);
+        allItems = await fetchFolderChildren(token, siteId, `General/${inflightFolder}`);
+        usedPath = `General/${inflightFolder}`;
+      } else {
+        throw new Error(`Inflight folder not found. General/ contains: ${generalChildren.join(", ")}`);
+      }
+    } catch (discoverErr: any) {
+      throw new Error(`Could not find Inflight Engagements folder. ${discoverErr.message}`);
+    }
+  }
+
+  console.log(`[SharePoint] Inflight: Retrieved ${allItems.length} items from ${usedPath}`);
 
   const staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[] = [];
   const errors: string[] = [];
@@ -624,7 +670,7 @@ export async function syncSharePointInflightProjects(): Promise<{
 
 async function fetchDriveFolderFiles(token: SharePointToken, siteId: string, folderPath: string): Promise<{ name: string; downloadUrl: string; id: string }[]> {
   const files: { name: string; downloadUrl: string; id: string }[] = [];
-  const encodedPath = encodeURIComponent(folderPath).replace(/%2F/g, "/");
+  const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
   let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$top=999`;
 
   while (nextUrl) {
@@ -659,12 +705,12 @@ async function downloadExcelFile(url: string, token: SharePointToken): Promise<B
   return Buffer.from(arrayBuffer);
 }
 
-function parseJobPlanExcel(buffer: Buffer, fileName: string): {
+async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
   projectCode: string;
   rows: { employeeName: string; month: string; plannedDays: number; plannedHours: number; allocationPercent: number }[];
   error?: string;
-} {
-  const XLSX = require("xlsx");
+}> {
+  const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "buffer" });
 
   const projectMatch = fileName.match(/^([A-Z]{2,6}\d{2,4})/i);
@@ -704,9 +750,9 @@ function parseJobPlanExcel(buffer: Buffer, fileName: string): {
       let monthStr: string | null = null;
 
       if (typeof h === "number" && h > 40000 && h < 60000) {
-        const dt = XLSX.SSF.parse_date_code(h);
-        if (dt) {
-          monthStr = `${dt.y}-${String(dt.m).padStart(2, "0")}-01`;
+        const jsDate = new Date((h - 25569) * 86400 * 1000);
+        if (!isNaN(jsDate.getTime())) {
+          monthStr = `${jsDate.getUTCFullYear()}-${String(jsDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
         }
       } else {
         const hStr = String(h).trim();
@@ -828,7 +874,7 @@ export async function syncSharePointJobPlans(): Promise<{
   for (const file of files) {
     try {
       const buffer = await downloadExcelFile(file.downloadUrl, token);
-      const { projectCode, rows } = parseJobPlanExcel(buffer, file.name);
+      const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
 
       const project = projectByCode.get(projectCode.toUpperCase());
       if (!project) {

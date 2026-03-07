@@ -1,0 +1,24 @@
+2026-03-07T06:21:59.5962626Z [Scheduler] SharePoint hourly sync scheduled (every 60 min)
+2026-03-07T06:23:12.4508944Z 6:23:12 AM [express] GET /api/auth/me 304 in 22ms
+2026-03-07T06:23:12.5184019Z 6:23:12 AM [express] GET /api/permissions 304 in 29ms
+2026-03-07T06:23:12.5846312Z 6:23:12 AM [express] GET /api/data-sources 200 in 87ms
+2026-03-07T06:23:21.7466353Z [SharePoint] Graph token acquired successfully
+2026-03-07T06:23:21.7540752Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-07T06:23:21.8701385Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-07T06:23:21.8709993Z [SharePoint] Fetching folder children: General/2. Inflight Engagements
+2026-03-07T06:23:22.0566424Z [SharePoint] Folder API error (HTTP 404): {"error":{"code":"itemNotFound","message":"The resource could not be found.","innerError":{"date":"2026-03-07T06:23:22","request-id":"9504eeb7-983f-4a18-8fe4-7266e1f1225a","client-request-id":"9504eeb7-983f-4a18-8fe4-7266e1f1225a"}}}
+2026-03-07T06:23:22.0804608Z 6:23:22 AM [express] POST /api/data-sources/34/sync 500 in 595ms
+2026-03-07T06:23:22.1290861Z 6:23:22 AM [express] GET /api/data-sources 200 in 23ms
+2026-03-07T06:23:30.8457583Z [SharePoint] Graph token acquired successfully
+2026-03-07T06:23:30.8460547Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGDelivery
+2026-03-07T06:23:31.0089306Z [SharePoint] Found site ID: reasongroup.sharepoint.com,82c7a907-31b2-40fc-b14c-77723c2cde5b,b85f4c7b-5480-4e2c-bd2d-78a3c1c92a57
+2026-03-07T06:23:31.3228386Z [SharePoint] Job Plans: Found 30 Excel files in General/00.Mgmt/Job Plans/01.Active plans
+2026-03-07T06:23:31.3494216Z 6:23:31 AM [express] POST /api/data-sources/35/sync 500 in 608ms
+2026-03-07T06:23:31.3888823Z 6:23:31 AM [express] GET /api/data-sources 200 in 16ms
+2026-03-07T06:23:36.4167574Z [SharePoint] Graph token acquired successfully
+2026-03-07T06:23:36.4169785Z [SharePoint] Looking up site: https://graph.microsoft.com/v1.0/sites/reasongroup.sharepoint.com:/sites/RGSales
+2026-03-07T06:23:36.5152484Z [SharePoint] Found site ID: reasongroup.sharepoint.com,a0af08b5-7a05-4ba4-800f-944fec5ad21b,04218043-24c4-4dff-8c1f-1be1bbac9376
+2026-03-07T06:23:36.5153217Z [SharePoint] Fetching folder children: General/2. Inflight Engagements
+2026-03-07T06:23:36.6458036Z [SharePoint] Folder API error (HTTP 404): {"error":{"code":"itemNotFound","message":"The resource could not be found.","innerError":{"date":"2026-03-07T06:23:36","request-id":"aa5b8c5a-abe0-4ec4-bf5a-35beb432e0e2","client-request-id":"aa5b8c5a-abe0-4ec4-bf5a-35beb432e0e2"}}}
+2026-03-07T06:23:36.6644022Z 6:23:36 AM [express] POST /api/data-sources/34/sync 500 in 347ms
+2026-03-07T06:23:36.6972848Z 6:23:36 AM [express] GET /api/data-sources 200 in 11ms
