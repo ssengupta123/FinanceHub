@@ -426,6 +426,16 @@ async function migratePipelineSharepointId() {
   }
 }
 
+async function migrateProjectSharepointId() {
+  const hasCol = await db.schema.hasColumn("projects", "sharepoint_id");
+  if (!hasCol) {
+    await db.schema.alterTable("projects", (t) => {
+      t.text("sharepoint_id");
+    });
+    console.log("Added sharepoint_id column to projects");
+  }
+}
+
 export async function migrateColumnAdditions() {
   await migratePipelineBillingType();
   await migrateMilestoneColumns();
@@ -434,6 +444,7 @@ export async function migrateColumnAdditions() {
   await migrateReferenceDataFyYear();
   await migratePipelineValueColumns();
   await migratePipelineSharepointId();
+  await migrateProjectSharepointId();
 }
 
 export async function migrateResourceAndCxTables() {

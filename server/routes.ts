@@ -1678,6 +1678,36 @@ export async function registerRoutes(
           recordsProcessed: 0,
           syncFrequency: "daily",
         },
+        {
+          name: "Inflight Projects (SharePoint)",
+          type: "SharePoint API",
+          connectionInfo: JSON.stringify({
+            description: "Inflight engagement projects — project code, name, VAT, leads, contract value from RGSales",
+            endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/2. Inflight Engagements:/children",
+            authMethod: "Azure AD OAuth2 (Client Credentials)",
+            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+            syncTarget: "projects",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
+        {
+          name: "Job Plans (SharePoint)",
+          type: "SharePoint API",
+          connectionInfo: JSON.stringify({
+            description: "Resource allocation plans from Excel files — employee/month/days allocations from RGDelivery",
+            endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/00.Mgmt/Job Plans/01.Active plans:/children",
+            authMethod: "Azure AD OAuth2 (Client Credentials)",
+            requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+            syncTarget: "resource_plans",
+            frequency: "Daily",
+          }),
+          status: "configured",
+          recordsProcessed: 0,
+          syncFrequency: "daily",
+        },
       ];
       for (const src of defaultSources) {
         await storage.createDataSource(src as any);
@@ -1711,9 +1741,15 @@ export async function registerRoutes(
       const connInfo = ds.connectionInfo ? JSON.parse(ds.connectionInfo) : {};
       const syncTarget = connInfo.syncTarget || "";
 
-      if (syncTarget === "pipeline_opportunities" || ds.name?.includes("SharePoint") || ds.name?.includes("Open Opps")) {
+      if (syncTarget === "pipeline_opportunities" || ds.name?.includes("Open Opps")) {
         const { syncSharePointOpenOpps } = await import("./sharepoint-sync");
         result = await syncSharePointOpenOpps();
+      } else if (syncTarget === "projects" || ds.name?.includes("Inflight")) {
+        const { syncSharePointInflightProjects } = await import("./sharepoint-sync");
+        result = await syncSharePointInflightProjects();
+      } else if (syncTarget === "resource_plans" || ds.name?.includes("Job Plans")) {
+        const { syncSharePointJobPlans } = await import("./sharepoint-sync");
+        result = await syncSharePointJobPlans();
       } else {
         await storage.updateDataSource(id, { status: "configured" });
         return res.json({
@@ -1785,6 +1821,36 @@ export async function registerRoutes(
           authMethod: "OAuth2 Bearer Token",
           requiredSecrets: ["EMPLOYMENT_HERO_API_KEY"],
           syncTarget: "employees",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Inflight Projects (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "Inflight engagement projects — project code, name, VAT, leads, contract value from RGSales",
+          endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/2. Inflight Engagements:/children",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          syncTarget: "projects",
+          frequency: "Daily",
+        }),
+        status: "configured",
+        recordsProcessed: 0,
+        syncFrequency: "daily",
+      },
+      {
+        name: "Job Plans (SharePoint)",
+        type: "SharePoint API",
+        connectionInfo: JSON.stringify({
+          description: "Resource allocation plans from Excel files — employee/month/days allocations from RGDelivery",
+          endpoint: "https://graph.microsoft.com/v1.0/sites/{siteId}/drive/root:/General/00.Mgmt/Job Plans/01.Active plans:/children",
+          authMethod: "Azure AD OAuth2 (Client Credentials)",
+          requiredSecrets: ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"],
+          syncTarget: "resource_plans",
           frequency: "Daily",
         }),
         status: "configured",

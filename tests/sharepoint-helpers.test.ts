@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems, getSharePointConfig } from "../server/sharepoint-sync";
+import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems, getSharePointConfig, extractFieldText } from "../server/sharepoint-sync";
 
 describe("transformSharePointItem", () => {
   it("transforms a valid SharePoint item", () => {
@@ -342,5 +342,55 @@ describe("getSharePointConfig", () => {
     process.env.SHAREPOINT_LIST_NAME = "Custom List";
     const cfg = getSharePointConfig();
     expect(cfg.listName).toBe("Custom List");
+  });
+});
+
+describe("extractFieldText", () => {
+  it("returns null for null/undefined", () => {
+    expect(extractFieldText(null)).toBeNull();
+    expect(extractFieldText(undefined)).toBeNull();
+  });
+
+  it("returns string as-is", () => {
+    expect(extractFieldText("hello")).toBe("hello");
+  });
+
+  it("returns null for empty string", () => {
+    expect(extractFieldText("")).toBeNull();
+  });
+
+  it("converts number to string", () => {
+    expect(extractFieldText(42)).toBe("42");
+  });
+
+  it("extracts LookupValue from lookup array", () => {
+    const val = [{ LookupId: 36, LookupValue: "Alex Kocz", Email: "alex@example.com" }];
+    expect(extractFieldText(val)).toBe("Alex Kocz");
+  });
+
+  it("joins multiple lookup values", () => {
+    const val = [
+      { LookupId: 36, LookupValue: "Alex Kocz" },
+      { LookupId: 187, LookupValue: "Jane Smith" },
+    ];
+    expect(extractFieldText(val)).toBe("Alex Kocz; Jane Smith");
+  });
+
+  it("extracts Description from URL object", () => {
+    const val = { Description: "Ian Scensor", Url: "https://planner.cloud.microsoft/webui/v1/plan/QPK" };
+    expect(extractFieldText(val)).toBe("Ian Scensor");
+  });
+
+  it("joins string arrays", () => {
+    expect(extractFieldText(["Hunt", "Partner"])).toBe("Hunt; Partner");
+  });
+
+  it("extracts Email as fallback from object", () => {
+    const val = { Email: "test@example.com" };
+    expect(extractFieldText(val)).toBe("test@example.com");
+  });
+
+  it("returns null for object with no known fields", () => {
+    expect(extractFieldText({ unknown: "field" })).toBeNull();
   });
 });
