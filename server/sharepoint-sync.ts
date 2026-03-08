@@ -778,138 +778,274 @@ async function downloadExcelFile(url: string, token: SharePointToken): Promise<B
   return Buffer.from(arrayBuffer);
 }
 
-function detectNameColumn(headers: any[]): number {
-  const nameHeaders = new Set(["resource", "name", "employee", "staff", "team member", "consultant"]);
-  for (let c = 0; c < headers.length; c++) {
-    const h = String(headers[c] || "").trim().toLowerCase();
-    if (nameHeaders.has(h)) return c;
-  }
-  return 0;
+const STANDARD_WEEKLY_HOURS = 40;
+const MAX_WEEKS_FROM_FIRST = 56;
+const JP_HEADER_ROWS = 5;
+const STD_RESOURCE_COL = 3;
+const STD_RATE_COLS = { panelHourly: 6, discount: 7, discountedHourly: 8, discountedDaily: 9, grossCost: 10 };
+const STD_FIRST_WEEK_COL = 20;
+
+interface PersonData {
+  rates: {
+    chargeOutRate: number | null;
+    discountPercent: number | null;
+    discountedHourlyRate: number | null;
+    discountedDailyRate: number | null;
+    hourlyGrossCost: number | null;
+  };
+  weeklyAllocs: Record<string, number>;
 }
 
-const MONTH_NAMES_MAP: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+function isJobPlanNameValid(name: string): boolean {
+  if (!name || typeof name !== "string") return false;
+  const n = name.trim();
+  if (n.length <= 3) return false;
+  const lower = n.toLowerCase();
+  if (lower === "total" || lower.startsWith("unresourced")) return false;
+  if (lower.startsWith("contractor-") || lower.startsWith("subcontractor-")) return false;
+  if (/^(account|engagement)\s+manager$/i.test(lower)) return false;
+  if (lower === "contingency" || lower === "delivery manager") return false;
+  if (lower === "perm-project administrator") return false;
+  return true;
+}
 
-function parseHeaderMonth(h: any): string | null {
-  if (typeof h === "number" && h > 40000 && h < 60000) {
-    const jsDate = new Date((h - 25569) * 86400 * 1000);
-    if (!Number.isNaN(jsDate.getTime())) {
-      return `${jsDate.getUTCFullYear()}-${String(jsDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+function extractProjectCode(filename: string): string | null {
+  const m = filename.match(/^([A-Z]{2,4}\d{3}(?:-\d{2,3})?)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function excelDateToMonday(serial: any): Date | null {
+  if (!serial || typeof serial !== "number" || serial < 40000 || serial > 55000) return null;
+  const epoch = new Date(1899, 11, 30);
+  const d = new Date(epoch.getTime() + serial * 86400000);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d;
+}
+
+function jpDateToKey(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function jpDateToMonth(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function jpParseNum(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  return isNaN(n) ? null : n;
+}
+
+function findResourceLoadingRow(ws: any, range: any, XLSX: any): number {
+  for (let r = JP_HEADER_ROWS; r <= range.e.r; r++) {
+    for (let c = 0; c <= 3; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && /^resource\s+loading$/i.test(String(cell.v).trim())) return r;
     }
-    return null;
   }
-
-  const hStr = String(h).trim();
-  const monthMatch = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\-/]*(\d{2,4})$/i.exec(hStr);
-  if (monthMatch) {
-    const m = MONTH_NAMES_MAP[monthMatch[1].toLowerCase().substring(0, 3)];
-    let y = monthMatch[2];
-    if (y.length === 2) y = `20${y}`;
-    if (m) return `${y}-${m}-01`;
-  }
-
-  const isoMatch = /^(\d{4})[-/](\d{1,2})/.exec(hStr);
-  if (isoMatch) {
-    return `${isoMatch[1]}-${String(isoMatch[2]).padStart(2, "0")}-01`;
-  }
-
-  return null;
+  return -1;
 }
 
-function parseCellValue(val: any): { plannedDays: number; plannedHours: number; allocationPercent: number } | null {
-  if (val == null || val === "" || val === 0) return null;
-  const numVal = Number(val);
-  if (Number.isNaN(numVal) || numVal === 0) return null;
+function getWeekColumns(ws: any, range: any, headerRow: number, firstWeekCol: number, XLSX: any): { col: number; date: Date; key: string }[] {
+  const weekCols: { col: number; date: Date; key: string }[] = [];
+  for (let c = firstWeekCol; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: headerRow, c })];
+    if (!cell) continue;
+    const d = excelDateToMonday(cell.v);
+    if (d) weekCols.push({ col: c, date: d, key: jpDateToKey(d) });
+  }
+  if (weekCols.length > MAX_WEEKS_FROM_FIRST) weekCols.length = MAX_WEEKS_FROM_FIRST;
+  return weekCols;
+}
 
-  const isPercent = numVal > 0 && numVal <= 1.5;
-  const days = isPercent ? Math.round(numVal * 20 * 10) / 10 : numVal;
-  const hours = days * 8;
-  const allocPercent = isPercent ? Math.round(numVal * 100) : Math.min(Math.round((days / 20) * 100), 100);
-
+function extractRates(ws: any, r: number, rateCols: typeof STD_RATE_COLS, XLSX: any) {
   return {
-    plannedDays: Math.round(days * 10) / 10,
-    plannedHours: Math.round(hours * 10) / 10,
-    allocationPercent: allocPercent,
+    chargeOutRate: jpParseNum(ws[XLSX.utils.encode_cell({ r, c: rateCols.panelHourly })]?.v),
+    discountPercent: jpParseNum(ws[XLSX.utils.encode_cell({ r, c: rateCols.discount })]?.v),
+    discountedHourlyRate: jpParseNum(ws[XLSX.utils.encode_cell({ r, c: rateCols.discountedHourly })]?.v),
+    discountedDailyRate: rateCols.discountedDaily >= 0 ? jpParseNum(ws[XLSX.utils.encode_cell({ r, c: rateCols.discountedDaily })]?.v) : null,
+    hourlyGrossCost: jpParseNum(ws[XLSX.utils.encode_cell({ r, c: rateCols.grossCost })]?.v),
   };
 }
 
-async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
-  projectCode: string;
-  rows: { employeeName: string; month: string; plannedDays: number; plannedHours: number; allocationPercent: number }[];
-  error?: string;
-}> {
-  const XLSX = await import("xlsx");
-  const wb = XLSX.read(buffer, { type: "buffer" });
+function extractPersonData(ws: any, range: any, weekCols: { col: number; date: Date; key: string }[], resourceCol: number, rateCols: typeof STD_RATE_COLS, XLSX: any): Map<string, PersonData> {
+  const rlRow = findResourceLoadingRow(ws, range, XLSX);
+  const startRow = rlRow >= 0 ? rlRow + 1 : JP_HEADER_ROWS;
+  const endRow = range.e.r;
 
-  const projectMatch = /^([A-Z]{2,6}\d{2,4})/i.exec(fileName);
-  const projectCode = projectMatch ? projectMatch[1].toUpperCase() : fileName.replace(/\.(xlsx|xls)$/i, "");
+  const personMap = new Map<string, PersonData>();
+  for (let r = startRow; r <= endRow; r++) {
+    const nameCell = ws[XLSX.utils.encode_cell({ r, c: resourceCol })];
+    if (!nameCell) continue;
+    const name = String(nameCell.v).trim();
+    if (!isJobPlanNameValid(name)) continue;
 
-  const rows: { employeeName: string; month: string; plannedDays: number; plannedHours: number; allocationPercent: number }[] = [];
-
-  for (const sheetName of wb.SheetNames) {
-    const ws = wb.Sheets[sheetName];
-    if (!ws) continue;
-
-    const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-    if (data.length < 2) continue;
-
-    const headers = data[0];
-    if (!headers || headers.length < 2) continue;
-
-    const nameCol = detectNameColumn(headers);
-    const monthCols: { col: number; month: string }[] = [];
-
-    for (let c = 0; c < headers.length; c++) {
-      if (c === nameCol || headers[c] == null) continue;
-      const monthStr = parseHeaderMonth(headers[c]);
-      if (monthStr) monthCols.push({ col: c, month: monthStr });
+    const rates = extractRates(ws, r, rateCols, XLSX);
+    const weeklyAllocs: Record<string, number> = {};
+    for (const wc of weekCols) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
+      const val = jpParseNum(cell?.v);
+      if (val !== null && val > 0 && val <= 2) {
+        weeklyAllocs[wc.key] = Math.round(val * 100);
+      }
     }
 
-    if (monthCols.length === 0) continue;
-
-    for (let r = 1; r < data.length; r++) {
-      const row = data[r];
-      if (!row) continue;
-
-      const name = String(row[nameCol] || "").trim();
-      if (!name || name.toLowerCase() === "total" || name.toLowerCase() === "totals" || name.toLowerCase() === "grand total") continue;
-
-      for (const mc of monthCols) {
-        const parsed = parseCellValue(row[mc.col]);
-        if (parsed) {
-          rows.push({ employeeName: name, month: mc.month, ...parsed });
+    if (rlRow >= 0) {
+      if (!personMap.has(name)) {
+        personMap.set(name, { rates, weeklyAllocs });
+      } else {
+        const existing = personMap.get(name)!;
+        for (const [k, v] of Object.entries(weeklyAllocs)) {
+          existing.weeklyAllocs[k] = v;
+        }
+        for (const [k, v] of Object.entries(rates)) {
+          if (v !== null && ((existing.rates as any)[k] === null || (existing.rates as any)[k] === undefined)) {
+            (existing.rates as any)[k] = v;
+          }
         }
       }
+    } else {
+      personMap.set(name, { rates, weeklyAllocs });
     }
-
-    if (rows.length > 0) break;
   }
-
-  return { projectCode, rows };
+  return personMap;
 }
 
-async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => any }> {
+function detectSheetFormat(ws: any, XLSX: any): string {
+  const cell = ws[XLSX.utils.encode_cell({ r: 2, c: 6 })];
+  if (cell && /DISCOUNTED CHARGE OUT/i.test(String(cell.v))) return "sau046";
+  return "standard";
+}
+
+function processSAU046Sheet(ws: any, range: any, XLSX: any): Map<string, PersonData> {
+  const rateCols = {
+    panelHourly: 4,
+    discount: 5,
+    discountedHourly: 6,
+    discountedDaily: -1,
+    grossCost: 7,
+  };
+  const resourceCol = 1;
+  let firstWeekCol = -1;
+  for (let c = 10; c <= range.e.c; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: 2, c })];
+    if (cell && typeof cell.v === "number" && cell.v > 40000) { firstWeekCol = c; break; }
+  }
+  if (firstWeekCol < 0) return new Map();
+  const weekCols = getWeekColumns(ws, range, 2, firstWeekCol, XLSX);
+
+  const personMap = new Map<string, PersonData>();
+  for (let r = JP_HEADER_ROWS; r <= range.e.r; r++) {
+    const nameCell = ws[XLSX.utils.encode_cell({ r, c: resourceCol })];
+    if (!nameCell) continue;
+    const name = String(nameCell.v).trim();
+    if (!isJobPlanNameValid(name)) continue;
+
+    const chargeOut = jpParseNum(ws[XLSX.utils.encode_cell({ r, c: 4 })]?.v);
+    const discPct = jpParseNum(ws[XLSX.utils.encode_cell({ r, c: 5 })]?.v);
+    const discountedRate = jpParseNum(ws[XLSX.utils.encode_cell({ r, c: 6 })]?.v);
+    const costRate = jpParseNum(ws[XLSX.utils.encode_cell({ r, c: 7 })]?.v);
+
+    const rates = {
+      chargeOutRate: chargeOut,
+      discountPercent: discPct,
+      discountedHourlyRate: discountedRate,
+      discountedDailyRate: discountedRate ? discountedRate * 8 : null,
+      hourlyGrossCost: costRate,
+    };
+
+    const weeklyAllocs: Record<string, number> = {};
+    for (const wc of weekCols) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
+      const val = jpParseNum(cell?.v);
+      if (val !== null && val > 0 && val <= 2) weeklyAllocs[wc.key] = Math.round(val * 100);
+    }
+    personMap.set(name, { rates, weeklyAllocs });
+  }
+  return personMap;
+}
+
+function selectBestSheet(wb: any, XLSX: any): string {
+  const candidates = wb.SheetNames.filter((s: string) => /time.?plan/i.test(s));
+  if (candidates.length === 0) return wb.SheetNames[0];
+  if (candidates.length === 1) return candidates[0];
+
+  const filtered = candidates.filter(
+    (s: string) => !/multiple|partial|single|lacy|old/i.test(s)
+  );
+
+  for (const name of filtered.length > 0 ? filtered : candidates) {
+    const ws = wb.Sheets[name];
+    if (!ws || !ws["!ref"]) continue;
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    let count = 0;
+    for (let r = JP_HEADER_ROWS; r <= Math.min(range.e.r, 50); r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: STD_RESOURCE_COL })];
+      if (cell && isJobPlanNameValid(String(cell.v).trim())) count++;
+    }
+    if (count > 0) return name;
+  }
+
+  for (const name of candidates) {
+    const ws = wb.Sheets[name];
+    if (!ws || !ws["!ref"]) continue;
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    let count = 0;
+    for (let r = JP_HEADER_ROWS; r <= Math.min(range.e.r, 100); r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: STD_RESOURCE_COL })];
+      if (cell && isJobPlanNameValid(String(cell.v).trim())) count++;
+    }
+    if (count > 0) return name;
+  }
+
+  return candidates[0];
+}
+
+async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => { id: number } | null }> {
   const allEmployees = await db("employees").select("id", "first_name", "last_name");
-  const employeeByName = new Map<string, any>();
+
+  const byFullName = new Map<string, { id: number }>();
+  const byFirstInitial = new Map<string, { id: number }>();
+
   for (const e of allEmployees) {
-    const fullName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
+    const first = (e.first_name || "").trim().toLowerCase();
+    const last = (e.last_name || "").trim().toLowerCase();
+    const fullName = `${first} ${last}`.trim();
     if (fullName) {
-      employeeByName.set(fullName, e);
-      if (e.first_name && e.last_name) {
-        employeeByName.set(`${e.last_name.toLowerCase()}, ${e.first_name.toLowerCase()}`, e);
-        employeeByName.set(`${e.first_name.toLowerCase()}`, e);
-        employeeByName.set(`${e.last_name.toLowerCase()}`, e);
+      byFullName.set(fullName, e);
+      if (first && last) {
+        byFullName.set(`${last}, ${first}`, e);
+        byFullName.set(`${last} ${first}`, e);
+      }
+      if (first && last) {
+        byFirstInitial.set(`${first} ${last.charAt(0)}`, e);
       }
     }
   }
 
-  function findEmployee(name: string): any {
+  function findEmployee(name: string): { id: number } | null {
     const n = name.toLowerCase().trim();
-    if (employeeByName.has(n)) return employeeByName.get(n);
+    if (byFullName.has(n)) return byFullName.get(n)!;
 
     const reversed = n.split(/,\s*/).reverse().join(" ").trim();
-    if (employeeByName.has(reversed)) return employeeByName.get(reversed);
+    if (byFullName.has(reversed)) return byFullName.get(reversed)!;
 
-    for (const [key, emp] of Array.from(employeeByName)) {
+    if (byFirstInitial.has(n)) return byFirstInitial.get(n)!;
+
+    const parts = n.split(/\s+/);
+    if (parts.length >= 2) {
+      const firstLast = `${parts[0]} ${parts[parts.length - 1]}`;
+      if (byFullName.has(firstLast)) return byFullName.get(firstLast)!;
+      const firstInit = `${parts[0]} ${parts[parts.length - 1].charAt(0)}`;
+      if (byFirstInitial.has(firstInit)) return byFirstInitial.get(firstInit)!;
+    }
+
+    for (const [key, emp] of Array.from(byFullName)) {
       if (key.includes(n) || n.includes(key)) return emp;
     }
     return null;
@@ -918,45 +1054,50 @@ async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => 
   return { findEmployee };
 }
 
-function generateWeeklyAllocations(monthStr: string, allocationPercent: number): Record<string, number> {
-  const d = new Date(monthStr);
-  const year = d.getFullYear();
-  const month = d.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const monday = new Date(firstDay);
-  const dayOfWeek = monday.getDay();
-  if (dayOfWeek !== 1) {
-    monday.setDate(monday.getDate() + ((8 - dayOfWeek) % 7));
-  }
-  if (monday > lastDay) {
-    const prevMonday = new Date(firstDay);
-    prevMonday.setDate(prevMonday.getDate() - ((dayOfWeek + 6) % 7));
-    const key = prevMonday.toISOString().split("T")[0];
-    return { [key]: allocationPercent };
-  }
-  const result: Record<string, number> = {};
-  const cursor = new Date(monday);
-  while (cursor <= lastDay) {
-    const key = cursor.toISOString().split("T")[0];
-    result[key] = allocationPercent;
-    cursor.setDate(cursor.getDate() + 7);
-  }
-  return result;
-}
-
-async function processJobPlanFile(
-  file: { name: string; downloadUrl: string; id: string },
-  token: SharePointToken,
+async function parseAndProcessJobPlanFile(
+  buffer: Buffer,
+  fileName: string,
   projectByCode: Map<string, any>,
-  employeeLookup: { findEmployee: (name: string) => any },
+  employeeLookup: { findEmployee: (name: string) => { id: number } | null },
 ): Promise<{ inserted: number; updated: number; unchanged: number; processed: boolean; error?: string }> {
-  const buffer = await downloadExcelFile(file.downloadUrl, token);
-  const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(buffer, { type: "buffer" });
+
+  const codeMatch = extractProjectCode(fileName.replace(/\.(xlsx|xls)$/i, ""));
+  const projectCode = codeMatch || fileName.replace(/\.(xlsx|xls)$/i, "").toUpperCase();
 
   let project = projectByCode.get(projectCode.toUpperCase());
-  if (!project && rows.length > 0) {
-    const projectName = file.name.replace(/\.(xlsx|xls)$/i, "").replace(/[-_]?\s*Plan\b.*$/i, "").trim() || projectCode;
+  if (!project) {
+    const baseCode = projectCode.replace(/-\d+$/, "");
+    project = projectByCode.get(baseCode);
+  }
+
+  const planSheetName = selectBestSheet(wb, XLSX);
+  const ws = wb.Sheets[planSheetName];
+  if (!ws || !ws["!ref"]) {
+    return { inserted: 0, updated: 0, unchanged: 0, processed: false, error: `${fileName}: empty sheet` };
+  }
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+
+  const format = detectSheetFormat(ws, XLSX);
+  let personMap: Map<string, PersonData>;
+
+  if (format === "sau046") {
+    personMap = processSAU046Sheet(ws, range, XLSX);
+  } else {
+    const weekCols = getWeekColumns(ws, range, 2, STD_FIRST_WEEK_COL, XLSX);
+    if (weekCols.length === 0) {
+      return { inserted: 0, updated: 0, unchanged: 0, processed: false, error: `${fileName}: no week columns found` };
+    }
+    personMap = extractPersonData(ws, range, weekCols, STD_RESOURCE_COL, STD_RATE_COLS, XLSX);
+  }
+
+  if (personMap.size === 0) {
+    return { inserted: 0, updated: 0, unchanged: 0, processed: true };
+  }
+
+  if (!project) {
+    const projectName = fileName.replace(/\.(xlsx|xls)$/i, "").replace(/[-_]?\s*Plan\b.*$/i, "").trim() || projectCode;
     const [newProject] = await db("projects").insert({
       project_code: projectCode,
       name: projectName,
@@ -973,10 +1114,6 @@ async function processJobPlanFile(
     return { inserted: 0, updated: 0, unchanged: 0, processed: false };
   }
 
-  if (rows.length === 0) {
-    return { inserted: 0, updated: 0, unchanged: 0, processed: true };
-  }
-
   const existingPlans = await db("resource_plans").where("project_id", project.id).select("*");
   const existingKey = new Map<string, any>();
   for (const ep of existingPlans) {
@@ -988,43 +1125,89 @@ async function processJobPlanFile(
   let updated = 0;
   let unchanged = 0;
 
-  for (const row of rows) {
-    const emp = employeeLookup.findEmployee(row.employeeName);
-    if (!emp) continue;
+  for (const [name, data] of personMap) {
+    if (Object.keys(data.weeklyAllocs).length === 0) continue;
 
-    const weeklyAllocs = generateWeeklyAllocations(row.month, row.allocationPercent);
+    const emp = employeeLookup.findEmployee(name);
+    if (!emp) {
+      console.log(`[SharePoint] Job Plans: unmatched employee "${name}" in ${fileName}`);
+      continue;
+    }
 
-    const key = `${emp.id}|${row.month}`;
-    const existing = existingKey.get(key);
-    if (existing) {
-      const daysMatch = Math.abs(Number(existing.planned_days || 0) - row.plannedDays) < 0.05;
-      const hoursMatch = Math.abs(Number(existing.planned_hours || 0) - row.plannedHours) < 0.05;
-      if (daysMatch && hoursMatch) {
-        unchanged++;
+    const monthGroups = new Map<string, Record<string, number>>();
+    for (const [weekKey, pct] of Object.entries(data.weeklyAllocs)) {
+      const d = new Date(weekKey + "T00:00:00Z");
+      const monthKey = jpDateToMonth(d);
+      if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, {});
+      monthGroups.get(monthKey)![weekKey] = pct;
+    }
+
+    for (const [monthKey, weekAllocs] of monthGroups) {
+      const totalH = Object.values(weekAllocs).reduce((s, pct) => s + (pct / 100) * STANDARD_WEEKLY_HOURS, 0);
+      const totalDays = totalH / 8;
+      const activeWeeks = Object.values(weekAllocs).filter((v) => v > 0);
+      const avgPct = activeWeeks.length > 0 ? activeWeeks.reduce((s, v) => s + v, 0) / activeWeeks.length : 0;
+
+      const key = `${emp.id}|${monthKey}`;
+      const existing = existingKey.get(key);
+
+      const weeklyAllocsJson = JSON.stringify(weekAllocs);
+      const planData = {
+        planned_days: totalDays.toFixed(1),
+        planned_hours: totalH.toFixed(1),
+        allocation_percent: avgPct.toFixed(2),
+        weekly_allocations: weeklyAllocsJson,
+        charge_out_rate: data.rates.chargeOutRate,
+        discount_percent: data.rates.discountPercent,
+        discounted_hourly_rate: data.rates.discountedHourlyRate,
+        discounted_daily_rate: data.rates.discountedDailyRate,
+        hourly_gross_cost: data.rates.hourlyGrossCost,
+      };
+
+      if (existing) {
+        const existingWeekly = typeof existing.weekly_allocations === "string" ? existing.weekly_allocations : JSON.stringify(existing.weekly_allocations || {});
+        const dataMatch = (
+          Math.abs(Number(existing.planned_days || 0) - totalDays) < 0.05 &&
+          Math.abs(Number(existing.planned_hours || 0) - totalH) < 0.05 &&
+          Number(existing.charge_out_rate || 0) === (data.rates.chargeOutRate || 0) &&
+          Number(existing.discount_percent || 0) === (data.rates.discountPercent || 0) &&
+          Number(existing.discounted_hourly_rate || 0) === (data.rates.discountedHourlyRate || 0) &&
+          Number(existing.discounted_daily_rate || 0) === (data.rates.discountedDailyRate || 0) &&
+          Number(existing.hourly_gross_cost || 0) === (data.rates.hourlyGrossCost || 0) &&
+          existingWeekly === weeklyAllocsJson
+        );
+        if (dataMatch) {
+          unchanged++;
+        } else {
+          await db("resource_plans").where("id", existing.id).update(planData);
+          existingKey.set(key, { ...existing, ...planData, id: existing.id });
+          updated++;
+        }
       } else {
-        await db("resource_plans").where("id", existing.id).update({
-          planned_days: row.plannedDays,
-          planned_hours: row.plannedHours,
-          allocation_percent: row.allocationPercent,
-          weekly_allocations: JSON.stringify(weeklyAllocs),
-        });
-        updated++;
+        const [newRow] = await db("resource_plans").insert({
+          project_id: project.id,
+          employee_id: emp.id,
+          month: monthKey,
+          ...planData,
+        }).returning("id");
+        existingKey.set(key, { id: newRow?.id || 0, employee_id: emp.id, month: monthKey, ...planData });
+        inserted++;
       }
-    } else {
-      await db("resource_plans").insert({
-        project_id: project.id,
-        employee_id: emp.id,
-        month: row.month,
-        planned_days: row.plannedDays,
-        planned_hours: row.plannedHours,
-        allocation_percent: row.allocationPercent,
-        weekly_allocations: JSON.stringify(weeklyAllocs),
-      });
-      inserted++;
     }
   }
 
+  console.log(`[SharePoint] Job Plans: ${projectCode} sheet="${planSheetName}" fmt=${format} ${personMap.size} people, ${inserted} new, ${updated} upd, ${unchanged} unchg`);
   return { inserted, updated, unchanged, processed: true };
+}
+
+async function processJobPlanFile(
+  file: { name: string; downloadUrl: string; id: string },
+  token: SharePointToken,
+  projectByCode: Map<string, any>,
+  employeeLookup: { findEmployee: (name: string) => { id: number } | null },
+): Promise<{ inserted: number; updated: number; unchanged: number; processed: boolean; error?: string }> {
+  const buffer = await downloadExcelFile(file.downloadUrl, token);
+  return parseAndProcessJobPlanFile(buffer, file.name, projectByCode, employeeLookup);
 }
 
 export async function syncSharePointJobPlans(): Promise<{
@@ -1079,6 +1262,28 @@ export async function syncSharePointJobPlans(): Promise<{
   if (totalUnchanged > 0) parts.push(`${totalUnchanged} unchanged`);
   parts.push(`${filesProcessed} files processed`);
   if (errors.length > 0) parts.push(`${errors.length} errors`);
+
+  try {
+    const contractValues = await db("resource_plans")
+      .select("project_id")
+      .sum({ totalValue: db.raw("COALESCE(CAST(discounted_hourly_rate AS FLOAT), 0) * COALESCE(CAST(planned_hours AS FLOAT), 0)") })
+      .groupBy("project_id");
+
+    let contractUpdated = 0;
+    for (const cv of contractValues) {
+      const val = parseFloat(cv.totalValue || 0);
+      if (val > 0) {
+        await db("projects").where("id", cv.project_id).update({ contract_value: val.toFixed(2) });
+        contractUpdated++;
+      }
+    }
+    if (contractUpdated > 0) {
+      parts.push(`${contractUpdated} project contract values updated`);
+      console.log(`[SharePoint] Job Plans: updated contract_value on ${contractUpdated} projects`);
+    }
+  } catch (cvErr: any) {
+    console.log(`[SharePoint] Job Plans: contract value calc error: ${cvErr.message}`);
+  }
 
   console.log(`[SharePoint] Job Plans sync complete: ${parts.join(", ")}`);
   if (errors.length > 0) {
