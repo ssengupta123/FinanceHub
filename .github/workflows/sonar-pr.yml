@@ -1,6 +1,9 @@
-name: SonarQube PR Check
+name: SonarQube Analysis
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
