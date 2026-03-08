@@ -100,15 +100,19 @@ function isAllocatedToActiveProject(
   return fyTimesheets.some(t => {
     if (t.employeeId !== empId) return false;
     const proj = projectList.find(p => p.id === t.projectId);
-    return !!proj && proj.client !== "Internal" && proj.client !== "RGT" && (proj.status === "active" || proj.adStatus === "Active");
+    if (!proj || proj.client === "Internal" || proj.client === "RGT") return false;
+    if (proj.status === "completed" || proj.status === "closed") return false;
+    return proj.status === "active" || proj.adStatus === "Active";
   });
 }
 
 function buildResourcePlanLookups(resourcePlanList: ResourcePlan[]) {
   const rpByEmpMonth = new Map<string, number>();
   const rpByEmpMonthProjects = new Map<string, { projectId: number; allocPct: number }[]>();
+  const employeesWithPlans = new Set<number>();
   for (const rp of resourcePlanList) {
     if (!rp.employeeId || !rp.month) continue;
+    employeesWithPlans.add(rp.employeeId);
     const monthKey = rp.month.substring(0, 7);
     const mapKey = `${rp.employeeId}-${monthKey}`;
     rpByEmpMonth.set(mapKey, (rpByEmpMonth.get(mapKey) || 0) + parseNum(rp.allocationPercent));
@@ -116,7 +120,7 @@ function buildResourcePlanLookups(resourcePlanList: ResourcePlan[]) {
     projList.push({ projectId: rp.projectId ?? 0, allocPct: parseNum(rp.allocationPercent) });
     rpByEmpMonthProjects.set(mapKey, projList);
   }
-  return { rpByEmpMonth, rpByEmpMonthProjects };
+  return { rpByEmpMonth, rpByEmpMonthProjects, employeesWithPlans };
 }
 
 type ProjectionAlloc = { projectId: number; hours: number; allocPct: number };
@@ -136,13 +140,13 @@ function computeWeekProjection(opts: {
   weekKey: string;
   weekDate: Date;
   actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>;
-  hasResourcePlans: boolean;
+  empHasResourcePlans: boolean;
   rpByEmpMonth: Map<string, number>;
   rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>;
   allocations: EmpAllocation[];
   recentAvg: { avgHours: number; avgBillable: number };
 }): WeekProjection {
-  const { empId, weekKey, weekDate, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects, allocations, recentAvg } = opts;
+  const { empId, weekKey, weekDate, actualDataByEmpWeek, empHasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects, allocations, recentAvg } = opts;
   const mapKey = `${empId}-${weekKey}`;
   const actual = actualDataByEmpWeek.get(mapKey);
 
@@ -153,21 +157,23 @@ function computeWeekProjection(opts: {
   }
 
   const monthKey = `${weekDate.getFullYear()}-${String(weekDate.getMonth() + 1).padStart(2, "0")}`;
+  const rpKey = `${empId}-${monthKey}`;
+  const rpAlloc = rpByEmpMonth.get(rpKey);
 
-  if (hasResourcePlans) {
-    const rpKey = `${empId}-${monthKey}`;
-    const rpAlloc = rpByEmpMonth.get(rpKey);
-    if (rpAlloc !== undefined) {
-      const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
-      const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
-      const rpProjects = rpByEmpMonthProjects.get(rpKey) || [];
-      const projAllocs = rpProjects.map(rp => ({
-        projectId: rp.projectId,
-        hours: (rp.allocPct / 100) * STANDARD_WEEKLY_HOURS,
-        allocPct: rp.allocPct,
-      }));
-      return { worked: projHours, billable: projHours, bench, utilization: rpAlloc, isProjected: true, projectCount: rpProjects.length, projectAllocations: projAllocs };
-    }
+  if (rpAlloc !== undefined) {
+    const projHours = (rpAlloc / 100) * STANDARD_WEEKLY_HOURS;
+    const bench = Math.max(STANDARD_WEEKLY_HOURS - projHours, 0);
+    const rpProjects = rpByEmpMonthProjects.get(rpKey) || [];
+    const projAllocs = rpProjects.map(rp => ({
+      projectId: rp.projectId,
+      hours: (rp.allocPct / 100) * STANDARD_WEEKLY_HOURS,
+      allocPct: rp.allocPct,
+    }));
+    return { worked: projHours, billable: projHours, bench, utilization: rpAlloc, isProjected: true, projectCount: rpProjects.length, projectAllocations: projAllocs };
+  }
+
+  if (empHasResourcePlans) {
+    return { worked: 0, billable: 0, bench: STANDARD_WEEKLY_HOURS, utilization: 0, isProjected: true, projectCount: 0, projectAllocations: [] };
   }
 
   const activeAllocsForWeek = allocations.filter(a => {
@@ -195,6 +201,7 @@ function computeWeekProjection(opts: {
 function filterActiveProjects(projects: Project[], today: Date): Project[] {
   return projects.filter(p => {
     if (p.client === "Internal" || p.client === "RGT") return false;
+    if (p.status === "completed" || p.status === "closed") return false;
     if (p.status !== "active" && p.adStatus !== "Active") return false;
     if (p.endDate) {
       const end = new Date(p.endDate);
@@ -364,17 +371,17 @@ function computeEmployeeRolling(opts: {
   empRecentAvg: Map<number, { avgHours: number; avgBillable: number; name: string; role: string; isAllocated: boolean }>;
   empProjectAllocations: Map<number, EmpAllocation[]>;
   actualDataByEmpWeek: Map<string, { totalHours: number; billableHours: number }>;
-  hasResourcePlans: boolean;
+  employeesWithPlans: Set<number>;
   rpByEmpMonth: Map<string, number>;
   rpByEmpMonthProjects: Map<string, { projectId: number; allocPct: number }[]>;
 }) {
-  const { emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects } = opts;
+  const { emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, employeesWithPlans, rpByEmpMonth, rpByEmpMonthProjects } = opts;
   const recent = empRecentAvg.get(emp.id)!;
   const allocations = empProjectAllocations.get(emp.id) || [];
 
   const weeks = futureWeeks.map((fw) => computeWeekProjection({
     empId: emp.id, weekKey: fw.key, weekDate: fw.date, actualDataByEmpWeek,
-    hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects,
+    empHasResourcePlans: employeesWithPlans.has(emp.id), rpByEmpMonth, rpByEmpMonthProjects,
     allocations, recentAvg: { avgHours: recent.avgHours, avgBillable: recent.avgBillable },
   }));
 
@@ -455,8 +462,7 @@ function computeUtilizationData(
   });
 
   const resourcePlanList = resourcePlans || [];
-  const hasResourcePlans = resourcePlanList.length > 0;
-  const { rpByEmpMonth, rpByEmpMonthProjects } = buildResourcePlanLookups(resourcePlanList);
+  const { rpByEmpMonth, rpByEmpMonthProjects, employeesWithPlans } = buildResourcePlanLookups(resourcePlanList);
 
   const activeProjects = filterActiveProjects(projectList || [], today);
   const empProjectAllocations = buildEmpProjectAllocationsMap(permanentEmployees, fyTimesheets, activeProjects, today);
@@ -464,7 +470,7 @@ function computeUtilizationData(
   const actualDataByEmpWeek = buildActualDataByEmpWeek(weeklyData, permanentIds);
 
   const rolling = permanentEmployees.map(emp =>
-    computeEmployeeRolling({ emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, hasResourcePlans, rpByEmpMonth, rpByEmpMonthProjects })
+    computeEmployeeRolling({ emp, futureWeeks, empRecentAvg, empProjectAllocations, actualDataByEmpWeek, employeesWithPlans, rpByEmpMonth, rpByEmpMonthProjects })
   ).sort((a, b) => b.avgUtil - a.avgUtil);
 
   const totalCapacity = rolling.length * STANDARD_WEEKLY_HOURS * weekCols.length;

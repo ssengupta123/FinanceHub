@@ -27,8 +27,9 @@ The application features a React + Vite frontend with Tailwind CSS and shadcn/ui
 - **Seed Data:** A script (`scripts/seed-data.ts`) populates the database with demo data for various entities.
 - **Live Data Import Pipeline:** Three-step import flow replaces KPI Excel: 1) Staff SOT Excel → employees, 2) iTimesheets CSV → timesheets, 3) Derivation engine → project_monthly + project summary fields. UI accessible from Data Sources page.
   - `POST /api/import/staff-sot` — uploads Staff SOT Excel, upserts employees
-  - `POST /api/import/timesheets-csv` — uploads iTimesheets CSV, batch imports timesheets with employee/project auto-creation
-  - `POST /api/derive/project-financials` — aggregates timesheets → project_monthly (revenue/cost/profit by month) and updates project actual_amount, balance_amount, to_date_gm_percent
+  - `POST /api/import/timesheets-csv` — uploads iTimesheets CSV, batch imports timesheets with employee/project auto-creation. Project matching uses both full description AND extracted project code prefix (e.g., "AGD001" from "AGD001 Case Management System").
+  - `POST /api/derive/project-financials` — aggregates timesheets → project_monthly (revenue/cost/profit by FY month position 1-12) and updates project actual_amount, balance_amount, to_date_gm_percent
+- **Utilisation Projection Logic:** The utilisation page projects future hours using a per-employee priority: (1) actual timesheet data, (2) resource plans (if the employee has any plans, only plans drive projection; months without plans show 0%), (3) timesheet extrapolation fallback (only for employees with zero resource plans, using active non-closed projects).
 
 ## External Dependencies
 - **PostgreSQL:** Development database.
