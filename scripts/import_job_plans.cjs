@@ -107,8 +107,8 @@ function extractPersonData(ws, range, weekCols, resourceCol, rateCols) {
     for (const wc of weekCols) {
       const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
       const val = parseNum(cell?.v);
-      if (val !== null && val > 0) {
-        weeklyAllocs[wc.key] = Math.round(val * 100) / 100;
+      if (val !== null && val > 0 && val <= 2) {
+        weeklyAllocs[wc.key] = Math.round(val * 100);
       }
     }
 
@@ -180,7 +180,7 @@ function processSAU046Sheet(ws, range) {
     for (const wc of weekCols) {
       const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
       const val = parseNum(cell?.v);
-      if (val !== null && val > 0) weeklyAllocs[wc.key] = Math.round(val * 100) / 100;
+      if (val !== null && val > 0 && val <= 2) weeklyAllocs[wc.key] = Math.round(val * 100);
     }
     personMap.set(name, { rates, weeklyAllocs });
   }
@@ -393,11 +393,32 @@ async function main() {
     );
   console.log("\nRate coverage:", JSON.stringify(rateCounts[0]));
 
-  const sampleRates = await db("resource_plans")
-    .whereNotNull("discounted_hourly_rate")
-    .select("project_id", "employee_id", "charge_out_rate", "discount_percent", "discounted_hourly_rate", "discounted_daily_rate", "hourly_gross_cost")
-    .limit(5);
-  console.log("Sample rates:", JSON.stringify(sampleRates, null, 2));
+  console.log("\nCalculating project contract values from job plan rates x hours...");
+  const contractValues = await db("resource_plans")
+    .select("project_id")
+    .sum({ totalValue: db.raw("COALESCE(discounted_hourly_rate, 0) * COALESCE(planned_hours, 0)") })
+    .groupBy("project_id");
+
+  let contractUpdated = 0;
+  for (const cv of contractValues) {
+    const val = parseFloat(cv.totalValue || 0);
+    if (val > 0) {
+      await db("projects").where("id", cv.project_id).update({ contract_value: val.toFixed(2) });
+      contractUpdated++;
+    }
+  }
+  console.log(`Updated contract_value on ${contractUpdated} projects`);
+
+  const topProjects = await db("projects")
+    .whereNotNull("contract_value")
+    .where("contract_value", ">", 0)
+    .orderBy("contract_value", "desc")
+    .select("project_code", "contract_value")
+    .limit(10);
+  console.log("Top projects by contract value:");
+  for (const p of topProjects) {
+    console.log(`  ${(p.project_code || "").padEnd(14)} $${parseFloat(p.contract_value).toLocaleString()}`);
+  }
 
   await db.destroy();
 }
