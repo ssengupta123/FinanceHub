@@ -2454,7 +2454,7 @@ export async function registerRoutes(
   }) {
     let imported = 0;
     const errors: string[] = [];
-    const batchSize = 500;
+    const batchSize = isMSSQL ? 150 : 500;
     let batch: any[] = [];
 
     for (let i = 1; i < lines.length; i++) {
