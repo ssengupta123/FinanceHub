@@ -672,20 +672,20 @@ export default function ProjectsList() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[40px]" />
-                    {isCol("code") && <TableHead>Code</TableHead>}
-                    {isCol("name") && <TableHead>Project Name</TableHead>}
-                    {isCol("client") && <TableHead>Client</TableHead>}
-                    {isCol("vat") && <TableHead>VAT</TableHead>}
-                    {isCol("billing") && <TableHead>Billing</TableHead>}
-                    {isCol("adStatus") && <TableHead>A/D Status</TableHead>}
-                    {isCol("workOrder") && <TableHead className="text-right">Work Order ($)</TableHead>}
-                    {isCol("actual") && <TableHead className="text-right">Actual ($)</TableHead>}
-                    {isCol("balance") && <TableHead className="text-right">Balance ($)</TableHead>}
-                    {isCol("forecastRev") && <TableHead className="text-right">Forecast Rev ($)</TableHead>}
-                    {isCol("margin") && <TableHead className="text-right">Margin %</TableHead>}
+                    <TableHead className="w-10" />
+                    {isCol("code") && <TableHead className="whitespace-nowrap">Code</TableHead>}
+                    {isCol("name") && <TableHead className="w-full">Project Name</TableHead>}
+                    {isCol("client") && <TableHead className="whitespace-nowrap">Client</TableHead>}
+                    {isCol("vat") && <TableHead className="whitespace-nowrap">VAT</TableHead>}
+                    {isCol("billing") && <TableHead className="whitespace-nowrap">Billing</TableHead>}
+                    {isCol("adStatus") && <TableHead className="whitespace-nowrap">A/D Status</TableHead>}
+                    {isCol("workOrder") && <TableHead className="text-right whitespace-nowrap">Work Order ($)</TableHead>}
+                    {isCol("actual") && <TableHead className="text-right whitespace-nowrap">Actual ($)</TableHead>}
+                    {isCol("balance") && <TableHead className="text-right whitespace-nowrap">Balance ($)</TableHead>}
+                    {isCol("forecastRev") && <TableHead className="text-right whitespace-nowrap">Forecast Rev ($)</TableHead>}
+                    {isCol("margin") && <TableHead className="text-right whitespace-nowrap">Margin %</TableHead>}
                     {isCol("opsCommentary") && <TableHead className="max-w-[200px]">Ops Commentary</TableHead>}
-                    <TableHead className="w-[50px]" />
+                    <TableHead className="w-[70px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
