@@ -722,13 +722,13 @@ export default function ProjectsList() {
                         )}
                         {isCol("margin") && (
                           <TableCell
-                            className={`text-right ${marginRagClass(parseNum(project.forecastGmPercent), MARGIN_TARGET)}`}
+                            className={`text-right ${marginRagClass(parseNum(project.toDateGmPercent), MARGIN_TARGET)}`}
                             onClick={() => navigate(`/projects/${project.id}`)}
                             data-testid={`text-margin-${project.id}`}
                           >
                             <span className="inline-flex items-center gap-1.5 justify-end">
-                              <RagDot value={parseNum(project.forecastGmPercent)} greenThreshold={MARGIN_TARGET} amberThreshold={MARGIN_TARGET * 0.5} />
-                              {formatPercent(project.forecastGmPercent)}
+                              <RagDot value={parseNum(project.toDateGmPercent)} greenThreshold={MARGIN_TARGET} amberThreshold={MARGIN_TARGET * 0.5} />
+                              {formatPercent(project.toDateGmPercent)}
                             </span>
                           </TableCell>
                         )}

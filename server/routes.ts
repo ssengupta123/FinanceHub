@@ -2699,7 +2699,6 @@ export async function registerRoutes(
         .groupBy("project_id", "fy_year", "fy_month");
 
       const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-      const fyMonthNums = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
 
       let monthlyUpdated = 0;
       let monthlyCreated = 0;
@@ -2713,11 +2712,11 @@ export async function registerRoutes(
         const revenue = Number(row.total_revenue || 0);
         const cost = Number(row.total_cost || 0);
         const profit = revenue - cost;
-        const calMonth = fyMonthNums[row.fy_month - 1];
-        const monthLabel = fyMonthLabels[row.fy_month - 1];
+        const fyMonth = row.fy_month;
+        const monthLabel = fyMonthLabels[fyMonth - 1];
 
         const existing = await db("project_monthly")
-          .where({ project_id: row.project_id, fy_year: row.fy_year, month: calMonth })
+          .where({ project_id: row.project_id, fy_year: row.fy_year, month: fyMonth })
           .first();
 
         if (existing) {
@@ -2731,7 +2730,7 @@ export async function registerRoutes(
           await db("project_monthly").insert({
             project_id: row.project_id,
             fy_year: row.fy_year,
-            month: calMonth,
+            month: fyMonth,
             month_label: monthLabel,
             revenue: revenue.toFixed(2),
             cost: cost.toFixed(2),
