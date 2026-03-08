@@ -92,11 +92,58 @@ export function cleanMultiValueField(val: string | null | undefined): string | n
   return val.replaceAll(/;#\d+;#/g, "; ").replaceAll(";#", "; ").trim() || null;
 }
 
+const VAT_CANONICAL_MAP: Record<string, string> = {
+  daff: "DAFF",
+  disr: "DISR",
+  emerging: "Emerging",
+  growth: "GROWTH",
+  sau: "SAU",
+  "vic gov": "Vic Gov",
+  vicgov: "Vic Gov",
+  "vic-gov": "Vic Gov",
+  victoria: "Vic Gov",
+  "victorian gov": "Vic Gov",
+  "victorian government": "Vic Gov",
+};
+
 export function cleanVat(val: string | null | undefined): string | null {
   if (!val) return null;
   let vat = val.replaceAll(";#", "").replace(/\|.*$/, "").trim();
-  if (vat.toLowerCase() === "growth") vat = "GROWTH";
-  return vat || null;
+  if (!vat) return null;
+  const mapped = VAT_CANONICAL_MAP[vat.toLowerCase()];
+  if (mapped) return mapped;
+  for (const [key, canonical] of Object.entries(VAT_CANONICAL_MAP)) {
+    if (vat.toLowerCase().includes(key) || key.includes(vat.toLowerCase())) {
+      return canonical;
+    }
+  }
+  return vat;
+}
+
+const CONTRACT_TYPE_MAP: Record<string, string> = {
+  "fixed": "fixed_price",
+  "fixed price": "fixed_price",
+  "fixedprice": "fixed_price",
+  "fp": "fixed_price",
+  "t&m": "time_materials",
+  "tm": "time_materials",
+  "time & materials": "time_materials",
+  "time and materials": "time_materials",
+  "time_materials": "time_materials",
+  "time materials": "time_materials",
+  "labour hire": "labour_hire",
+  "labourhire": "labour_hire",
+  "labor hire": "labour_hire",
+  "lh": "labour_hire",
+  "retainer": "retainer",
+};
+
+export function cleanContractType(val: string | null | undefined): string | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const mapped = CONTRACT_TYPE_MAP[trimmed.toLowerCase()];
+  return mapped || trimmed;
 }
 
 export function formatNumericField(raw: any, decimals: number): string | null {
@@ -133,7 +180,7 @@ function extractLookupId(item: SharePointListItem, baseName: string): string | n
 
 export function extractItemFields(item: SharePointListItem): Record<string, any> {
   return {
-    workType: extractFieldText(item["WorkType_x0028_FTorContract_x0029_"] || item.WorkType || item.Work_x0020_Type || item.OppWorkType),
+    workType: extractFieldText(item.Work_x0020_Type || item.OppWorkType || item.WorkType),
     status: extractFieldText(item.Status0 || item.RAGStatus || item.OppStatus),
     comment: extractFieldText(item.ChimComment || item.Comment || item.Comments || item.OppComment),
     casLead: extractLookupId(item, "BidLead0") || extractFieldText(item.CAS_x0020_Lead || item.CASLead),
@@ -697,7 +744,7 @@ export async function syncSharePointInflightProjects(): Promise<{
         engagementManager: fields.casLead,
         vat: fields.vat,
         workType: fields.workType,
-        contractType: extractFieldText(item.ContractType || item.Contract_x0020_Type) || null,
+        contractType: cleanContractType(extractFieldText(item.ContractType || item.Contract_x0020_Type || item["WorkType_x0028_FTorContract_x0029_"])),
         status: "active",
         startDate: fields.startDate,
         endDate: fields.expiryDate,
