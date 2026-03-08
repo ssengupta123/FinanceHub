@@ -84,7 +84,7 @@ export default function JobPlans() {
   const { can } = useAuth();
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [expandedProjects, setExpandedProjects] = useState<Record<number, boolean>>({});
-  const [numWeeks, setNumWeeks] = useState(26);
+  const [numWeeks, setNumWeeks] = useState(52);
   const [addOpen, setAddOpen] = useState(false);
   const [addProjectId, setAddProjectId] = useState("");
   const [addEmployeeId, setAddEmployeeId] = useState("");
