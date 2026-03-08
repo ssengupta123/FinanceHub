@@ -1014,7 +1014,25 @@ export default function Scenarios() {
 
   const allFyPipeline = useMemo(() => {
     if (!pipeline) return [];
-    return pipeline.filter(o => o.fyYear === selectedFY);
+    if (selectedFY === "open_opps") return pipeline.filter(o => o.fyYear === "open_opps");
+    const fyDates = parseFyDates(selectedFY);
+    return pipeline.filter(o => {
+      if (o.fyYear === selectedFY) return true;
+      if (o.fyYear === "open_opps" && fyDates) {
+        const { fyStart, fyEnd } = fyDates;
+        const dueDate = parseDate(o.dueDate);
+        const startDate = parseDate(o.startDate);
+        const expiryDate = parseDate(o.expiryDate);
+        if (startDate && expiryDate) {
+          return startDate <= fyEnd && expiryDate >= fyStart;
+        }
+        if (dueDate) {
+          return dueDate >= fyStart && dueDate <= fyEnd;
+        }
+        return true;
+      }
+      return false;
+    });
   }, [pipeline, selectedFY]);
 
   const filteredPipeline = useMemo(() => {
