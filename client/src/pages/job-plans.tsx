@@ -100,10 +100,20 @@ export default function JobPlans() {
 
   const projectGroups = useMemo(() => {
     if (!resourcePlans) return [];
+    const fyParts = selectedFY.split("-");
+    const fyStartYear = fyParts.length === 2 ? 2000 + Number.parseInt(fyParts[0], 10) : new Date().getFullYear();
+    const fyStartStr = `${fyStartYear}-07-01`;
+    const fyEndStr = `${fyStartYear + 1}-06-30`;
+
     const groups = new Map<number, ProjectGroup>();
     for (const rp of resourcePlans) {
       const proj = projMap.get(rp.projectId);
       if (!proj) continue;
+      const allocs = parseAllocations(rp);
+      const hasAllocInFY = Object.keys(allocs).some(k => k >= fyStartStr && k <= fyEndStr);
+      const monthStr = typeof rp.month === "string" ? rp.month.substring(0, 10) : "";
+      const monthInFY = monthStr >= fyStartStr && monthStr <= fyEndStr;
+      if (!hasAllocInFY && !monthInFY) continue;
       if (!groups.has(rp.projectId)) {
         groups.set(rp.projectId, { project: proj, plans: [], employees: new Set() });
       }
@@ -114,24 +124,16 @@ export default function JobPlans() {
     return Array.from(groups.values()).sort((a, b) =>
       (a.project.projectCode || a.project.name).localeCompare(b.project.projectCode || b.project.name)
     );
-  }, [resourcePlans, projMap]);
+  }, [resourcePlans, projMap, selectedFY]);
 
-  const earliestDate = useMemo(() => {
-    if (!resourcePlans?.length) return new Date();
-    let earliest = new Date();
-    for (const rp of resourcePlans) {
-      const monthDate = new Date(typeof rp.month === "string" ? rp.month : rp.month as any);
-      if (!isNaN(monthDate.getTime()) && monthDate < earliest) earliest = monthDate;
-      const allocs = parseAllocations(rp);
-      for (const k of Object.keys(allocs)) {
-        const d = new Date(k);
-        if (d < earliest) earliest = d;
-      }
-    }
-    return earliest;
-  }, [resourcePlans]);
+  const fyStartDate = useMemo(() => {
+    const parts = selectedFY.split("-");
+    if (parts.length !== 2) return new Date();
+    const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
+    return new Date(fyStartYear, 6, 1);
+  }, [selectedFY]);
 
-  const weeks = useMemo(() => getWeekDates(earliestDate, numWeeks), [earliestDate, numWeeks]);
+  const weeks = useMemo(() => getWeekDates(fyStartDate, numWeeks), [fyStartDate, numWeeks]);
 
   const totalResources = useMemo(() => {
     const empIds = new Set<number>();
@@ -140,8 +142,8 @@ export default function JobPlans() {
   }, [projectGroups]);
 
   const totalForecastHours = useMemo(() => {
-    return (resourcePlans || []).reduce((s, rp) => s + parseNum(rp.plannedHours), 0);
-  }, [resourcePlans]);
+    return projectGroups.reduce((s, g) => s + g.plans.reduce((ps, rp) => ps + parseNum(rp.plannedHours), 0), 0);
+  }, [projectGroups]);
 
   const addPlanMutation = useMutation({
     mutationFn: async (data: { projectId: number; employeeId: number }) => {
@@ -191,6 +193,16 @@ export default function JobPlans() {
           <p className="text-muted-foreground text-sm">Weekly resource allocation by project</p>
         </div>
         <div className="flex items-center gap-3">
+          <FySelector value={selectedFY} onChange={setSelectedFY} options={(() => {
+            const cur = getCurrentFy();
+            const parts = cur.split("-");
+            const yr = parts.length === 2 ? parseInt(parts[0]) : 25;
+            const fys: string[] = [];
+            for (let y = yr - 3; y <= yr + 1; y++) {
+              fys.push(`${String(y).padStart(2, "0")}-${String(y + 1).padStart(2, "0")}`);
+            }
+            return fys;
+          })()} />
           <Select value={String(numWeeks)} onValueChange={v => setNumWeeks(Number(v))}>
             <SelectTrigger className="w-[120px]" data-testid="select-weeks">
               <SelectValue />
