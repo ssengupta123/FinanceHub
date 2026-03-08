@@ -231,7 +231,7 @@ export default function ProjectsList() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterVat, setFilterVat] = useState("all");
-  const [filterBilling, setFilterBilling] = useState("Fixed");
+  const [filterBilling, setFilterBilling] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(
     new Set(ALL_COLUMNS.map(c => c.key))
