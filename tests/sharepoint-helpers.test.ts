@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, stageSharePointItems, getSharePointConfig, extractFieldText } from "../server/sharepoint-sync";
+import { transformSharePointItem, formatNumericField, extractItemFields, parseSharePointDate, cleanMultiValueField, cleanVat, cleanContractType, stageSharePointItems, getSharePointConfig, extractFieldText } from "../server/sharepoint-sync";
 
 describe("transformSharePointItem", () => {
   it("transforms a valid SharePoint item", () => {
@@ -8,7 +8,7 @@ describe("transformSharePointItem", () => {
       Status: "S",
       "Value_x0024_exGST": 50000,
       Margin: 0.25,
-      "WorkType_x0028_FTorContract_x0029_": "Advisory",
+      Work_x0020_Type: "Advisory",
       Status0: "Active",
       Team: "DAFF",
     };
@@ -131,7 +131,7 @@ describe("formatNumericField", () => {
 describe("extractItemFields", () => {
   it("extracts standard fields using correct internal names", () => {
     const item = {
-      "WorkType_x0028_FTorContract_x0029_": "Advisory",
+      Work_x0020_Type: "Advisory",
       Status0: "Active",
       ChimComment: "Test",
       BidLead0: [{ LookupId: 183, LookupValue: "John Smith" }],
@@ -256,6 +256,93 @@ describe("cleanVat", () => {
 
   it("preserves normal VAT values", () => {
     expect(cleanVat("SAU")).toBe("SAU");
+  });
+
+  it("normalizes DAFF case variations", () => {
+    expect(cleanVat("daff")).toBe("DAFF");
+    expect(cleanVat("Daff")).toBe("DAFF");
+  });
+
+  it("normalizes DISR case variations", () => {
+    expect(cleanVat("disr")).toBe("DISR");
+    expect(cleanVat("Disr")).toBe("DISR");
+  });
+
+  it("normalizes Emerging case variations", () => {
+    expect(cleanVat("emerging")).toBe("Emerging");
+    expect(cleanVat("EMERGING")).toBe("Emerging");
+  });
+
+  it("normalizes SAU case variations", () => {
+    expect(cleanVat("sau")).toBe("SAU");
+  });
+
+  it("normalizes Vic Gov variations", () => {
+    expect(cleanVat("Vic Gov")).toBe("Vic Gov");
+    expect(cleanVat("vic gov")).toBe("Vic Gov");
+    expect(cleanVat("VicGov")).toBe("Vic Gov");
+    expect(cleanVat("Vic-Gov")).toBe("Vic Gov");
+  });
+
+  it("preserves unknown VAT values", () => {
+    expect(cleanVat("SomeNewVAT")).toBe("SomeNewVAT");
+  });
+});
+
+describe("cleanContractType", () => {
+  it("maps Fixed to fixed_price", () => {
+    expect(cleanContractType("Fixed")).toBe("fixed_price");
+  });
+
+  it("maps Fixed Price to fixed_price", () => {
+    expect(cleanContractType("Fixed Price")).toBe("fixed_price");
+  });
+
+  it("maps FP to fixed_price", () => {
+    expect(cleanContractType("FP")).toBe("fixed_price");
+  });
+
+  it("maps T&M to time_materials", () => {
+    expect(cleanContractType("T&M")).toBe("time_materials");
+  });
+
+  it("maps Time & Materials to time_materials", () => {
+    expect(cleanContractType("Time & Materials")).toBe("time_materials");
+  });
+
+  it("maps Labour Hire to labour_hire", () => {
+    expect(cleanContractType("Labour Hire")).toBe("labour_hire");
+  });
+
+  it("maps LH to labour_hire", () => {
+    expect(cleanContractType("LH")).toBe("labour_hire");
+  });
+
+  it("maps Retainer to retainer", () => {
+    expect(cleanContractType("Retainer")).toBe("retainer");
+  });
+
+  it("preserves already-normalized values", () => {
+    expect(cleanContractType("time_materials")).toBe("time_materials");
+    expect(cleanContractType("fixed_price")).toBe("fixed_price");
+  });
+
+  it("returns null for null", () => {
+    expect(cleanContractType(null)).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(cleanContractType("")).toBeNull();
+  });
+
+  it("preserves unknown contract types", () => {
+    expect(cleanContractType("Something Else")).toBe("Something Else");
+  });
+
+  it("is case insensitive", () => {
+    expect(cleanContractType("fixed")).toBe("fixed_price");
+    expect(cleanContractType("t&m")).toBe("time_materials");
+    expect(cleanContractType("labour hire")).toBe("labour_hire");
   });
 });
 
