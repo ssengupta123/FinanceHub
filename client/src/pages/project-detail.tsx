@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import type { Project, Kpi, Cost, Milestone, ResourcePlan } from "@shared/schema";
@@ -14,12 +15,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Users, DollarSign, Clock } from "lucide-react";
+
+type EnrichedResourcePlan = ResourcePlan & { employeeName?: string; employeeCode?: string };
 
 function formatCurrency(val: string | number | null | undefined) {
   if (!val) return "$0.00";
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  if (Number.isNaN(n)) return "$0.00";
+  return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 }
 
 function formatPercent(val: string | number | null | undefined) {
@@ -49,29 +53,25 @@ function KpisTabContent({ kpis, isLoading }: Readonly<{ kpis: Kpi[] | undefined;
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Month</TableHead>
-                <TableHead className="text-right">Revenue</TableHead>
-                <TableHead className="text-right">Billed</TableHead>
-                <TableHead className="text-right">Unbilled</TableHead>
-                <TableHead className="text-right">Gross Cost</TableHead>
-                <TableHead className="text-right">Margin</TableHead>
-                <TableHead className="text-right">Utilisation</TableHead>
+                <TableHead>Metric</TableHead>
+                <TableHead className="text-right">Target</TableHead>
+                <TableHead className="text-right">Actual</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {kpis && kpis.length > 0 ? kpis.map(kpi => (
                 <TableRow key={kpi.id} data-testid={`row-kpi-${kpi.id}`}>
-                  <TableCell className="font-medium">{kpi.month}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(kpi.revenue)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(kpi.billedAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(kpi.unbilledAmount)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(kpi.grossCost)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(kpi.margin)}</TableCell>
-                  <TableCell className="text-right">{formatPercent(kpi.utilization)}</TableCell>
+                  <TableCell className="font-medium">{kpi.name}</TableCell>
+                  <TableCell className="text-right">{kpi.target}</TableCell>
+                  <TableCell className="text-right">{kpi.actual}</TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(kpi.status)} data-testid={`badge-kpi-status-${kpi.id}`}>{kpi.status}</Badge>
+                  </TableCell>
                 </TableRow>
               )) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No KPI data available.</TableCell>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">No KPIs defined.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -89,7 +89,7 @@ function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
         <CardTitle className="text-base">Project Information</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-3">
             <div>
               <p className="text-sm text-muted-foreground">Name</p>
@@ -110,13 +110,23 @@ function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
           </div>
           <div className="space-y-3">
             <div>
+              <p className="text-sm text-muted-foreground">VAT</p>
+              <p className="text-sm font-medium" data-testid="text-detail-vat">{project.vat || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Billing Category</p>
+              <p className="text-sm font-medium" data-testid="text-detail-billing">{project.billingCategory || "—"}</p>
+            </div>
+            <div>
               <p className="text-sm text-muted-foreground">Start Date</p>
-              <p className="text-sm font-medium" data-testid="text-detail-start">{project.startDate || "—"}</p>
+              <p className="text-sm font-medium" data-testid="text-detail-start">{project.startDate ? String(project.startDate).substring(0, 10) : "—"}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">End Date</p>
-              <p className="text-sm font-medium" data-testid="text-detail-end">{project.endDate || "—"}</p>
+              <p className="text-sm font-medium" data-testid="text-detail-end">{project.endDate ? String(project.endDate).substring(0, 10) : "—"}</p>
             </div>
+          </div>
+          <div className="space-y-3">
             <div>
               <p className="text-sm text-muted-foreground">Budget</p>
               <p className="text-sm font-medium" data-testid="text-detail-budget">{formatCurrency(project.budgetAmount)}</p>
@@ -125,6 +135,14 @@ function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
               <p className="text-sm text-muted-foreground">Contract Value</p>
               <p className="text-sm font-medium" data-testid="text-detail-contract-value">{formatCurrency(project.contractValue)}</p>
             </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Work Order Amount</p>
+              <p className="text-sm font-medium" data-testid="text-detail-work-order">{formatCurrency(project.workOrderAmount)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Sold GM %</p>
+              <p className="text-sm font-medium" data-testid="text-detail-sold-gm">{project.soldGmPercent ? `${project.soldGmPercent}%` : "—"}</p>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -132,11 +150,249 @@ function ProjectOverviewTab({ project }: Readonly<{ project: Project }>) {
   );
 }
 
+type MonthEntry = { month: string; label: string; plannedDays: number; plannedHours: number; allocationPercent: number };
+
+type EmployeeSummary = {
+  employeeId: number;
+  employeeName: string;
+  employeeCode: string;
+  totalPlannedDays: number;
+  totalPlannedHours: number;
+  chargeOutRate: number;
+  discountedHourlyRate: number;
+  hourlyGrossCost: number;
+  totalRevenue: number;
+  totalCost: number;
+  monthMap: Map<string, MonthEntry>;
+};
+
+function ResourcePlanTab({ resourcePlans, isLoading }: Readonly<{ resourcePlans: EnrichedResourcePlan[] | undefined; isLoading: boolean }>) {
+  const employeeSummaries = useMemo(() => {
+    if (!resourcePlans || resourcePlans.length === 0) return [];
+    const empMap = new Map<number, EmployeeSummary>();
+    for (const rp of resourcePlans) {
+      let emp = empMap.get(rp.employeeId);
+      if (!emp) {
+        emp = {
+          employeeId: rp.employeeId,
+          employeeName: rp.employeeName || `Employee #${rp.employeeId}`,
+          employeeCode: rp.employeeCode || "",
+          totalPlannedDays: 0,
+          totalPlannedHours: 0,
+          chargeOutRate: 0,
+          discountedHourlyRate: 0,
+          hourlyGrossCost: 0,
+          totalRevenue: 0,
+          totalCost: 0,
+          monthMap: new Map(),
+        };
+        empMap.set(rp.employeeId, emp);
+      }
+      const days = Number.parseFloat(rp.plannedDays || "0");
+      const hours = Number.parseFloat(rp.plannedHours || "0");
+      const alloc = Number.parseFloat(rp.allocationPercent || "0");
+      emp.totalPlannedDays += days;
+      emp.totalPlannedHours += hours;
+      if (rp.chargeOutRate) emp.chargeOutRate = Number.parseFloat(rp.chargeOutRate);
+      if (rp.discountedHourlyRate) emp.discountedHourlyRate = Number.parseFloat(rp.discountedHourlyRate);
+      if (rp.hourlyGrossCost) emp.hourlyGrossCost = Number.parseFloat(rp.hourlyGrossCost);
+      const rate = emp.discountedHourlyRate || emp.chargeOutRate;
+      emp.totalRevenue = emp.totalPlannedHours * rate;
+      emp.totalCost = emp.totalPlannedHours * emp.hourlyGrossCost;
+      const monthKey = String(rp.month).substring(0, 7);
+      const monthDate = new Date(rp.month);
+      const label = monthDate.toLocaleDateString("en-AU", { month: "short", year: "2-digit" });
+      emp.monthMap.set(monthKey, { month: monthKey, label, plannedDays: days, plannedHours: hours, allocationPercent: alloc });
+    }
+    const result = [...empMap.values()];
+    result.sort((a, b) => b.totalPlannedHours - a.totalPlannedHours);
+    return result;
+  }, [resourcePlans]);
+
+  const allMonthKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const emp of employeeSummaries) {
+      for (const k of emp.monthMap.keys()) keys.add(k);
+    }
+    return [...keys].sort();
+  }, [employeeSummaries]);
+
+  const monthLabels = useMemo(() => {
+    return allMonthKeys.map(k => {
+      const d = new Date(k + "-01");
+      return { key: k, label: d.toLocaleDateString("en-AU", { month: "short", year: "2-digit" }) };
+    });
+  }, [allMonthKeys]);
+
+  const totals = useMemo(() => {
+    return employeeSummaries.reduce((acc, e) => ({
+      days: acc.days + e.totalPlannedDays,
+      hours: acc.hours + e.totalPlannedHours,
+      revenue: acc.revenue + e.totalRevenue,
+      cost: acc.cost + e.totalCost,
+    }), { days: 0, hours: 0, revenue: 0, cost: 0 });
+  }, [employeeSummaries]);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          {[1, 2, 3].map(n => <Skeleton key={`rp-skeleton-${n}`} className="h-10 w-full" />)}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!resourcePlans || resourcePlans.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground" data-testid="text-no-resource-plans">
+          No resource allocations found for this project.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <Users className="h-4 w-4" />
+              <span>Team Size</span>
+            </div>
+            <p className="text-2xl font-semibold" data-testid="text-team-size">{employeeSummaries.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <Clock className="h-4 w-4" />
+              <span>Total Hours</span>
+            </div>
+            <p className="text-2xl font-semibold" data-testid="text-total-hours">{totals.hours.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">{totals.days.toLocaleString()} days</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <DollarSign className="h-4 w-4" />
+              <span>Planned Revenue</span>
+            </div>
+            <p className="text-2xl font-semibold" data-testid="text-planned-revenue">{formatCurrency(totals.revenue)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <DollarSign className="h-4 w-4" />
+              <span>Planned GM</span>
+            </div>
+            <p className={`text-2xl font-semibold ${totals.revenue - totals.cost > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-planned-gm">
+              {formatCurrency(totals.revenue - totals.cost)}
+            </p>
+            <p className="text-xs text-muted-foreground">{totals.revenue > 0 ? ((totals.revenue - totals.cost) / totals.revenue * 100).toFixed(1) : "0"}% margin</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Resource</TableHead>
+                <TableHead className="text-right">Planned Days</TableHead>
+                <TableHead className="text-right">Planned Hours</TableHead>
+                <TableHead className="text-right">Charge Rate</TableHead>
+                <TableHead className="text-right">Cost Rate</TableHead>
+                <TableHead className="text-right">Revenue</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="text-right">GM %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {employeeSummaries.map(emp => {
+                const gm = emp.totalRevenue > 0 ? ((emp.totalRevenue - emp.totalCost) / emp.totalRevenue * 100) : 0;
+                return (
+                  <TableRow key={emp.employeeId} data-testid={`row-resource-${emp.employeeId}`}>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium" data-testid={`text-resource-name-${emp.employeeId}`}>{emp.employeeName}</p>
+                        {emp.employeeCode && <p className="text-xs text-muted-foreground">{emp.employeeCode}</p>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">{emp.totalPlannedDays.toFixed(1)}</TableCell>
+                    <TableCell className="text-right">{emp.totalPlannedHours.toFixed(0)}</TableCell>
+                    <TableCell className="text-right">{emp.discountedHourlyRate > 0 ? `$${emp.discountedHourlyRate.toFixed(2)}` : "—"}</TableCell>
+                    <TableCell className="text-right">{emp.hourlyGrossCost > 0 ? `$${emp.hourlyGrossCost.toFixed(2)}` : "—"}</TableCell>
+                    <TableCell className="text-right">{emp.totalRevenue > 0 ? formatCurrency(emp.totalRevenue) : "—"}</TableCell>
+                    <TableCell className="text-right">{emp.totalCost > 0 ? formatCurrency(emp.totalCost) : "—"}</TableCell>
+                    <TableCell className={`text-right font-medium ${gm >= 30 ? "text-green-600 dark:text-green-400" : gm >= 15 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                      {emp.totalRevenue > 0 ? `${gm.toFixed(1)}%` : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Monthly Allocation</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 bg-background z-10">Resource</TableHead>
+                  {monthLabels.map(m => (
+                    <TableHead key={m.key} className="text-center min-w-[70px]">{m.label}</TableHead>
+                  ))}
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employeeSummaries.map(emp => (
+                  <TableRow key={emp.employeeId} data-testid={`row-monthly-${emp.employeeId}`}>
+                    <TableCell className="sticky left-0 bg-background z-10 font-medium text-sm">{emp.employeeName}</TableCell>
+                    {allMonthKeys.map(mk => {
+                      const entry = emp.monthMap.get(mk);
+                      const pct = entry?.allocationPercent || 0;
+                      let cellClass = "";
+                      if (pct > 100) cellClass = "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+                      else if (pct >= 80) cellClass = "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+                      else if (pct >= 50) cellClass = "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+                      else if (pct > 0) cellClass = "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
+                      return (
+                        <TableCell key={mk} className={`text-center text-sm ${cellClass}`}>
+                          {pct > 0 ? `${Math.round(pct)}%` : ""}
+                        </TableCell>
+                      );
+                    })}
+                    <TableCell className="text-right font-medium text-sm">{emp.totalPlannedDays.toFixed(1)}d</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function ProjectLoadingState() {
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-64 w-full" />
+      <Skeleton className="h-10 w-64" />
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-80 w-full" />
     </div>
   );
 }
@@ -177,8 +433,8 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
-  const { data: resourcePlans, isLoading: loadingResources } = useQuery<ResourcePlan[]>({
-    queryKey: [`/api/resource-plans?projectId=${id}`],
+  const { data: resourcePlans, isLoading: loadingResources } = useQuery<EnrichedResourcePlan[]>({
+    queryKey: [`/api/resource-plans?projectId=${id}&includeEmployee=true`],
     enabled: !!id,
   });
 
@@ -305,42 +561,7 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="resources">
-          <Card>
-            <CardContent className="p-0">
-              {loadingResources ? (
-                <div className="p-6 space-y-3">
-                  {[1, 2, 3].map(n => <Skeleton key={`rp-skeleton-${n}`} className="h-10 w-full" />)}
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee ID</TableHead>
-                      <TableHead>Month</TableHead>
-                      <TableHead className="text-right">Planned Days</TableHead>
-                      <TableHead className="text-right">Planned Hours</TableHead>
-                      <TableHead className="text-right">Allocation %</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {resourcePlans && resourcePlans.length > 0 ? resourcePlans.map(rp => (
-                      <TableRow key={rp.id} data-testid={`row-resource-plan-${rp.id}`}>
-                        <TableCell className="font-medium">{rp.employeeId}</TableCell>
-                        <TableCell>{rp.month}</TableCell>
-                        <TableCell className="text-right">{rp.plannedDays || "—"}</TableCell>
-                        <TableCell className="text-right">{rp.plannedHours || "—"}</TableCell>
-                        <TableCell className="text-right">{rp.allocationPercent ? `${rp.allocationPercent}%` : "—"}</TableCell>
-                      </TableRow>
-                    )) : (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No resource allocations.</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <ResourcePlanTab resourcePlans={resourcePlans} isLoading={loadingResources} />
         </TabsContent>
       </Tabs>
     </div>

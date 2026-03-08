@@ -1132,7 +1132,9 @@ export async function registerRoutes(
     res.json(data);
   });
   app.patch("/api/projects/:id", requirePermission("projects", "edit"), async (req, res) => {
-    const data = await storage.updateProject(Number(req.params.id), req.body);
+    const parsed = insertProjectSchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.message });
+    const data = await storage.updateProject(Number(req.params.id), parsed.data);
     if (!data) return res.status(404).json({ message: "Not found" });
     res.json(data);
   });
@@ -1198,6 +1200,16 @@ export async function registerRoutes(
   app.get("/api/resource-plans", requirePermission("resource_plans", "view"), async (req, res) => {
     if (req.query.projectId) {
       const data = await storage.getResourcePlansByProject(Number(req.query.projectId));
+      if (req.query.includeEmployee === "true") {
+        const empIds = [...new Set(data.map((d: any) => d.employeeId))];
+        const employees = empIds.length > 0 ? await db("employees").whereIn("id", empIds).select("id", "first_name", "last_name", "employee_code") : [];
+        const empMap = new Map(employees.map((e: any) => [e.id, e]));
+        const enriched = data.map((rp: any) => {
+          const emp = empMap.get(rp.employeeId);
+          return { ...rp, employeeName: emp ? `${emp.first_name} ${emp.last_name}`.trim() : `Employee #${rp.employeeId}`, employeeCode: emp?.employee_code || "" };
+        });
+        return res.json(enriched);
+      }
       return res.json(data);
     }
     if (req.query.employeeId) {

@@ -52,7 +52,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Search, SlidersHorizontal, Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 type NumericValue = string | number | null | undefined;
@@ -111,7 +111,7 @@ function varianceRagClass(balance: number, workOrder: number): string {
   return "text-red-600 dark:text-red-400";
 }
 
-const VAT_OPTIONS = ["Growth", "VIC", "DAFF", "Emerging", "DISR", "SAU"];
+const VAT_OPTIONS = ["DAFF", "DISR", "Emerging", "GROWTH", "SAU", "Vic Gov"];
 const BILLING_OPTIONS = ["Fixed", "T&M"];
 const STATUS_OPTIONS = ["active", "planning", "completed", "on_hold"];
 const PIPELINE_OPTIONS = ["C", "S", "DVF", "DF", "Q", "A"];
@@ -224,6 +224,9 @@ export default function ProjectsList() {
   const { toast } = useToast();
   const { can } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editProject, setEditProject] = useState<Project | null>(null);
+  const [editForm, setEditForm] = useState(initialForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(initialForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -328,6 +331,73 @@ export default function ProjectsList() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Record<string, unknown> }) => {
+      await apiRequest("PATCH", `/api/projects/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setEditDialogOpen(false);
+      setEditProject(null);
+      toast({ title: "Project updated", description: "Changes saved successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openEdit = (project: Project) => {
+    setEditProject(project);
+    setEditForm({
+      projectCode: project.projectCode || "",
+      name: project.name || "",
+      client: project.client || "",
+      clientCode: project.clientCode || "",
+      clientManager: project.clientManager || "",
+      engagementManager: project.engagementManager || "",
+      billingCategory: project.billingCategory || "",
+      workType: project.workType || "",
+      vat: project.vat || "",
+      pipelineStatus: project.pipelineStatus || "",
+      contractType: project.contractType || "",
+      status: project.status || "active",
+      startDate: project.startDate ? String(project.startDate).substring(0, 10) : "",
+      endDate: project.endDate ? String(project.endDate).substring(0, 10) : "",
+      budgetAmount: project.budgetAmount ? String(project.budgetAmount) : "",
+      contractValue: project.contractValue ? String(project.contractValue) : "",
+      workOrderAmount: project.workOrderAmount ? String(project.workOrderAmount) : "",
+      description: project.description || "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editProject) return;
+    updateMutation.mutate({
+      id: editProject.id,
+      data: {
+        ...editForm,
+        budgetAmount: editForm.budgetAmount || null,
+        contractValue: editForm.contractValue || null,
+        workOrderAmount: editForm.workOrderAmount || null,
+        startDate: editForm.startDate || null,
+        endDate: editForm.endDate || null,
+        clientCode: editForm.clientCode || null,
+        clientManager: editForm.clientManager || null,
+        engagementManager: editForm.engagementManager || null,
+        billingCategory: editForm.billingCategory || null,
+        workType: editForm.workType || null,
+        vat: editForm.vat || null,
+        pipelineStatus: editForm.pipelineStatus || null,
+      },
+    });
+  };
+
+  const updateEditField = (field: string, value: string) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -743,16 +813,28 @@ export default function ProjectsList() {
                           </TableCell>
                         )}
                         <TableCell>
-                          {can("projects", "delete") && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => { e.stopPropagation(); setDeleteId(project.id); }}
-                            data-testid={`button-delete-project-${project.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {can("projects", "edit") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => { e.stopPropagation(); openEdit(project); }}
+                              data-testid={`button-edit-project-${project.id}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            )}
+                            {can("projects", "delete") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => { e.stopPropagation(); setDeleteId(project.id); }}
+                              data-testid={`button-delete-project-${project.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       {expandedId === project.id && (
@@ -812,6 +894,165 @@ export default function ProjectsList() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Project — {editProject?.projectCode}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Project Code</Label>
+                <Input data-testid="edit-input-project-code" value={editForm.projectCode} onChange={e => updateEditField("projectCode", e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input data-testid="edit-input-project-name" value={editForm.name} onChange={e => updateEditField("name", e.target.value)} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Client</Label>
+                <Input data-testid="edit-input-client" value={editForm.client} onChange={e => updateEditField("client", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Client Code</Label>
+                <Input data-testid="edit-input-client-code" value={editForm.clientCode} onChange={e => updateEditField("clientCode", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Client Manager</Label>
+                <Input data-testid="edit-input-client-manager" value={editForm.clientManager} onChange={e => updateEditField("clientManager", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Engagement Manager</Label>
+                <Input data-testid="edit-input-engagement-manager" value={editForm.engagementManager} onChange={e => updateEditField("engagementManager", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>VAT Category</Label>
+                <Select value={editForm.vat} onValueChange={v => updateEditField("vat", v)}>
+                  <SelectTrigger data-testid="edit-select-vat">
+                    <SelectValue placeholder="Select VAT" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VAT_OPTIONS.map(opt => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Billing Category</Label>
+                <Select value={editForm.billingCategory} onValueChange={v => updateEditField("billingCategory", v)}>
+                  <SelectTrigger data-testid="edit-select-billing">
+                    <SelectValue placeholder="Select billing" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BILLING_OPTIONS.map(opt => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Work Type</Label>
+                <Select value={editForm.workType} onValueChange={v => updateEditField("workType", v)}>
+                  <SelectTrigger data-testid="edit-select-work-type">
+                    <SelectValue placeholder="Select work type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WORK_TYPE_OPTIONS.map(opt => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Pipeline Status</Label>
+                <Select value={editForm.pipelineStatus} onValueChange={v => updateEditField("pipelineStatus", v)}>
+                  <SelectTrigger data-testid="edit-select-pipeline">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PIPELINE_OPTIONS.map(opt => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Contract Type</Label>
+                <Select value={editForm.contractType} onValueChange={v => updateEditField("contractType", v)}>
+                  <SelectTrigger data-testid="edit-select-contract-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixed_price">Fixed Price</SelectItem>
+                    <SelectItem value="time_materials">Time & Materials</SelectItem>
+                    <SelectItem value="retainer">Retainer</SelectItem>
+                    <SelectItem value="milestone">Milestone</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={editForm.status} onValueChange={v => updateEditField("status", v)}>
+                  <SelectTrigger data-testid="edit-select-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="planning">Planning</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="on_hold">On Hold</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="closing">Closing</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Input data-testid="edit-input-start-date" type="date" value={editForm.startDate} onChange={e => updateEditField("startDate", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input data-testid="edit-input-end-date" type="date" value={editForm.endDate} onChange={e => updateEditField("endDate", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Budget Amount</Label>
+                <Input data-testid="edit-input-budget" type="number" step="0.01" value={editForm.budgetAmount} onChange={e => updateEditField("budgetAmount", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Contract Value</Label>
+                <Input data-testid="edit-input-contract-value" type="number" step="0.01" value={editForm.contractValue} onChange={e => updateEditField("contractValue", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Work Order Amount</Label>
+                <Input data-testid="edit-input-work-order" type="number" step="0.01" value={editForm.workOrderAmount} onChange={e => updateEditField("workOrderAmount", e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea data-testid="edit-input-description" value={editForm.description} onChange={e => updateEditField("description", e.target.value)} />
+            </div>
+            <Button type="submit" className="w-full" disabled={updateMutation.isPending} data-testid="button-save-project">
+              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
         <AlertDialogContent>
