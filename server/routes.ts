@@ -501,7 +501,15 @@ async function findOrCreateProjectForImport(
   if (existing) return existing;
   const isInternal = /^\d+$/.test(origName) || /^Reason\s/i.test(origName);
   const codeParts = isInternal ? null : /^([A-Z]{2,6}\d{2,4}[-\s]?\d{0,3})\s(.*)$/i.exec(origName);
-  let pCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? `INT${counterRef.value++}`;
+  const extractedCode = codeParts?.[1]?.replaceAll(/\s+/g, '') ?? null;
+  if (extractedCode) {
+    const byCode = projMap.get(extractedCode.toLowerCase());
+    if (byCode) {
+      projMap.set(projName, byCode);
+      return byCode;
+    }
+  }
+  let pCode = extractedCode ?? `INT${counterRef.value++}`;
   while (projCodes.has(pCode)) pCode = `INT${counterRef.value++}`;
   projCodes.add(pCode);
   let clientName = "Unknown";
@@ -2499,6 +2507,13 @@ export async function registerRoutes(
     const projDesc = cols[9]?.trim();
     if (!projDesc) return null;
     let projectId = ctx.projMap.get(projDesc.toLowerCase()) ?? null;
+    if (!projectId) {
+      const codeMatch = /^([A-Z]{2,6}\d{2,4}(?:-\d{1,3})?)/i.exec(projDesc);
+      if (codeMatch) {
+        projectId = ctx.projMap.get(codeMatch[1].toLowerCase()) ?? null;
+        if (projectId) ctx.projMap.set(projDesc.toLowerCase(), projectId);
+      }
+    }
     if (!projectId) {
       projectId = await findOrCreateProjectForImport(ctx.projMap, ctx.projCodes, ctx.projCounter, projDesc);
     }
