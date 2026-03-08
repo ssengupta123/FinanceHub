@@ -145,6 +145,17 @@ export default function JobPlans() {
     return projectGroups.reduce((s, g) => s + g.plans.reduce((ps, rp) => ps + parseNum(rp.plannedHours), 0), 0);
   }, [projectGroups]);
 
+  const fyOptions = useMemo(() => {
+    const cur = getCurrentFy();
+    const parts = cur.split("-");
+    const yr = parts.length === 2 ? parseInt(parts[0]) : 25;
+    const fys: string[] = [];
+    for (let y = yr - 3; y <= yr + 1; y++) {
+      fys.push(`${String(y).padStart(2, "0")}-${String(y + 1).padStart(2, "0")}`);
+    }
+    return fys;
+  }, []);
+
   const addPlanMutation = useMutation({
     mutationFn: async (data: { projectId: number; employeeId: number }) => {
       const now = new Date();
@@ -193,16 +204,7 @@ export default function JobPlans() {
           <p className="text-muted-foreground text-sm">Weekly resource allocation by project</p>
         </div>
         <div className="flex items-center gap-3">
-          <FySelector value={selectedFY} onChange={setSelectedFY} options={(() => {
-            const cur = getCurrentFy();
-            const parts = cur.split("-");
-            const yr = parts.length === 2 ? parseInt(parts[0]) : 25;
-            const fys: string[] = [];
-            for (let y = yr - 3; y <= yr + 1; y++) {
-              fys.push(`${String(y).padStart(2, "0")}-${String(y + 1).padStart(2, "0")}`);
-            }
-            return fys;
-          })()} />
+          <FySelector value={selectedFY} onChange={setSelectedFY} options={fyOptions} />
           <Select value={String(numWeeks)} onValueChange={v => setNumWeeks(Number(v))}>
             <SelectTrigger className="w-[120px]" data-testid="select-weeks">
               <SelectValue />

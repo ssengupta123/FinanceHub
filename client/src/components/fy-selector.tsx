@@ -17,7 +17,7 @@ export function FySelector({ value, options, onChange, includeOpenOpps, includeA
       <SelectContent>
         {includeAll && <SelectItem value="all" data-testid="select-fy-all">All Years</SelectItem>}
         {includeOpenOpps && <SelectItem value="open_opps" data-testid="select-fy-open-opps">Open Opps</SelectItem>}
-        {options.map(fy => (
+        {(options || []).map(fy => (
           <SelectItem key={fy} value={fy} data-testid={`select-fy-${fy}`}>
             FY{fy}
           </SelectItem>
