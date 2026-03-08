@@ -678,18 +678,18 @@ function AllocationGrid({
 
                   let bg = "";
                   let textColor = "text-muted-foreground/20";
-                  if (val >= 100) {
-                    bg = "bg-gradient-to-b from-emerald-500 to-emerald-600";
-                    textColor = "text-white";
+                  if (val > 100) {
+                    bg = "bg-red-100 dark:bg-red-900/30";
+                    textColor = "text-red-700 dark:text-red-400";
                   } else if (val >= 80) {
-                    bg = "bg-gradient-to-b from-emerald-400 to-emerald-500";
-                    textColor = "text-white";
+                    bg = "bg-green-100 dark:bg-green-900/30";
+                    textColor = "text-green-700 dark:text-green-400";
                   } else if (val >= 50) {
-                    bg = "bg-gradient-to-b from-sky-400 to-sky-500";
-                    textColor = "text-white";
-                  } else if (val >= 20) {
-                    bg = "bg-gradient-to-b from-sky-200 to-sky-300 dark:from-sky-700 dark:to-sky-800";
-                    textColor = "text-sky-900 dark:text-sky-100";
+                    bg = "bg-amber-100 dark:bg-amber-900/30";
+                    textColor = "text-amber-700 dark:text-amber-400";
+                  } else if (val > 0) {
+                    bg = "bg-red-100 dark:bg-red-900/30";
+                    textColor = "text-red-700 dark:text-red-400";
                   }
 
                   return (
