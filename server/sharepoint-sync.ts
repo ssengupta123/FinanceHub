@@ -927,9 +927,23 @@ async function processJobPlanFile(
   const buffer = await downloadExcelFile(file.downloadUrl, token);
   const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
 
-  const project = projectByCode.get(projectCode.toUpperCase());
+  let project = projectByCode.get(projectCode.toUpperCase());
+  if (!project && rows.length > 0) {
+    const projectName = file.name.replace(/\.(xlsx|xls)$/i, "").replace(/[-_]?\s*Plan\b.*$/i, "").trim() || projectCode;
+    const [newProject] = await db("projects").insert({
+      project_code: projectCode,
+      name: projectName,
+      status: "active",
+      contract_type: "time_materials",
+    }).returning("*");
+    if (newProject) {
+      project = newProject;
+      projectByCode.set(projectCode.toUpperCase(), newProject);
+      console.log(`[SharePoint] Job Plans: auto-created project ${projectCode} ("${projectName}")`);
+    }
+  }
   if (!project) {
-    return { inserted: 0, updated: 0, unchanged: 0, processed: false, error: rows.length > 0 ? `"${file.name}": project ${projectCode} not found in DB` : undefined };
+    return { inserted: 0, updated: 0, unchanged: 0, processed: false };
   }
 
   if (rows.length === 0) {
