@@ -2448,6 +2448,95 @@ export async function registerRoutes(
     }
   });
 
+  async function processTimesheetLines(lines: string[], ctx: {
+    empMap: Map<string, number>; empCodes: Set<string>; empCounter: { value: number };
+    projMap: Map<string, number>; projCodes: Set<string>; projCounter: { value: number };
+  }) {
+    let imported = 0;
+    const errors: string[] = [];
+    const batchSize = 500;
+    let batch: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      if (cols.length < 12) continue;
+      try {
+        const record = await buildTimesheetRecord(cols, ctx);
+        if (!record) continue;
+        batch.push(record);
+        if (batch.length >= batchSize) {
+          await db("timesheets").insert(batch);
+          imported += batch.length;
+          batch = [];
+        }
+      } catch (err: any) {
+        if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
+      }
+    }
+    if (batch.length > 0) {
+      await db("timesheets").insert(batch);
+      imported += batch.length;
+    }
+    return { imported, errors, total: lines.length - 1 };
+  }
+
+  async function buildTimesheetRecord(cols: string[], ctx: {
+    empMap: Map<string, number>; empCodes: Set<string>; empCounter: { value: number };
+    projMap: Map<string, number>; projCodes: Set<string>; projCounter: { value: number };
+  }) {
+    const firstName = cols[10]?.trim();
+    const lastName = cols[11]?.trim();
+    if (!firstName && !lastName) return null;
+
+    const employeeId = await findOrCreateEmployeeForImport(
+      ctx.empMap, ctx.empCodes, ctx.empCounter, firstName, lastName,
+      cols[12]?.trim() || null
+    );
+
+    const dateStr = parseStringDate(cols[0]?.trim());
+    if (!dateStr) return null;
+
+    const projDesc = cols[9]?.trim();
+    if (!projDesc) return null;
+    let projectId = ctx.projMap.get(projDesc.toLowerCase()) ?? null;
+    if (!projectId) {
+      projectId = await findOrCreateProjectForImport(ctx.projMap, ctx.projCodes, ctx.projCounter, projDesc);
+    }
+
+    const hours = Number.parseFloat(cols[1] || "0") || 0;
+    const saleVal = Number.parseFloat(cols[2] || "0") || 0;
+    const costVal = Number.parseFloat(cols[3] || "0") || 0;
+    const taskDesc = cols[5]?.trim() || null;
+
+    const d = new Date(dateStr);
+    const calMonth = d.getMonth();
+    const calYear = d.getFullYear();
+    const fyStartYear = calMonth >= 6 ? calYear : calYear - 1;
+    const fyYear = `${String(fyStartYear).slice(2)}-${String(fyStartYear + 1).slice(2)}`;
+    const fyMonth = calMonth >= 6 ? calMonth - 5 : calMonth + 7;
+
+    const dayOfWeek = d.getDay();
+    const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    const weekEnd = new Date(d);
+    weekEnd.setDate(weekEnd.getDate() + daysToSunday);
+
+    return {
+      employee_id: employeeId,
+      project_id: projectId,
+      week_ending: weekEnd.toISOString().slice(0, 10),
+      hours_worked: hours.toFixed(2),
+      sale_value: saleVal.toFixed(2),
+      cost_value: costVal.toFixed(2),
+      days_worked: (hours / 8).toFixed(1),
+      billable: saleVal > 0,
+      activity_type: taskDesc?.substring(0, 100) || null,
+      source: "itimesheets",
+      status: "submitted",
+      fy_month: fyMonth,
+      fy_year: fyYear,
+    };
+  }
+
   // ─── Timesheet CSV Import ───
   app.post("/api/import/timesheets-csv", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
@@ -2464,92 +2553,84 @@ export async function registerRoutes(
       const { projMap, projCodes } = buildProjectLookupMaps(allProjects);
       const projCounter = { value: Date.now() % 100000 };
 
-      let imported = 0;
-      const errors: string[] = [];
-      const batchSize = 500;
-      let batch: any[] = [];
-
-      const clearMode = req.body.clearExisting === "true";
-      if (clearMode) {
+      if (req.body.clearExisting === "true") {
         await db("timesheets").where("source", "itimesheets").del();
       }
 
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (cols.length < 12) continue;
-        try {
-          const firstName = cols[10]?.trim();
-          const lastName = cols[11]?.trim();
-          if (!firstName && !lastName) continue;
-
-          const employeeId = await findOrCreateEmployeeForImport(
-            empMap, empCodes, empCounter, firstName, lastName,
-            cols[12]?.trim() || null
-          );
-
-          const dateStr = parseStringDate(cols[0]?.trim());
-          if (!dateStr) continue;
-
-          const projDesc = cols[9]?.trim();
-          if (!projDesc) continue;
-          let projectId = projMap.get(projDesc.toLowerCase()) ?? null;
-          if (!projectId) {
-            projectId = await findOrCreateProjectForImport(projMap, projCodes, projCounter, projDesc);
-          }
-
-          const hours = Number.parseFloat(cols[1] || "0") || 0;
-          const saleVal = Number.parseFloat(cols[2] || "0") || 0;
-          const costVal = Number.parseFloat(cols[3] || "0") || 0;
-          const taskDesc = cols[5]?.trim() || null;
-
-          const d = new Date(dateStr);
-          const calMonth = d.getMonth();
-          const calYear = d.getFullYear();
-          const fyStartYear = calMonth >= 6 ? calYear : calYear - 1;
-          const fyYear = `${String(fyStartYear).slice(2)}-${String(fyStartYear + 1).slice(2)}`;
-          const fyMonth = calMonth >= 6 ? calMonth - 5 : calMonth + 7;
-
-          const dayOfWeek = d.getDay();
-          const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-          const weekEnd = new Date(d);
-          weekEnd.setDate(weekEnd.getDate() + daysToSunday);
-          const weekEndStr = weekEnd.toISOString().slice(0, 10);
-
-          batch.push({
-            employee_id: employeeId,
-            project_id: projectId,
-            week_ending: weekEndStr,
-            hours_worked: hours.toFixed(2),
-            sale_value: saleVal.toFixed(2),
-            cost_value: costVal.toFixed(2),
-            days_worked: (hours / 8).toFixed(1),
-            billable: saleVal > 0,
-            activity_type: taskDesc?.substring(0, 100) || null,
-            source: "itimesheets",
-            status: "submitted",
-            fy_month: fyMonth,
-            fy_year: fyYear,
-          });
-
-          if (batch.length >= batchSize) {
-            await db("timesheets").insert(batch);
-            imported += batch.length;
-            batch = [];
-          }
-        } catch (err: any) {
-          if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
-        }
-      }
-      if (batch.length > 0) {
-        await db("timesheets").insert(batch);
-        imported += batch.length;
-      }
-
-      res.json({ imported, errors, total: lines.length - 1 });
+      const ctx = { empMap, empCodes, empCounter, projMap, projCodes, projCounter };
+      const result = await processTimesheetLines(lines, ctx);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "CSV import failed" });
     }
   });
+
+  function parseStaffRow(r: any[]) {
+    const fullName = String(r[0]).trim();
+    const parts = fullName.split(/\s+/);
+    if (parts.length < 2) return null;
+
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(" ");
+    const costBandLevel = r[1] ? String(r[1]).trim() : null;
+    const staffType = r[2] ? String(r[2]).trim() : null;
+    const payrollTax = String(r[3] || "").toLowerCase() === "yes";
+    const baseCost = Number(r[4] || 0);
+    const activeStatus = String(r[5] || "active").trim().toLowerCase();
+    const jid = r[7] ? String(r[7]).trim() : null;
+    const scheduleStart = r[8] ? parseExcelDate(r[8]) : null;
+    const scheduleEnd = r[9] ? parseExcelDate(r[9]) : null;
+    const team = r[10] ? String(r[10]).trim() : null;
+    const location = r[12] ? String(r[12]).trim() : null;
+    const status = activeStatus === "inactive" ? "inactive" : "active";
+
+    return { fullName, firstName, lastName, costBandLevel, staffType, payrollTax, baseCost, jid, scheduleStart, scheduleEnd, team, location, status };
+  }
+
+  async function upsertStaffEmployee(
+    parsed: NonNullable<ReturnType<typeof parseStaffRow>>,
+    empByName: Map<string, any>,
+    existingCodes: Set<string>,
+    codeCounter: { value: number },
+  ) {
+    const existing = empByName.get(parsed.fullName.toLowerCase());
+    if (existing) {
+      await db("employees").where("id", existing.id).update({
+        cost_band_level: parsed.costBandLevel,
+        staff_type: parsed.staffType,
+        payroll_tax: parsed.payrollTax,
+        base_cost: parsed.baseCost.toFixed(2),
+        status: parsed.status,
+        jid: parsed.jid,
+        schedule_start: parsed.scheduleStart,
+        schedule_end: parsed.scheduleEnd,
+        team: parsed.team,
+        location: parsed.location,
+      });
+      return "updated" as const;
+    }
+
+    let empCode = parsed.jid || `E${codeCounter.value++}`;
+    while (existingCodes.has(empCode)) empCode = `E${codeCounter.value++}`;
+    existingCodes.add(empCode);
+
+    const newEmp = await storage.createEmployee({
+      employeeCode: empCode, firstName: parsed.firstName, lastName: parsed.lastName,
+      email: null, role: parsed.costBandLevel || "Staff",
+      costBandLevel: parsed.costBandLevel, staffType: parsed.staffType, grade: null, location: parsed.location,
+      costCenter: null, securityClearance: null,
+      payrollTax: parsed.payrollTax, payrollTaxRate: null,
+      baseCost: parsed.baseCost.toFixed(2),
+      grossCost: "0",
+      baseSalary: null,
+      status: parsed.status, startDate: null, endDate: null,
+      scheduleStart: parsed.scheduleStart, scheduleEnd: parsed.scheduleEnd,
+      resourceGroup: null, team: parsed.team, jid: parsed.jid,
+      onboardingStatus: "completed",
+    });
+    empByName.set(parsed.fullName.toLowerCase(), newEmp);
+    return "created" as const;
+  }
 
   // ─── Staff SOT Import (Upsert) ───
   app.post("/api/import/staff-sot", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
@@ -2571,68 +2652,17 @@ export async function registerRoutes(
         empByName.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e);
         existingCodes.add(e.employeeCode);
       }
-      let codeCounter = Date.now() % 100000;
+      const codeCounter = { value: Date.now() % 100000 };
 
       for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         if (!r?.[0] || String(r[0]).toLowerCase() === "name") continue;
         try {
-          const fullName = String(r[0]).trim();
-          const parts = fullName.split(/\s+/);
-          if (parts.length < 2) continue;
-          const firstName = parts[0];
-          const lastName = parts.slice(1).join(" ");
-
-          const costBandLevel = r[1] ? String(r[1]).trim() : null;
-          const staffType = r[2] ? String(r[2]).trim() : null;
-          const payrollTax = String(r[3] || "").toLowerCase() === "yes";
-          const baseCost = Number(r[4] || 0);
-          const activeStatus = String(r[5] || "active").trim().toLowerCase();
-          const jid = r[7] ? String(r[7]).trim() : null;
-          const scheduleStart = r[8] ? parseExcelDate(r[8]) : null;
-          const scheduleEnd = r[9] ? parseExcelDate(r[9]) : null;
-          const team = r[10] ? String(r[10]).trim() : null;
-          const location = r[12] ? String(r[12]).trim() : null;
-
-          const status = activeStatus === "inactive" ? "inactive" : "active";
-
-          const existing = empByName.get(fullName.toLowerCase());
-          if (existing) {
-            await db("employees").where("id", existing.id).update({
-              cost_band_level: costBandLevel,
-              staff_type: staffType,
-              payroll_tax: payrollTax,
-              base_cost: baseCost.toFixed(2),
-              status,
-              jid,
-              schedule_start: scheduleStart,
-              schedule_end: scheduleEnd,
-              team,
-              location,
-            });
-            updated++;
-          } else {
-            let empCode = jid || `E${codeCounter++}`;
-            while (existingCodes.has(empCode)) empCode = `E${codeCounter++}`;
-            existingCodes.add(empCode);
-
-            const newEmp = await storage.createEmployee({
-              employeeCode: empCode, firstName, lastName,
-              email: null, role: costBandLevel || "Staff",
-              costBandLevel, staffType, grade: null, location,
-              costCenter: null, securityClearance: null,
-              payrollTax, payrollTaxRate: null,
-              baseCost: baseCost.toFixed(2),
-              grossCost: "0",
-              baseSalary: null,
-              status, startDate: null, endDate: null,
-              scheduleStart, scheduleEnd,
-              resourceGroup: null, team, jid,
-              onboardingStatus: "completed",
-            });
-            empByName.set(fullName.toLowerCase(), newEmp);
-            created++;
-          }
+          const parsed = parseStaffRow(r);
+          if (!parsed) continue;
+          const result = await upsertStaffEmployee(parsed, empByName, existingCodes, codeCounter);
+          if (result === "created") created++;
+          else updated++;
         } catch (err: any) {
           if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
         }
@@ -3853,10 +3883,12 @@ export function parseCSVLine(line: string): string[] {
       if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
       else if (ch === '"') { inQuotes = false; }
       else { current += ch; }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      result.push(current); current = "";
     } else {
-      if (ch === '"') { inQuotes = true; }
-      else if (ch === ',') { result.push(current); current = ""; }
-      else { current += ch; }
+      current += ch;
     }
   }
   result.push(current);
@@ -3867,7 +3899,7 @@ function parseExcelDate(val: any): string | null {
   if (val == null || val === "") return null;
   if (typeof val === "number" && val > 40000 && val < 60000) {
     const d = new Date((val - 25569) * 86400 * 1000);
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   }
   const s = String(val).trim();
   if (!s) return null;

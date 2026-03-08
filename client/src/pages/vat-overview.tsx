@@ -349,8 +349,14 @@ function VatCard({ vatData, displayName, selectedMetric, elapsedMonths, prorateR
             const displayRev = isActual ? q.revenue : (fc?.revenue || 0);
             const displayGm = isActual ? q.gmContribution : (fc?.gmContribution || 0);
             const displayGmP = isActual ? q.gmPercent : (fc?.gmPercent || 0);
+            let quarterStyle = "bg-muted/30 opacity-60";
+            if (isActual) {
+              quarterStyle = "bg-muted";
+            } else if (hasForecast) {
+              quarterStyle = "bg-blue-50 dark:bg-blue-950/30 border border-dashed border-blue-300 dark:border-blue-700";
+            }
             return (
-              <div key={q.quarter} className={`p-2 rounded ${isActual ? "bg-muted" : hasForecast ? "bg-blue-50 dark:bg-blue-950/30 border border-dashed border-blue-300 dark:border-blue-700" : "bg-muted/30 opacity-60"}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
+              <div key={q.quarter} className={`p-2 rounded ${quarterStyle}`} data-testid={`text-quarter-${vatData.vatName}-${i}`}>
                 <div className="font-medium flex items-center gap-1">
                   {QUARTER_LABELS[i]?.split(" ")[0]}
                   {hasForecast && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-blue-400 text-blue-600 dark:text-blue-400">Forecast</Badge>}

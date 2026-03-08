@@ -256,11 +256,11 @@ async function findSharePointList(token: SharePointToken, siteId: string, listNa
 
 async function listFolderNames(token: SharePointToken, siteId: string, folderPath: string): Promise<string[]> {
   let url: string;
-  if (!folderPath) {
-    url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$select=name,folder&$top=999`;
-  } else {
+  if (folderPath) {
     const encodedPath = folderPath.split("/").map(seg => encodeURIComponent(seg)).join("/");
     url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodedPath}:/children?$select=name,folder&$top=999`;
+  } else {
+    url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$select=name,folder&$top=999`;
   }
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token.access_token}` } });
   if (!resp.ok) {
@@ -311,7 +311,8 @@ async function fetchListItemsFiltered(token: SharePointToken, siteId: string, li
   }
 
   let nextUrl: string | null = baseUrl;
-  console.log(`[SharePoint] Fetching list items${contentTypeName ? ` (ContentType: ${contentTypeName})` : ""}...`);
+  const contentTypeLabel = contentTypeName ? ` (ContentType: ${contentTypeName})` : "";
+  console.log(`[SharePoint] Fetching list items${contentTypeLabel}...`);
 
   while (nextUrl) {
     const resp: Response = await fetch(nextUrl, {
@@ -363,7 +364,7 @@ export function stageSharePointItems(allItems: SharePointListItem[]): { staged: 
 function recordToSnake(record: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(record)) {
-    out[k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = v;
+    out[k.replaceAll(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = v;
   }
   return out;
 }
@@ -383,28 +384,7 @@ function hasChanges(existing: Record<string, any>, incoming: Record<string, any>
   return false;
 }
 
-export async function syncSharePointOpenOpps(): Promise<{
-  imported: number;
-  updated: number;
-  removed: number;
-  unchanged: number;
-  errors: string[];
-  message: string;
-}> {
-  const config = getSharePointConfig();
-  const token = await getGraphToken();
-  const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
-  const { listId } = await findSharePointList(token, siteId, config.listName);
-
-  const folderPath = config.folderPath;
-  const allItems = await fetchFolderChildren(token, siteId, folderPath);
-
-  const { staged, errors } = stageSharePointItems(allItems);
-  console.log(`[SharePoint] Staged ${staged.length} items from ${allItems.length} total (${errors.length} errors)`);
-  if (errors.length > 0) {
-    console.log(`[SharePoint] First 5 errors: ${errors.slice(0, 5).join(" | ")}`);
-  }
-
+async function performOpenOppsDeltaSync(staged: any[]): Promise<{ inserted: number; updated: number; removed: number; unchanged: number }> {
   let inserted = 0;
   let updated = 0;
   let removed = 0;
@@ -468,40 +448,10 @@ export async function syncSharePointOpenOpps(): Promise<{
     }
   });
 
-  const parts = [];
-  if (inserted > 0) parts.push(`${inserted} added`);
-  if (updated > 0) parts.push(`${updated} updated`);
-  if (removed > 0) parts.push(`${removed} removed`);
-  if (unchanged > 0) parts.push(`${unchanged} unchanged`);
-  if (errors.length > 0) parts.push(`${errors.length} errors`);
-
-  console.log(`[SharePoint] Delta sync complete: ${parts.join(", ")}`);
-
-  return {
-    imported: inserted,
-    updated,
-    removed,
-    unchanged,
-    errors,
-    message: `SharePoint sync: ${parts.join(", ")}.`,
-  };
+  return { inserted, updated, removed, unchanged };
 }
 
-function parseProjectCode(folderName: string): { projectCode: string; projectName: string } | null {
-  const skip = /^(00\.|ZZZ)/i;
-  if (skip.test(folderName.trim())) return null;
-
-  const match = folderName.match(/^([A-Z]{2,6}[\dX]{2,4})(?:-[\dA-Z]{1,3})?\s+(.+)$/i);
-  if (!match) return null;
-  let projectCode = match[1].toUpperCase();
-  const projectName = match[2].replace(/\s*\([\d]{1,2}-[A-Za-z]{3}-\d{2}\s*-\s*[\d]{1,2}-[A-Za-z]{3}-\d{2}\)\s*$/, "")
-    .replace(/\s*NEXT\s+FY\s*$/i, "")
-    .trim();
-
-  return { projectCode, projectName };
-}
-
-export async function syncSharePointInflightProjects(): Promise<{
+export async function syncSharePointOpenOpps(): Promise<{
   imported: number;
   updated: number;
   removed: number;
@@ -512,108 +462,53 @@ export async function syncSharePointInflightProjects(): Promise<{
   const config = getSharePointConfig();
   const token = await getGraphToken();
   const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
+  await findSharePointList(token, siteId, config.listName);
 
-  const folderCandidates = [
-    "General/2.Inflight Engagements",
-    "General/2. Inflight Engagements",
-    "General/2. Inflight",
-    "General/2.Inflight",
-  ];
+  const folderPath = config.folderPath;
+  const allItems = await fetchFolderChildren(token, siteId, folderPath);
 
-  let allItems: SharePointListItem[] = [];
-  let usedPath = "";
-  for (const candidate of folderCandidates) {
-    try {
-      allItems = await fetchFolderChildren(token, siteId, candidate);
-      usedPath = candidate;
-      break;
-    } catch (err: any) {
-      if (err.message?.includes("404")) {
-        console.log(`[SharePoint] Inflight: folder "${candidate}" not found, trying next...`);
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  if (!usedPath) {
-    console.log(`[SharePoint] Inflight: all candidates failed, discovering folders in General/...`);
-    const generalChildren = await listFolderNames(token, siteId, "General");
-    console.log(`[SharePoint] Inflight: General/ contains ${generalChildren.length} folders: ${generalChildren.join(", ")}`);
-
-    const inflightFolder = generalChildren.find((name) => /inflight/i.test(name));
-    if (inflightFolder) {
-      console.log(`[SharePoint] Inflight: discovered folder "${inflightFolder}"`);
-      allItems = await fetchFolderChildren(token, siteId, `General/${inflightFolder}`);
-      usedPath = `General/${inflightFolder}`;
-    } else {
-      if (generalChildren.length === 0) {
-        const rootChildren = await listFolderNames(token, siteId, "");
-        console.log(`[SharePoint] Inflight: drive root contains: ${rootChildren.join(", ")}`);
-      }
-      throw new Error(`Inflight folder not found in General/. Available folders: ${generalChildren.join(", ") || "(none)"}`);
-    }
-  }
-
-  console.log(`[SharePoint] Inflight: Retrieved ${allItems.length} items from ${usedPath}`);
-
-  const staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[] = [];
-  const errors: string[] = [];
-
-  const skippedNames: string[] = [];
-  const noSpId: string[] = [];
-
-  for (const item of allItems) {
-    const folderName = item.Title || item.FileLeafRef || "";
-    if (!folderName) continue;
-
-    const parsed = parseProjectCode(folderName);
-    if (!parsed) {
-      skippedNames.push(folderName);
-      continue;
-    }
-
-    const spId = item._sharepointItemId ? String(item._sharepointItemId) : null;
-    if (!spId) {
-      noSpId.push(folderName);
-      continue;
-    }
-
-    try {
-      const fields = extractItemFields(item);
-      staged.push({
-        sharepointId: spId,
-        projectCode: parsed.projectCode,
-        name: parsed.projectName,
-        client: extractFieldText(item.Client || item.ClientName) || null,
-        clientCode: fields.clientCode,
-        clientManager: fields.csdLead,
-        engagementManager: fields.casLead,
-        vat: fields.vat,
-        workType: fields.workType,
-        contractType: extractFieldText(item.ContractType || item.Contract_x0020_Type) || null,
-        status: "active",
-        startDate: fields.startDate,
-        endDate: fields.expiryDate,
-        contractValue: formatNumericField(item["Value_x0024_exGST"] ?? item.Value ?? item.ContractValue, 2),
-        opsCommentary: fields.comment,
-      });
-    } catch (err: any) {
-      errors.push(`"${folderName}": ${err.message}`);
-    }
-  }
-
-  console.log(`[SharePoint] Inflight: Staged ${staged.length} projects (${errors.length} errors, ${skippedNames.length} skipped by name parse, ${noSpId.length} no SP id)`);
-  if (skippedNames.length > 0) {
-    console.log(`[SharePoint] Inflight skipped names: ${skippedNames.join(" | ")}`);
-  }
-  if (noSpId.length > 0) {
-    console.log(`[SharePoint] Inflight no SP id: ${noSpId.join(" | ")}`);
-  }
+  const { staged, errors } = stageSharePointItems(allItems);
+  console.log(`[SharePoint] Staged ${staged.length} items from ${allItems.length} total (${errors.length} errors)`);
   if (errors.length > 0) {
-    console.log(`[SharePoint] Inflight first 5 errors: ${errors.slice(0, 5).join(" | ")}`);
+    console.log(`[SharePoint] First 5 errors: ${errors.slice(0, 5).join(" | ")}`);
   }
 
+  const counts = await performOpenOppsDeltaSync(staged);
+
+  const parts = [];
+  if (counts.inserted > 0) parts.push(`${counts.inserted} added`);
+  if (counts.updated > 0) parts.push(`${counts.updated} updated`);
+  if (counts.removed > 0) parts.push(`${counts.removed} removed`);
+  if (counts.unchanged > 0) parts.push(`${counts.unchanged} unchanged`);
+  if (errors.length > 0) parts.push(`${errors.length} errors`);
+
+  console.log(`[SharePoint] Delta sync complete: ${parts.join(", ")}`);
+
+  return {
+    imported: counts.inserted,
+    updated: counts.updated,
+    removed: counts.removed,
+    unchanged: counts.unchanged,
+    errors,
+    message: `SharePoint sync: ${parts.join(", ")}.`,
+  };
+}
+
+function parseProjectCode(folderName: string): { projectCode: string; projectName: string } | null {
+  const skip = /^(00\.|ZZZ)/i;
+  if (skip.test(folderName.trim())) return null;
+
+  const match = /^([A-Z]{2,6}[\dX]{2,4})(?:-[\dA-Z]{1,3})?\s+(.+)$/i.exec(folderName.trim());
+  if (!match) return null;
+  let projectCode = match[1].toUpperCase();
+  const projectName = match[2].replace(/\s*\(\d{1,2}-[A-Za-z]{3}-\d{2}\s*-\s*\d{1,2}-[A-Za-z]{3}-\d{2}\)\s*$/, "")
+    .replace(/\s*NEXT\s+FY\s*$/i, "")
+    .trim();
+
+  return { projectCode, projectName };
+}
+
+async function performInflightDeltaSync(staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[]): Promise<{ inserted: number; updated: number; removed: number; unchanged: number }> {
   let inserted = 0;
   let updated = 0;
   let removed = 0;
@@ -680,47 +575,167 @@ export async function syncSharePointInflightProjects(): Promise<{
       }
     }
 
-    const now = new Date();
-    const fyStartYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-    const currentFy = String(fyStartYear).slice(2) + "-" + String(fyStartYear + 1).slice(2);
-    const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-    const fyMonthNums = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
-
-    const allSyncedProjects = await trx("projects").whereNotNull("sharepoint_id").select("id");
-    for (const proj of allSyncedProjects) {
-      const existingMonthly = await trx("project_monthly").where({ project_id: proj.id, fy_year: currentFy }).select("month");
-      const existingMonthSet = new Set(existingMonthly.map((m: any) => m.month));
-
-      for (let i = 0; i < 12; i++) {
-        if (!existingMonthSet.has(fyMonthNums[i])) {
-          await trx("project_monthly").insert({
-            project_id: proj.id,
-            fy_year: currentFy,
-            month: fyMonthNums[i],
-            month_label: fyMonthLabels[i],
-            revenue: 0,
-            cost: 0,
-            profit: 0,
-          });
-        }
-      }
-    }
+    await ensureFyMonthlyRows(trx);
   });
 
+  return { inserted, updated, removed, unchanged };
+}
+
+async function ensureFyMonthlyRows(trx: any): Promise<void> {
+  const now = new Date();
+  const fyStartYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const currentFy = String(fyStartYear).slice(2) + "-" + String(fyStartYear + 1).slice(2);
+  const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+  const fyMonthNums = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+
+  const allSyncedProjects = await trx("projects").whereNotNull("sharepoint_id").select("id");
+  for (const proj of allSyncedProjects) {
+    const existingMonthly = await trx("project_monthly").where({ project_id: proj.id, fy_year: currentFy }).select("month");
+    const existingMonthSet = new Set(existingMonthly.map((m: any) => m.month));
+
+    for (let i = 0; i < 12; i++) {
+      if (!existingMonthSet.has(fyMonthNums[i])) {
+        await trx("project_monthly").insert({
+          project_id: proj.id,
+          fy_year: currentFy,
+          month: fyMonthNums[i],
+          month_label: fyMonthLabels[i],
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+        });
+      }
+    }
+  }
+}
+
+async function discoverInflightFolder(token: SharePointToken, siteId: string): Promise<{ items: SharePointListItem[]; usedPath: string }> {
+  const folderCandidates = [
+    "General/2.Inflight Engagements",
+    "General/2. Inflight Engagements",
+    "General/2. Inflight",
+    "General/2.Inflight",
+  ];
+
+  for (const candidate of folderCandidates) {
+    try {
+      const items = await fetchFolderChildren(token, siteId, candidate);
+      return { items, usedPath: candidate };
+    } catch (err: any) {
+      if (err.message?.includes("404")) {
+        console.log(`[SharePoint] Inflight: folder "${candidate}" not found, trying next...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  console.log(`[SharePoint] Inflight: all candidates failed, discovering folders in General/...`);
+  const generalChildren = await listFolderNames(token, siteId, "General");
+  console.log(`[SharePoint] Inflight: General/ contains ${generalChildren.length} folders: ${generalChildren.join(", ")}`);
+
+  const inflightFolder = generalChildren.find((name) => /inflight/i.test(name));
+  if (inflightFolder) {
+    console.log(`[SharePoint] Inflight: discovered folder "${inflightFolder}"`);
+    const items = await fetchFolderChildren(token, siteId, `General/${inflightFolder}`);
+    return { items, usedPath: `General/${inflightFolder}` };
+  }
+
+  if (generalChildren.length === 0) {
+    const rootChildren = await listFolderNames(token, siteId, "");
+    console.log(`[SharePoint] Inflight: drive root contains: ${rootChildren.join(", ")}`);
+  }
+  throw new Error(`Inflight folder not found in General/. Available folders: ${generalChildren.join(", ") || "(none)"}`);
+}
+
+export async function syncSharePointInflightProjects(): Promise<{
+  imported: number;
+  updated: number;
+  removed: number;
+  unchanged: number;
+  errors: string[];
+  message: string;
+}> {
+  const config = getSharePointConfig();
+  const token = await getGraphToken();
+  const siteId = await lookupSharePointSite(token, config.domain, config.sitePath);
+
+  const { items: allItems, usedPath } = await discoverInflightFolder(token, siteId);
+  console.log(`[SharePoint] Inflight: Retrieved ${allItems.length} items from ${usedPath}`);
+
+  const staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[] = [];
+  const errors: string[] = [];
+
+  const skippedNames: string[] = [];
+  const noSpId: string[] = [];
+
+  for (const item of allItems) {
+    const folderName = item.Title || item.FileLeafRef || "";
+    if (!folderName) continue;
+
+    const parsed = parseProjectCode(folderName);
+    if (!parsed) {
+      skippedNames.push(folderName);
+      continue;
+    }
+
+    const spId = item._sharepointItemId ? String(item._sharepointItemId) : null;
+    if (!spId) {
+      noSpId.push(folderName);
+      continue;
+    }
+
+    try {
+      const fields = extractItemFields(item);
+      staged.push({
+        sharepointId: spId,
+        projectCode: parsed.projectCode,
+        name: parsed.projectName,
+        client: extractFieldText(item.Client || item.ClientName) || null,
+        clientCode: fields.clientCode,
+        clientManager: fields.csdLead,
+        engagementManager: fields.casLead,
+        vat: fields.vat,
+        workType: fields.workType,
+        contractType: extractFieldText(item.ContractType || item.Contract_x0020_Type) || null,
+        status: "active",
+        startDate: fields.startDate,
+        endDate: fields.expiryDate,
+        contractValue: formatNumericField(item["Value_x0024_exGST"] ?? item.Value ?? item.ContractValue, 2),
+        opsCommentary: fields.comment,
+      });
+    } catch (err: any) {
+      errors.push(`"${folderName}": ${err.message}`);
+    }
+  }
+
+  console.log(`[SharePoint] Inflight: Staged ${staged.length} projects (${errors.length} errors, ${skippedNames.length} skipped by name parse, ${noSpId.length} no SP id)`);
+  if (skippedNames.length > 0) {
+    console.log(`[SharePoint] Inflight skipped names: ${skippedNames.join(" | ")}`);
+  }
+  if (noSpId.length > 0) {
+    console.log(`[SharePoint] Inflight no SP id: ${noSpId.join(" | ")}`);
+  }
+  if (errors.length > 0) {
+    console.log(`[SharePoint] Inflight first 5 errors: ${errors.slice(0, 5).join(" | ")}`);
+  }
+
+  const counts = await performInflightDeltaSync(staged);
+
   const parts = [];
-  if (inserted > 0) parts.push(`${inserted} added`);
-  if (updated > 0) parts.push(`${updated} updated`);
-  if (removed > 0) parts.push(`${removed} archived`);
-  if (unchanged > 0) parts.push(`${unchanged} unchanged`);
+  if (counts.inserted > 0) parts.push(`${counts.inserted} added`);
+  if (counts.updated > 0) parts.push(`${counts.updated} updated`);
+  if (counts.removed > 0) parts.push(`${counts.removed} archived`);
+  if (counts.unchanged > 0) parts.push(`${counts.unchanged} unchanged`);
   if (errors.length > 0) parts.push(`${errors.length} errors`);
 
   console.log(`[SharePoint] Inflight sync complete: ${parts.join(", ")}`);
 
   return {
-    imported: inserted,
-    updated,
-    removed,
-    unchanged,
+    imported: counts.inserted,
+    updated: counts.updated,
+    removed: counts.removed,
+    unchanged: counts.unchanged,
     errors,
     message: `Inflight Projects sync: ${parts.join(", ")}.`,
   };
@@ -763,6 +778,60 @@ async function downloadExcelFile(url: string, token: SharePointToken): Promise<B
   return Buffer.from(arrayBuffer);
 }
 
+function detectNameColumn(headers: any[]): number {
+  const nameHeaders = new Set(["resource", "name", "employee", "staff", "team member", "consultant"]);
+  for (let c = 0; c < headers.length; c++) {
+    const h = String(headers[c] || "").trim().toLowerCase();
+    if (nameHeaders.has(h)) return c;
+  }
+  return 0;
+}
+
+const MONTH_NAMES_MAP: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+
+function parseHeaderMonth(h: any): string | null {
+  if (typeof h === "number" && h > 40000 && h < 60000) {
+    const jsDate = new Date((h - 25569) * 86400 * 1000);
+    if (!Number.isNaN(jsDate.getTime())) {
+      return `${jsDate.getUTCFullYear()}-${String(jsDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    }
+    return null;
+  }
+
+  const hStr = String(h).trim();
+  const monthMatch = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\-/]*(\d{2,4})$/i.exec(hStr);
+  if (monthMatch) {
+    const m = MONTH_NAMES_MAP[monthMatch[1].toLowerCase().substring(0, 3)];
+    let y = monthMatch[2];
+    if (y.length === 2) y = `20${y}`;
+    if (m) return `${y}-${m}-01`;
+  }
+
+  const isoMatch = /^(\d{4})[-/](\d{1,2})/.exec(hStr);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${String(isoMatch[2]).padStart(2, "0")}-01`;
+  }
+
+  return null;
+}
+
+function parseCellValue(val: any): { plannedDays: number; plannedHours: number; allocationPercent: number } | null {
+  if (val == null || val === "" || val === 0) return null;
+  const numVal = Number(val);
+  if (Number.isNaN(numVal) || numVal === 0) return null;
+
+  const isPercent = numVal > 0 && numVal <= 1.5;
+  const days = isPercent ? Math.round(numVal * 20 * 10) / 10 : numVal;
+  const hours = days * 8;
+  const allocPercent = isPercent ? Math.round(numVal * 100) : Math.min(Math.round((days / 20) * 100), 100);
+
+  return {
+    plannedDays: Math.round(days * 10) / 10,
+    plannedHours: Math.round(hours * 10) / 10,
+    allocationPercent: allocPercent,
+  };
+}
+
 async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
   projectCode: string;
   rows: { employeeName: string; month: string; plannedDays: number; plannedHours: number; allocationPercent: number }[];
@@ -771,7 +840,7 @@ async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
   const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "buffer" });
 
-  const projectMatch = fileName.match(/^([A-Z]{2,6}\d{2,4})/i);
+  const projectMatch = /^([A-Z]{2,6}\d{2,4})/i.exec(fileName);
   const projectCode = projectMatch ? projectMatch[1].toUpperCase() : fileName.replace(/\.(xlsx|xls)$/i, "");
 
   const rows: { employeeName: string; month: string; plannedDays: number; plannedHours: number; allocationPercent: number }[] = [];
@@ -786,53 +855,13 @@ async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
     const headers = data[0];
     if (!headers || headers.length < 2) continue;
 
-    let nameCol = -1;
-    let monthCols: { col: number; month: string }[] = [];
+    const nameCol = detectNameColumn(headers);
+    const monthCols: { col: number; month: string }[] = [];
 
     for (let c = 0; c < headers.length; c++) {
-      const h = String(headers[c] || "").trim().toLowerCase();
-      if (h === "resource" || h === "name" || h === "employee" || h === "staff" || h === "team member" || h === "consultant") {
-        nameCol = c;
-      }
-    }
-
-    if (nameCol === -1) {
-      nameCol = 0;
-    }
-
-    for (let c = 0; c < headers.length; c++) {
-      if (c === nameCol) continue;
-      const h = headers[c];
-      if (h == null) continue;
-
-      let monthStr: string | null = null;
-
-      if (typeof h === "number" && h > 40000 && h < 60000) {
-        const jsDate = new Date((h - 25569) * 86400 * 1000);
-        if (!isNaN(jsDate.getTime())) {
-          monthStr = `${jsDate.getUTCFullYear()}-${String(jsDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
-        }
-      } else {
-        const hStr = String(h).trim();
-        const monthMatch = hStr.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\-\/]*(\d{2,4})$/i);
-        if (monthMatch) {
-          const monthNames: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
-          const m = monthNames[monthMatch[1].toLowerCase().substring(0, 3)];
-          let y = monthMatch[2];
-          if (y.length === 2) y = `20${y}`;
-          if (m) monthStr = `${y}-${m}-01`;
-        }
-        if (!monthStr) {
-          const isoMatch = hStr.match(/^(\d{4})[-\/](\d{1,2})/);
-          if (isoMatch) {
-            monthStr = `${isoMatch[1]}-${String(isoMatch[2]).padStart(2, "0")}-01`;
-          }
-        }
-      }
-
-      if (monthStr) {
-        monthCols.push({ col: c, month: monthStr });
-      }
+      if (c === nameCol || headers[c] == null) continue;
+      const monthStr = parseHeaderMonth(headers[c]);
+      if (monthStr) monthCols.push({ col: c, month: monthStr });
     }
 
     if (monthCols.length === 0) continue;
@@ -845,24 +874,10 @@ async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
       if (!name || name.toLowerCase() === "total" || name.toLowerCase() === "totals" || name.toLowerCase() === "grand total") continue;
 
       for (const mc of monthCols) {
-        const val = row[mc.col];
-        if (val == null || val === "" || val === 0) continue;
-
-        const numVal = Number(val);
-        if (isNaN(numVal) || numVal === 0) continue;
-
-        const isPercent = numVal > 0 && numVal <= 1.5;
-        const days = isPercent ? Math.round(numVal * 20 * 10) / 10 : numVal;
-        const hours = days * 8;
-        const allocPercent = isPercent ? Math.round(numVal * 100) : Math.min(Math.round((days / 20) * 100), 100);
-
-        rows.push({
-          employeeName: name,
-          month: mc.month,
-          plannedDays: Math.round(days * 10) / 10,
-          plannedHours: Math.round(hours * 10) / 10,
-          allocationPercent: allocPercent,
-        });
+        const parsed = parseCellValue(row[mc.col]);
+        if (parsed) {
+          rows.push({ employeeName: name, month: mc.month, ...parsed });
+        }
       }
     }
 
@@ -870,6 +885,101 @@ async function parseJobPlanExcel(buffer: Buffer, fileName: string): Promise<{
   }
 
   return { projectCode, rows };
+}
+
+async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => any }> {
+  const allEmployees = await db("employees").select("id", "first_name", "last_name");
+  const employeeByName = new Map<string, any>();
+  for (const e of allEmployees) {
+    const fullName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
+    if (fullName) {
+      employeeByName.set(fullName, e);
+      if (e.first_name && e.last_name) {
+        employeeByName.set(`${e.last_name.toLowerCase()}, ${e.first_name.toLowerCase()}`, e);
+        employeeByName.set(`${e.first_name.toLowerCase()}`, e);
+        employeeByName.set(`${e.last_name.toLowerCase()}`, e);
+      }
+    }
+  }
+
+  function findEmployee(name: string): any {
+    const n = name.toLowerCase().trim();
+    if (employeeByName.has(n)) return employeeByName.get(n);
+
+    const reversed = n.split(/,\s*/).reverse().join(" ").trim();
+    if (employeeByName.has(reversed)) return employeeByName.get(reversed);
+
+    for (const [key, emp] of Array.from(employeeByName)) {
+      if (key.includes(n) || n.includes(key)) return emp;
+    }
+    return null;
+  }
+
+  return { findEmployee };
+}
+
+async function processJobPlanFile(
+  file: { name: string; downloadUrl: string; id: string },
+  token: SharePointToken,
+  projectByCode: Map<string, any>,
+  employeeLookup: { findEmployee: (name: string) => any },
+): Promise<{ inserted: number; updated: number; unchanged: number; processed: boolean; error?: string }> {
+  const buffer = await downloadExcelFile(file.downloadUrl, token);
+  const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
+
+  const project = projectByCode.get(projectCode.toUpperCase());
+  if (!project) {
+    return { inserted: 0, updated: 0, unchanged: 0, processed: false, error: rows.length > 0 ? `"${file.name}": project ${projectCode} not found in DB` : undefined };
+  }
+
+  if (rows.length === 0) {
+    return { inserted: 0, updated: 0, unchanged: 0, processed: true };
+  }
+
+  const existingPlans = await db("resource_plans").where("project_id", project.id).select("*");
+  const existingKey = new Map<string, any>();
+  for (const ep of existingPlans) {
+    const monthStr = typeof ep.month === "string" ? ep.month.substring(0, 10) : new Date(ep.month).toISOString().substring(0, 10);
+    existingKey.set(`${ep.employee_id}|${monthStr}`, ep);
+  }
+
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+
+  for (const row of rows) {
+    const emp = employeeLookup.findEmployee(row.employeeName);
+    if (!emp) continue;
+
+    const key = `${emp.id}|${row.month}`;
+    const existing = existingKey.get(key);
+    if (existing) {
+      const daysMatch = Math.abs(Number(existing.planned_days || 0) - row.plannedDays) < 0.05;
+      const hoursMatch = Math.abs(Number(existing.planned_hours || 0) - row.plannedHours) < 0.05;
+      if (daysMatch && hoursMatch) {
+        unchanged++;
+      } else {
+        await db("resource_plans").where("id", existing.id).update({
+          planned_days: row.plannedDays,
+          planned_hours: row.plannedHours,
+          allocation_percent: row.allocationPercent,
+        });
+        updated++;
+      }
+    } else {
+      await db("resource_plans").insert({
+        project_id: project.id,
+        employee_id: emp.id,
+        month: row.month,
+        planned_days: row.plannedDays,
+        planned_hours: row.plannedHours,
+        allocation_percent: row.allocationPercent,
+      });
+      inserted++;
+    }
+  }
+
+  return { inserted, updated, unchanged, processed: true };
 }
 
 export async function syncSharePointJobPlans(): Promise<{
@@ -903,100 +1013,16 @@ export async function syncSharePointJobPlans(): Promise<{
     if (p.project_code) projectByCode.set(p.project_code.toUpperCase(), p);
   }
 
-  const allEmployees = await db("employees").select("id", "first_name", "last_name");
-  const employeeByName = new Map<string, any>();
-  for (const e of allEmployees) {
-    const fullName = `${e.first_name || ""} ${e.last_name || ""}`.trim().toLowerCase();
-    if (fullName) {
-      employeeByName.set(fullName, e);
-      if (e.first_name && e.last_name) {
-        employeeByName.set(`${e.last_name.toLowerCase()}, ${e.first_name.toLowerCase()}`, e);
-        employeeByName.set(`${e.first_name.toLowerCase()}`, e);
-        employeeByName.set(`${e.last_name.toLowerCase()}`, e);
-      }
-    }
-  }
+  const employeeLookup = await buildEmployeeLookup();
 
-  function findEmployee(name: string): any | null {
-    const n = name.toLowerCase().trim();
-    if (employeeByName.has(n)) return employeeByName.get(n);
-
-    const reversed = n.split(/,\s*/).reverse().join(" ").trim();
-    if (employeeByName.has(reversed)) return employeeByName.get(reversed);
-
-    for (const [key, emp] of Array.from(employeeByName)) {
-      if (key.includes(n) || n.includes(key)) return emp;
-    }
-    return null;
-  }
-
-  const processedProjectIds = new Set<number>();
-
-  for (let fi = 0; fi < files.length; fi++) {
-    const file = files[fi];
+  for (const file of files) {
     try {
-      const buffer = await downloadExcelFile(file.downloadUrl, token);
-      const { projectCode, rows } = await parseJobPlanExcel(buffer, file.name);
-
-      const project = projectByCode.get(projectCode.toUpperCase());
-      if (!project) {
-        if (rows.length > 0) {
-          errors.push(`"${file.name}": project ${projectCode} not found in DB`);
-        }
-        continue;
-      }
-
-      processedProjectIds.add(project.id);
-      filesProcessed++;
-
-      if (rows.length === 0) {
-        continue;
-      }
-
-      const existingPlans = await db("resource_plans").where("project_id", project.id).select("*");
-      const existingKey = new Map<string, any>();
-      for (const ep of existingPlans) {
-        const monthStr = typeof ep.month === "string" ? ep.month.substring(0, 10) : new Date(ep.month).toISOString().substring(0, 10);
-        existingKey.set(`${ep.employee_id}|${monthStr}`, ep);
-      }
-
-      const processedKeys = new Set<string>();
-
-      for (const row of rows) {
-        const emp = findEmployee(row.employeeName);
-        if (!emp) {
-          continue;
-        }
-
-        const key = `${emp.id}|${row.month}`;
-        processedKeys.add(key);
-
-        const existing = existingKey.get(key);
-        if (existing) {
-          const daysMatch = Math.abs(Number(existing.planned_days || 0) - row.plannedDays) < 0.05;
-          const hoursMatch = Math.abs(Number(existing.planned_hours || 0) - row.plannedHours) < 0.05;
-          if (daysMatch && hoursMatch) {
-            totalUnchanged++;
-          } else {
-            await db("resource_plans").where("id", existing.id).update({
-              planned_days: row.plannedDays,
-              planned_hours: row.plannedHours,
-              allocation_percent: row.allocationPercent,
-            });
-            totalUpdated++;
-          }
-        } else {
-          await db("resource_plans").insert({
-            project_id: project.id,
-            employee_id: emp.id,
-            month: row.month,
-            planned_days: row.plannedDays,
-            planned_hours: row.plannedHours,
-            allocation_percent: row.allocationPercent,
-          });
-          totalInserted++;
-        }
-      }
+      const result = await processJobPlanFile(file, token, projectByCode, employeeLookup);
+      totalInserted += result.inserted;
+      totalUpdated += result.updated;
+      totalUnchanged += result.unchanged;
+      if (result.processed) filesProcessed++;
+      if (result.error) errors.push(result.error);
     } catch (err: any) {
       errors.push(`"${file.name}": ${err.message}`);
     }

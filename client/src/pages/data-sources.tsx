@@ -98,7 +98,8 @@ export default function DataSources() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
-      setImportResult(`Timesheets: ${data.imported} records imported${data.errors?.length > 0 ? `, ${data.errors.length} errors` : ""}`);
+      const errMsg = data.errors?.length > 0 ? `, ${data.errors.length} errors` : "";
+      setImportResult(`Timesheets: ${data.imported} records imported${errMsg}`);
       toast({ title: "Timesheet import complete", description: `${data.imported} records imported` });
     },
     onError: (error: Error) => {
@@ -116,7 +117,8 @@ export default function DataSources() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      setImportResult(`Staff SOT: ${data.created} created, ${data.updated} updated${data.errors?.length > 0 ? `, ${data.errors.length} errors` : ""}`);
+      const errMsg = data.errors?.length > 0 ? `, ${data.errors.length} errors` : "";
+      setImportResult(`Staff SOT: ${data.created} created, ${data.updated} updated${errMsg}`);
       toast({ title: "Staff import complete", description: `${data.created} created, ${data.updated} updated` });
     },
     onError: (error: Error) => {
@@ -225,12 +227,20 @@ export default function DataSources() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-3 flex-wrap">
-              <input type="file" ref={staffRef} accept=".xlsx,.xls" className="hidden" onChange={(e) => { if (e.target.files?.[0]) staffImportMutation.mutate(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" ref={staffRef} accept=".xlsx,.xls" className="hidden" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) { staffImportMutation.mutate(file); }
+                e.target.value = "";
+              }} />
               <Button variant="outline" size="sm" disabled={staffImportMutation.isPending} onClick={() => staffRef.current?.click()} data-testid="button-import-staff">
                 <FileSpreadsheet className="mr-1 h-4 w-4" />
                 {staffImportMutation.isPending ? "Importing..." : "Import Staff (SOT)"}
               </Button>
-              <input type="file" ref={timesheetRef} accept=".csv" className="hidden" onChange={(e) => { if (e.target.files?.[0]) timesheetImportMutation.mutate(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" ref={timesheetRef} accept=".csv" className="hidden" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) { timesheetImportMutation.mutate(file); }
+                e.target.value = "";
+              }} />
               <Button variant="outline" size="sm" disabled={timesheetImportMutation.isPending} onClick={() => timesheetRef.current?.click()} data-testid="button-import-timesheets">
                 <Upload className="mr-1 h-4 w-4" />
                 {timesheetImportMutation.isPending ? "Importing..." : "Import Timesheets (CSV)"}

@@ -147,30 +147,25 @@ type OppFyDetail = {
   fyGP: number;
 };
 
-function computeOppFyDetail(opp: PipelineOpportunity, fy: string, isOpenOpps: boolean): OppFyDetail {
-  const totalValue = getOppValue(opp);
-  const marginPercent = getOppMargin(opp);
-  const fullResult = { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: totalValue, fyGP: totalValue * marginPercent };
-
-  if (isOpenOpps || !fy || fy === "open_opps") return fullResult;
-
-  if (hasMonthlyData(opp)) {
-    let fyRev = 0;
-    let fyGP = 0;
-    for (let m = 1; m <= 12; m++) {
-      fyRev += getMonthlyRevenue(opp, m);
-      fyGP += getMonthlyGP(opp, m);
-    }
-    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: fyRev, fyGP };
+function sumMonthlyTotals(opp: PipelineOpportunity): { fyRev: number; fyGP: number } {
+  let fyRev = 0;
+  let fyGP = 0;
+  for (let m = 1; m <= 12; m++) {
+    fyRev += getMonthlyRevenue(opp, m);
+    fyGP += getMonthlyGP(opp, m);
   }
+  return { fyRev, fyGP };
+}
 
-  const fyDates = parseFyDates(fy);
-  if (!fyDates) return fullResult;
-  const { fyStart, fyEnd } = fyDates;
-  const startDate = parseDate(opp.startDate) || parseDate(opp.dueDate);
-  const endDate = parseDate(opp.expiryDate);
+function laterDate(a: Date, b: Date): Date {
+  return a > b ? a : b;
+}
 
-  if (startDate && endDate) {
+function computeOppWithDates(
+  opp: PipelineOpportunity, totalValue: number, marginPercent: number,
+  startDate: Date, endDate: Date | null, fyStart: Date, fyEnd: Date,
+): OppFyDetail {
+  if (endDate) {
     if (startDate > fyEnd || endDate < fyStart) {
       return { opp, totalValue, marginPercent, totalMonths: monthsBetween(startDate, endDate), fyMonths: 0, fyRevenue: 0, fyGP: 0 };
     }
@@ -180,14 +175,35 @@ function computeOppFyDetail(opp: PipelineOpportunity, fy: string, isOpenOpps: bo
     return { opp, totalValue, marginPercent, totalMonths: totalMo, fyMonths: fyOverlap, fyRevenue, fyGP: fyRevenue * marginPercent };
   }
 
-  if (startDate && !endDate) {
-    if (startDate > fyEnd) {
-      return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 0, fyRevenue: 0, fyGP: 0 };
-    }
-    const effectiveStart = startDate > fyStart ? startDate : fyStart;
-    const remainingFyMonths = monthsBetween(effectiveStart, fyEnd);
-    const ratio = remainingFyMonths / 12;
-    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: remainingFyMonths, fyRevenue: totalValue * ratio, fyGP: totalValue * marginPercent * ratio };
+  if (startDate > fyEnd) {
+    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 0, fyRevenue: 0, fyGP: 0 };
+  }
+  const effectiveStart = laterDate(startDate, fyStart);
+  const remainingFyMonths = monthsBetween(effectiveStart, fyEnd);
+  const ratio = remainingFyMonths / 12;
+  return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: remainingFyMonths, fyRevenue: totalValue * ratio, fyGP: totalValue * marginPercent * ratio };
+}
+
+function computeOppFyDetail(opp: PipelineOpportunity, fy: string, isOpenOpps: boolean): OppFyDetail {
+  const totalValue = getOppValue(opp);
+  const marginPercent = getOppMargin(opp);
+  const fullResult = { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: totalValue, fyGP: totalValue * marginPercent };
+
+  if (isOpenOpps || !fy || fy === "open_opps") return fullResult;
+
+  if (hasMonthlyData(opp)) {
+    const { fyRev, fyGP } = sumMonthlyTotals(opp);
+    return { opp, totalValue, marginPercent, totalMonths: 12, fyMonths: 12, fyRevenue: fyRev, fyGP };
+  }
+
+  const fyDates = parseFyDates(fy);
+  if (!fyDates) return fullResult;
+  const { fyStart, fyEnd } = fyDates;
+  const startDate = parseDate(opp.startDate) || parseDate(opp.dueDate);
+
+  if (startDate) {
+    const endDate = parseDate(opp.expiryDate);
+    return computeOppWithDates(opp, totalValue, marginPercent, startDate, endDate, fyStart, fyEnd);
   }
 
   return fullResult;
@@ -265,16 +281,19 @@ function processOppForScenario(
   return { rev: fyRevenue * rate, gp: effectiveFyGP * rate, rawRev: fyRevenue, rawGP: effectiveFyGP };
 }
 
-function computeScenarioResults(
-  pipeline: PipelineOpportunity[] | undefined,
-  filteredPipeline: PipelineOpportunity[],
-  winRates: Record<string, number>,
-  revenueGoal: number,
-  marginGoal: number,
-  isOpenOpps: boolean,
-  selectedFY: string,
-  ytdMarginFallback: number,
-) {
+type ScenarioResultsOptions = {
+  pipeline: PipelineOpportunity[] | undefined;
+  filteredPipeline: PipelineOpportunity[];
+  winRates: Record<string, number>;
+  revenueGoal: number;
+  marginGoal: number;
+  isOpenOpps: boolean;
+  selectedFY: string;
+  ytdMarginFallback: number;
+};
+
+function computeScenarioResults(opts: ScenarioResultsOptions) {
+  const { pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginFallback } = opts;
   if (!pipeline) return null;
 
   const monthlyRevenue = new Array(12).fill(0);
@@ -689,7 +708,7 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
         </TableHeader>
         <TableBody>
           {CLASSIFICATIONS.map(cls => {
-            const b = scenarioResults?.classBreakdown[cls] as ClassBreakdown | undefined;
+            const b = scenarioResults?.classBreakdown[cls];
             const allDetails = allDetailsByCls[cls] || [];
             const margin = b && b.revenue > 0 ? (b.gp / b.revenue) * 100 : 0;
             const isExpanded = expandedCls.has(cls);
@@ -733,7 +752,10 @@ function ClassificationBreakdownTable({ scenarioResults, winRates, isLoading, is
                     <TableCell className="pl-4">
                       <div className="flex items-center gap-2">
                         <Checkbox
-                          checked={includedCount === 0 ? false : allIncluded ? true : "indeterminate"}
+                          checked={(() => {
+                            if (includedCount === 0) return false;
+                            return allIncluded ? true : "indeterminate";
+                          })()}
                           onCheckedChange={(checked) => {
                             onToggleAllOpps(clsOppIds, checked === true || checked === "indeterminate");
                           }}
@@ -827,8 +849,8 @@ function ProjectedMonthlyTable({ ytd, scenarioResults, revenueGoal, selectedFY, 
                 <TableRow>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                      YTD Actual
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />{" "}
+                      <span>YTD Actual</span>
                     </div>
                   </TableCell>
                   {FY_MONTHS.map((m, i) => (
@@ -841,8 +863,8 @@ function ProjectedMonthlyTable({ ytd, scenarioResults, revenueGoal, selectedFY, 
                 <TableRow>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                      Pipeline Forecast
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />{" "}
+                      <span>Pipeline Forecast</span>
                     </div>
                   </TableCell>
                   {FY_MONTHS.map((m, i) => (
@@ -861,8 +883,8 @@ function ProjectedMonthlyTable({ ytd, scenarioResults, revenueGoal, selectedFY, 
                 <TableRow className="border-t-2 font-bold">
                   <TableCell>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                      Projected
+                      <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{" "}
+                      <span>Projected</span>
                     </div>
                   </TableCell>
                   {FY_MONTHS.map((m, i) => (
@@ -1032,9 +1054,9 @@ export default function Scenarios() {
 
   const ytdMarginRatio = ytdActuals.totalRevenue > 0 ? (ytdActuals.totalGP / ytdActuals.totalRevenue) : 0;
 
-  const scenarioResults = useMemo(() => computeScenarioResults(
-    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio,
-  ), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio]);
+  const scenarioResults = useMemo(() => computeScenarioResults({
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginFallback: ytdMarginRatio,
+  }), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio]);
 
   const isLoading = loadingPipeline || loadingScenarios || loadingMonthly;
 
