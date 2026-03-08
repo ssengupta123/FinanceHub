@@ -105,6 +105,7 @@ export const insertResourcePlanSchema = z.object({
   plannedDays: z.string().nullable().optional(),
   plannedHours: z.string().nullable().optional(),
   allocationPercent: z.string().nullable().optional(),
+  weeklyAllocations: z.string().nullable().optional(),
 });
 export type InsertResourcePlan = z.infer<typeof insertResourcePlanSchema>;
 export type ResourcePlan = InsertResourcePlan & { id: number };

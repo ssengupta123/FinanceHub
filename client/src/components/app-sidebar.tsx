@@ -21,6 +21,8 @@ import {
   FileText,
   Handshake,
   Lightbulb,
+  ClipboardList,
+  UserCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -57,6 +59,8 @@ const navGroups = [
   {
     label: "Operations",
     items: [
+      { title: "Job Plans", icon: ClipboardList, path: "/job-plans", resource: "resource_plans" },
+      { title: "Resource Allocation", icon: UserCheck, path: "/resource-allocation", resource: "resource_plans" },
       { title: "Resource Plans", icon: Calendar, path: "/resource-plans", resource: "resource_plans" },
       { title: "Timesheets", icon: Clock, path: "/timesheets", resource: "timesheets" },
       { title: "Costs", icon: Receipt, path: "/costs", resource: "costs" },

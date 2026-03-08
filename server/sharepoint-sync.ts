@@ -918,6 +918,33 @@ async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => 
   return { findEmployee };
 }
 
+function generateWeeklyAllocations(monthStr: string, allocationPercent: number): Record<string, number> {
+  const d = new Date(monthStr);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const monday = new Date(firstDay);
+  const dayOfWeek = monday.getDay();
+  if (dayOfWeek !== 1) {
+    monday.setDate(monday.getDate() + ((8 - dayOfWeek) % 7));
+  }
+  if (monday > lastDay) {
+    const prevMonday = new Date(firstDay);
+    prevMonday.setDate(prevMonday.getDate() - ((dayOfWeek + 6) % 7));
+    const key = prevMonday.toISOString().split("T")[0];
+    return { [key]: allocationPercent };
+  }
+  const result: Record<string, number> = {};
+  const cursor = new Date(monday);
+  while (cursor <= lastDay) {
+    const key = cursor.toISOString().split("T")[0];
+    result[key] = allocationPercent;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return result;
+}
+
 async function processJobPlanFile(
   file: { name: string; downloadUrl: string; id: string },
   token: SharePointToken,
@@ -965,6 +992,8 @@ async function processJobPlanFile(
     const emp = employeeLookup.findEmployee(row.employeeName);
     if (!emp) continue;
 
+    const weeklyAllocs = generateWeeklyAllocations(row.month, row.allocationPercent);
+
     const key = `${emp.id}|${row.month}`;
     const existing = existingKey.get(key);
     if (existing) {
@@ -977,6 +1006,7 @@ async function processJobPlanFile(
           planned_days: row.plannedDays,
           planned_hours: row.plannedHours,
           allocation_percent: row.allocationPercent,
+          weekly_allocations: JSON.stringify(weeklyAllocs),
         });
         updated++;
       }
@@ -988,6 +1018,7 @@ async function processJobPlanFile(
         planned_days: row.plannedDays,
         planned_hours: row.plannedHours,
         allocation_percent: row.allocationPercent,
+        weekly_allocations: JSON.stringify(weeklyAllocs),
       });
       inserted++;
     }

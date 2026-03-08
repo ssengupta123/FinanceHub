@@ -19,6 +19,8 @@ import ProjectDetail from "@/pages/project-detail";
 import Resources from "@/pages/resources";
 import RateCards from "@/pages/rate-cards";
 import ResourcePlans from "@/pages/resource-plans";
+import JobPlans from "@/pages/job-plans";
+import ResourceAllocation from "@/pages/resource-allocation";
 import Timesheets from "@/pages/timesheets";
 import Costs from "@/pages/costs";
 import Milestones from "@/pages/milestones";
@@ -46,6 +48,8 @@ function Router() {
       <Route path="/resources" component={Resources} />
       <Route path="/rate-cards" component={RateCards} />
       <Route path="/resource-plans" component={ResourcePlans} />
+      <Route path="/job-plans" component={JobPlans} />
+      <Route path="/resource-allocation" component={ResourceAllocation} />
       <Route path="/timesheets" component={Timesheets} />
       <Route path="/costs" component={Costs} />
       <Route path="/milestones" component={Milestones} />

@@ -781,11 +781,22 @@ export async function migrateEmployeeAndPermissions() {
   await addCertificationsColumn();
 }
 
+async function migrateResourcePlanWeekly() {
+  const hasCol = await db.schema.hasColumn("resource_plans", "weekly_allocations");
+  if (!hasCol) {
+    await db.schema.alterTable("resource_plans", (t) => {
+      t.text("weekly_allocations");
+    });
+    console.log("Added weekly_allocations column to resource_plans");
+  }
+}
+
 export async function runIncrementalMigrations() {
   await migrateColumnAdditions();
   await migrateResourceAndCxTables();
   await migrateVatTables();
   await seedVatData();
   await migrateEmployeeAndPermissions();
+  await migrateResourcePlanWeekly();
   console.log("Incremental migrations completed");
 }
