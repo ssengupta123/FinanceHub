@@ -791,6 +791,20 @@ async function migrateResourcePlanWeekly() {
   }
 }
 
+async function migrateResourcePlanRates() {
+  const hasCol = await db.schema.hasColumn("resource_plans", "charge_out_rate");
+  if (!hasCol) {
+    await db.schema.alterTable("resource_plans", (t) => {
+      t.decimal("charge_out_rate", 10, 2);
+      t.decimal("discount_percent", 8, 4);
+      t.decimal("discounted_hourly_rate", 10, 2);
+      t.decimal("discounted_daily_rate", 10, 2);
+      t.decimal("hourly_gross_cost", 10, 2);
+    });
+    console.log("Added rate columns to resource_plans");
+  }
+}
+
 export async function runIncrementalMigrations() {
   await migrateColumnAdditions();
   await migrateResourceAndCxTables();
@@ -798,5 +812,6 @@ export async function runIncrementalMigrations() {
   await seedVatData();
   await migrateEmployeeAndPermissions();
   await migrateResourcePlanWeekly();
+  await migrateResourcePlanRates();
   console.log("Incremental migrations completed");
 }
