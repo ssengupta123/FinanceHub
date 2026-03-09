@@ -77,6 +77,85 @@ function getCellStyle(pct: number): { style: React.CSSProperties; textClass: str
   return { style: {}, textClass: "" };
 }
 
+function buildCellTitle(name: string, weekNum: number, totalPct: number, contributions?: { projectCode: string; projectName: string; pct: number }[]): string {
+  const header = `${name} - W${weekNum}: ${totalPct}%`;
+  if (!contributions?.length) return header;
+  const details = contributions.map(c => `\n  ${c.projectCode} (${c.projectName}): ${c.pct}%`).join("");
+  return header + details;
+}
+
+function processResourcePlans(
+  plans: ResourcePlan[],
+  empMap: Map<number, Employee>,
+  projMap: Map<number, Project>,
+): Map<number, ResourceSummary> {
+  const byEmployee = new Map<number, ResourceSummary>();
+
+  for (const rp of plans) {
+    const emp = empMap.get(rp.employeeId);
+    if (!emp || emp.status === "inactive") continue;
+    const proj = projMap.get(rp.projectId);
+    if (proj && (proj.status === "closed" || proj.status === "completed")) continue;
+
+    if (!byEmployee.has(rp.employeeId)) {
+      byEmployee.set(rp.employeeId, {
+        employeeId: rp.employeeId,
+        name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
+        role: emp.role || "",
+        weeklyData: new Map(),
+        totalForecastHours: 0,
+        projectCount: 0,
+        plans: new Set(),
+        overallocatedWeeks: 0,
+      });
+    }
+
+    const res = byEmployee.get(rp.employeeId)!;
+    res.totalForecastHours += parseNum(rp.plannedHours);
+    const projectCode = proj?.projectCode || `P${rp.projectId}`;
+    const projectName = proj?.name || "Unknown";
+    res.plans.add(`${projectCode} - ${projectName}`);
+
+    const allocs = parseAllocations(rp);
+    for (const [weekKey, pct] of Object.entries(allocs)) {
+      if (pct <= 0) continue;
+      if (!res.weeklyData.has(weekKey)) {
+        res.weeklyData.set(weekKey, { weekKey, totalPct: 0, contributions: [] });
+      }
+      const wd = res.weeklyData.get(weekKey)!;
+      wd.totalPct += pct;
+      wd.contributions.push({ projectCode, projectName, pct });
+    }
+  }
+
+  return byEmployee;
+}
+
+function finalizeResources(
+  byEmployee: Map<number, ResourceSummary>,
+  plans: ResourcePlan[],
+  visibleKeys: Set<string>,
+): ResourceSummary[] {
+  for (const res of Array.from(byEmployee.values())) {
+    const projIds = new Set(plans.filter(rp => rp.employeeId === res.employeeId).map(rp => rp.projectId));
+    res.projectCount = projIds.size;
+    res.overallocatedWeeks = Array.from(res.weeklyData.entries())
+      .filter(([key]) => visibleKeys.has(key))
+      .filter(([, wd]) => wd.totalPct > 100)
+      .length;
+  }
+
+  return Array.from(byEmployee.values()).sort((a, b) =>
+    b.overallocatedWeeks - a.overallocatedWeeks || a.name.localeCompare(b.name)
+  );
+}
+
+function formatOverallocatedText(count: number): string {
+  if (count <= 0) return "None";
+  const suffix = count > 1 ? "s" : "";
+  return `${count} resource${suffix}`;
+}
+
 export default function ResourceAllocation() {
   const [numWeeks, setNumWeeks] = useState(26);
   const [filterOveralloc, setFilterOveralloc] = useState(false);
@@ -108,57 +187,9 @@ export default function ResourceAllocation() {
 
   const resources = useMemo((): ResourceSummary[] => {
     if (!plans?.length) return [];
-    const byEmployee = new Map<number, ResourceSummary>();
-
-    for (const rp of plans) {
-      const emp = empMap.get(rp.employeeId);
-      if (!emp || emp.status === "inactive") continue;
-      const proj = projMap.get(rp.projectId);
-      if (proj && (proj.status === "closed" || proj.status === "completed")) continue;
-
-      if (!byEmployee.has(rp.employeeId)) {
-        byEmployee.set(rp.employeeId, {
-          employeeId: rp.employeeId,
-          name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
-          role: emp.role || "",
-          weeklyData: new Map(),
-          totalForecastHours: 0,
-          projectCount: 0,
-          plans: new Set(),
-          overallocatedWeeks: 0,
-        });
-      }
-
-      const res = byEmployee.get(rp.employeeId)!;
-      res.totalForecastHours += parseNum(rp.plannedHours);
-      const projectCode = proj?.projectCode || `P${rp.projectId}`;
-      const projectName = proj?.name || "Unknown";
-      res.plans.add(`${projectCode} - ${projectName}`);
-
-      const allocs = parseAllocations(rp);
-      for (const [weekKey, pct] of Object.entries(allocs)) {
-        if (pct <= 0) continue;
-        if (!res.weeklyData.has(weekKey)) {
-          res.weeklyData.set(weekKey, { weekKey, totalPct: 0, contributions: [] });
-        }
-        const wd = res.weeklyData.get(weekKey)!;
-        wd.totalPct += pct;
-        wd.contributions.push({ projectCode, projectName, pct });
-      }
-    }
-
+    const byEmployee = processResourcePlans(plans, empMap, projMap);
     const visibleKeys = new Set(weeks.map(w => getWeekKey(w)));
-    for (const res of Array.from(byEmployee.values())) {
-      const projIds = new Set(plans.filter(rp => rp.employeeId === res.employeeId).map(rp => rp.projectId));
-      res.projectCount = projIds.size;
-      res.overallocatedWeeks = Array.from(res.weeklyData.entries())
-        .filter(([key, wd]) => visibleKeys.has(key) && wd.totalPct > 100)
-        .length;
-    }
-
-    return Array.from(byEmployee.values()).sort((a, b) =>
-      b.overallocatedWeeks - a.overallocatedWeeks || a.name.localeCompare(b.name)
-    );
+    return finalizeResources(byEmployee, plans, visibleKeys);
   }, [plans, empMap, projMap, weeks]);
 
   const displayed = filterOveralloc ? resources.filter(r => r.overallocatedWeeks > 0) : resources;
@@ -232,7 +263,7 @@ export default function ResourceAllocation() {
               <span className="text-[13px] text-muted-foreground font-medium">Overallocated</span>
             </div>
             <p className={`text-xl font-bold ${totalOverallocated > 0 ? "text-destructive" : "text-chart-2"}`} data-testid="text-overallocated">
-              {totalOverallocated > 0 ? `${totalOverallocated} resource${totalOverallocated > 1 ? "s" : ""}` : "None"}
+              {formatOverallocatedText(totalOverallocated)}
             </p>
           </CardContent>
         </Card>
@@ -273,8 +304,9 @@ export default function ResourceAllocation() {
                     <th className="text-center p-2 font-medium text-muted-foreground w-[60px]">Status</th>
                     {weeks.map((w, i) => {
                       const isMonthStart = w.getDate() <= 7;
+                      const weekKey = getWeekKey(w);
                       return (
-                        <th key={i} className={`p-0.5 font-normal text-center w-[40px] ${isMonthStart ? "border-l border-border/60" : ""}`}>
+                        <th key={weekKey} className={`p-0.5 font-normal text-center w-[40px] ${isMonthStart ? "border-l border-border/60" : ""}`}>
                           {isMonthStart && (
                             <div className="text-[11px] text-muted-foreground font-semibold">
                               {w.toLocaleDateString("en-AU", { month: "short" })}
@@ -316,12 +348,12 @@ export default function ResourceAllocation() {
 
 function ResourceRow({
   resource, weeks, isExpanded, onToggle,
-}: {
+}: Readonly<{
   resource: ResourceSummary;
   weeks: Date[];
   isExpanded: boolean;
   onToggle: () => void;
-}) {
+}>) {
   const hasOveralloc = resource.overallocatedWeeks > 0;
 
   return (
@@ -361,9 +393,9 @@ function ResourceRow({
 
           return (
             <td
-              key={i}
+              key={key}
               className={`p-0 text-center ${isMonthStart ? "border-l border-border/60" : ""}`}
-              title={`${resource.name} - W${i + 1}: ${totalPct}%${wd?.contributions.map(c => `\n  ${c.projectCode} (${c.projectName}): ${c.pct}%`).join("") || ""}`}
+              title={buildCellTitle(resource.name, i + 1, totalPct, wd?.contributions)}
             >
               <div
                 style={cellStyle}
@@ -391,15 +423,15 @@ function ResourceRow({
                   }
                 });
                 const sortedKeys = Array.from(planWeeks.keys()).sort((a, b) => a.localeCompare(b));
-                const from = sortedKeys.length > 0 ? new Date(sortedKeys[0]).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
-                const to = sortedKeys.length > 0 ? new Date(sortedKeys[sortedKeys.length - 1]).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
+                const fromDate = sortedKeys.length > 0 ? new Date(sortedKeys[0]).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
+                const toDate = sortedKeys.length > 0 ? new Date(sortedKeys.at(-1)!).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
                 const avgPct = sortedKeys.length > 0 ? Math.round(Array.from(planWeeks.values()).reduce((s, v) => s + v, 0) / sortedKeys.length) : 0;
 
                 return (
                   <div key={planTitle} className="flex items-center gap-2 text-[13px]">
                     <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
                     <span className="font-medium min-w-[120px] truncate">{planTitle}</span>
-                    <span className="text-muted-foreground">{from} → {to}</span>
+                    <span className="text-muted-foreground">{fromDate} → {toDate}</span>
                     <span className="text-muted-foreground">({sortedKeys.length}w @ {avgPct}%)</span>
                   </div>
                 );

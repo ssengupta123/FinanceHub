@@ -70,7 +70,9 @@ export default function DataSources() {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       if (data?.message) {
         toast({ title: "Sync complete", description: data.message });
-      } else if (data?.imported !== undefined) {
+      } else if (data?.imported === undefined) {
+        toast({ title: "Sync result", description: "Sync completed." });
+      } else {
         const parts = [];
         if (data.imported > 0) parts.push(`${data.imported} added`);
         if (data.updated > 0) parts.push(`${data.updated} updated`);
@@ -78,8 +80,6 @@ export default function DataSources() {
         if (data.unchanged > 0) parts.push(`${data.unchanged} unchanged`);
         if (data.errors?.length > 0) parts.push(`${data.errors.length} errors`);
         toast({ title: "Sync complete", description: parts.join(", ") || "No changes" });
-      } else {
-        toast({ title: "Sync result", description: "Sync completed." });
       }
     },
     onError: (error: Error) => {

@@ -431,12 +431,14 @@ function hasChanges(existing: Record<string, any>, incoming: Record<string, any>
   return false;
 }
 
+type UpsertResult = "inserted" | "updated" | "unchanged";
+
 async function upsertOppRecord(
   trx: any,
   snakeRecord: Record<string, any>,
   existingBySpId: Map<string, any>,
   incomingSpIds: Set<string>,
-): Promise<"inserted" | "updated" | "unchanged"> {
+): Promise<UpsertResult> {
   const spId = snakeRecord.sharepoint_id;
   if (!spId) {
     await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });

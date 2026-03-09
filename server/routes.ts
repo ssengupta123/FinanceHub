@@ -1419,30 +1419,36 @@ function buildProjectLookups(existingProjects: any[]): { projByCode: Map<string,
   return { projByCode, projByName };
 }
 
+interface ProjectStatusRowContext {
+  col: ReturnType<typeof buildProjectStatusColumnMap>;
+  projByCode: Map<string, any>;
+  projByName: Map<string, any>;
+  createCounter: { value: number };
+  usedCodes: Set<string>;
+  cleanVat: (v: string | null | undefined) => string | null;
+  sanitizeDateFields: (obj: Record<string, any>) => Record<string, any>;
+}
+
 async function processProjectStatusRow(
-  r: any[], i: number,
-  col: ReturnType<typeof buildProjectStatusColumnMap>,
-  projByCode: Map<string, any>, projByName: Map<string, any>,
-  createCounter: { value: number }, usedCodes: Set<string>,
-  cleanVat: (v: string | null | undefined) => string | null,
-  sanitizeDateFields: (obj: Record<string, any>) => Record<string, any>,
+  r: any[],
+  ctx: ProjectStatusRowContext,
 ): Promise<"updated" | "created" | null> {
-  const vpn = getVal(r, col.vpn);
-  const projectName = getVal(r, col.project);
+  const vpn = getVal(r, ctx.col.vpn);
+  const projectName = getVal(r, ctx.col.project);
   if (!vpn && !projectName) throw new Error("No project code or name");
 
-  const existing = findExistingProject(vpn, projectName, projByCode, projByName);
-  const updates = buildProjectUpdates(r, col, cleanVat);
+  const existing = findExistingProject(vpn, projectName, ctx.projByCode, ctx.projByName);
+  const updates = buildProjectUpdates(r, ctx.col, ctx.cleanVat);
 
   if (existing) {
     if (Object.keys(updates).length > 0) {
-      await db("projects").where("id", existing.id).update(sanitizeDateFields(updates));
+      await db("projects").where("id", existing.id).update(ctx.sanitizeDateFields(updates));
       return "updated";
     }
     return null;
   }
-  const code = generateProjectCode(vpn, projectName, createCounter, usedCodes);
-  await db("projects").insert(sanitizeDateFields({ project_code: code, name: projectName || code, status: "active", ...updates }));
+  const code = generateProjectCode(vpn, projectName, ctx.createCounter, ctx.usedCodes);
+  await db("projects").insert(ctx.sanitizeDateFields({ project_code: code, name: projectName || code, status: "active", ...updates }));
   return "created";
 }
 
@@ -1464,7 +1470,7 @@ async function processProjectStatusRows(rows: any[][]) {
     const r = rows[i];
     if (!r || r.every((c: any) => c == null || String(c).trim() === "")) continue;
     try {
-      const result = await processProjectStatusRow(r, i, col, projByCode, projByName, createCounter, usedCodes, cleanVat, sanitizeDateFields);
+      const result = await processProjectStatusRow(r, { col, projByCode, projByName, createCounter, usedCodes, cleanVat, sanitizeDateFields });
       if (result === "created") created++;
       else if (result === "updated") updated++;
     } catch (rowErr: any) {
