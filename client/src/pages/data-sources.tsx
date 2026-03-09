@@ -58,6 +58,7 @@ export default function DataSources() {
   const { data: dataSources, isLoading } = useQuery<DataSource[]>({ queryKey: ["/api/data-sources"] });
   const timesheetRef = useRef<HTMLInputElement>(null);
   const staffRef = useRef<HTMLInputElement>(null);
+  const projectStatusRef = useRef<HTMLInputElement>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
 
   const syncMutation = useMutation({
@@ -120,6 +121,29 @@ export default function DataSources() {
       const errMsg = data.errors?.length > 0 ? `, ${data.errors.length} errors` : "";
       setImportResult(`Staff SOT: ${data.created} created, ${data.updated} updated${errMsg}`);
       toast({ title: "Staff import complete", description: `${data.created} created, ${data.updated} updated` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const projectStatusImportMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const resp = await fetch("/api/import/project-status", { method: "POST", body: formData, credentials: "include" });
+      if (!resp.ok) throw new Error((await resp.json()).message || "Import failed");
+      return resp.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      const parts = [];
+      if (data.updated > 0) parts.push(`${data.updated} updated`);
+      if (data.created > 0) parts.push(`${data.created} created`);
+      if (data.errors?.length > 0) parts.push(`${data.errors.length} errors`);
+      const desc = parts.join(", ") || "No changes";
+      setImportResult(`Project Status: ${desc}`);
+      toast({ title: "Project status import complete", description: desc });
     },
     onError: (error: Error) => {
       toast({ title: "Import failed", description: error.message, variant: "destructive" });
@@ -244,6 +268,15 @@ export default function DataSources() {
               <Button variant="outline" size="sm" disabled={timesheetImportMutation.isPending} onClick={() => timesheetRef.current?.click()} data-testid="button-import-timesheets">
                 <Upload className="mr-1 h-4 w-4" />
                 {timesheetImportMutation.isPending ? "Importing..." : "Import Timesheets (CSV)"}
+              </Button>
+              <input type="file" ref={projectStatusRef} accept=".xlsx,.xls" className="hidden" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) { projectStatusImportMutation.mutate(file); }
+                e.target.value = "";
+              }} />
+              <Button variant="outline" size="sm" disabled={projectStatusImportMutation.isPending} onClick={() => projectStatusRef.current?.click()} data-testid="button-import-project-status">
+                <FileSpreadsheet className="mr-1 h-4 w-4" />
+                {projectStatusImportMutation.isPending ? "Importing..." : "Import Project Status (Excel)"}
               </Button>
               <Button variant="outline" size="sm" disabled={deriveMutation.isPending} onClick={() => deriveMutation.mutate()} data-testid="button-derive-financials">
                 <Calculator className="mr-1 h-4 w-4" />

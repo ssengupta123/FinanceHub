@@ -2700,6 +2700,172 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Project Status Excel Import ───
+  app.post("/api/import/project-status", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) return res.status(400).json({ message: "No sheet found in workbook" });
+
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      if (rows.length < 2) return res.status(400).json({ message: "Excel file has no data rows" });
+
+      const headerRow = rows[0].map((h: any) => String(h || "").trim().toLowerCase());
+      const colIndexExact = (names: string[]): number => {
+        for (const n of names) {
+          const idx = headerRow.findIndex((h: string) => h === n);
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+      const colIndex = (names: string[]): number => {
+        const exact = colIndexExact(names);
+        if (exact >= 0) return exact;
+        for (const n of names) {
+          if (n.length <= 2) continue;
+          const idx = headerRow.findIndex((h: string) => h.includes(n));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+
+      const col = {
+        vpn: colIndexExact(["vpn", "project code", "projectcode", "code"]),
+        ad: colIndexExact(["a/d", "ad", "ad status", "adstatus"]),
+        vat: colIndex(["vat"]),
+        client: colIndex(["client"]),
+        project: colIndex(["project", "project name"]),
+        clientManager: colIndex(["client manager", "client mar", "clientmanager"]),
+        engagementManager: colIndex(["engagement", "engagement manager", "engageme"]),
+        startDate: colIndex(["start date", "start"]),
+        endDate: colIndex(["end date", "end"]),
+        billingCategory: colIndex(["billing cat", "billing category", "billingcategory"]),
+        workType: colIndex(["work type", "worktype"]),
+        panel: colIndex(["panel"]),
+        recurring: colIndex(["recurring"]),
+        workOrderAmount: colIndex(["work order", "work orde", "work order amount"]),
+        budget: colIndex(["budget"]),
+        actual: colIndex(["actual"]),
+        balance: colIndex(["balance"]),
+      };
+
+      const getVal = (row: any[], idx: number): string | null => {
+        if (idx < 0 || row[idx] == null || String(row[idx]).trim() === "") return null;
+        return String(row[idx]).trim();
+      };
+      const getNum = (row: any[], idx: number): string | null => {
+        if (idx < 0 || row[idx] == null) return null;
+        const n = Number(row[idx]);
+        return !Number.isNaN(n) ? n.toFixed(2) : null;
+      };
+
+      const existingProjects = await storage.getProjects();
+      const projByCode = new Map<string, any>();
+      const projByName = new Map<string, any>();
+      for (const p of existingProjects) {
+        if (p.projectCode) projByCode.set(p.projectCode.toLowerCase(), p);
+        if (p.name) projByName.set(p.name.toLowerCase(), p);
+      }
+
+      let updated = 0;
+      let created = 0;
+      let createCounter = 0;
+      const usedCodes = new Set(Array.from(projByCode.keys()));
+      const errors: string[] = [];
+      const { cleanVat, cleanContractType } = await import("./sharepoint-sync");
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.every((c: any) => c == null || String(c).trim() === "")) continue;
+
+        try {
+          const vpn = getVal(r, col.vpn);
+          const projectName = getVal(r, col.project);
+          if (!vpn && !projectName) {
+            errors.push(`Row ${i + 1}: No project code or name`);
+            continue;
+          }
+
+          let existing: any = null;
+          if (vpn) existing = projByCode.get(vpn.toLowerCase());
+          if (!existing && projectName) {
+            existing = projByName.get(projectName.toLowerCase());
+            if (!existing) {
+              const codeMatch = projectName.match(/^([A-Z]{2,5}\d{2,4})/i);
+              if (codeMatch) existing = projByCode.get(codeMatch[1].toLowerCase());
+            }
+          }
+
+          const updates: Record<string, any> = {};
+          const ad = getVal(r, col.ad);
+          if (ad) updates.ad_status = ad;
+          const vat = getVal(r, col.vat);
+          if (vat) updates.vat = cleanVat(vat);
+          const client = getVal(r, col.client);
+          if (client) updates.client = client;
+          const cm = getVal(r, col.clientManager);
+          if (cm) updates.client_manager = cm;
+          const em = getVal(r, col.engagementManager);
+          if (em) updates.engagement_manager = em;
+          const sdRaw = col.startDate >= 0 ? r[col.startDate] : null;
+          if (sdRaw != null && String(sdRaw).trim() !== "") {
+            updates.start_date = parseExcelDate(sdRaw);
+          }
+          const edRaw = col.endDate >= 0 ? r[col.endDate] : null;
+          if (edRaw != null && String(edRaw).trim() !== "") {
+            updates.end_date = parseExcelDate(edRaw);
+          }
+          const bc = getVal(r, col.billingCategory);
+          if (bc) updates.billing_category = bc;
+          const wt = getVal(r, col.workType);
+          if (wt) updates.work_type = wt;
+          const panel = getVal(r, col.panel);
+          if (panel) updates.panel = panel;
+          const recurring = getVal(r, col.recurring);
+          if (recurring) updates.recurring = recurring;
+          const woa = getNum(r, col.workOrderAmount);
+          if (woa) updates.work_order_amount = woa;
+          const budget = getNum(r, col.budget);
+          if (budget) updates.budget_amount = budget;
+          const actual = getNum(r, col.actual);
+          if (actual) updates.actual_amount = actual;
+          const balance = getNum(r, col.balance);
+          if (balance) updates.balance_amount = balance;
+
+          if (existing) {
+            if (Object.keys(updates).length > 0) {
+              await db("projects").where("id", existing.id).update(updates);
+              updated++;
+            }
+          } else {
+            let code = vpn || (projectName ? projectName.match(/^([A-Z]{2,5}\d{2,4})/i)?.[1] : null);
+            if (!code) {
+              do {
+                createCounter++;
+                code = `IMP${String(createCounter).padStart(5, "0")}`;
+              } while (usedCodes.has(code.toLowerCase()));
+            }
+            usedCodes.add(code.toLowerCase());
+            await db("projects").insert({
+              project_code: code,
+              name: projectName || code,
+              status: "active",
+              ...updates,
+            });
+            created++;
+          }
+        } catch (rowErr: any) {
+          errors.push(`Row ${i + 1}: ${rowErr.message}`);
+        }
+      }
+
+      res.json({ updated, created, errors, total: updated + created });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Project status import failed" });
+    }
+  });
+
   // ─── Derive Project Financials from Timesheets ───
   app.post("/api/derive/project-financials", requirePermission("projects", "create"), async (req, res) => {
     try {
