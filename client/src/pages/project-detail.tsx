@@ -26,6 +26,12 @@ function formatCurrency(val: string | number | null | undefined) {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 }
 
+function gmColorClass(gm: number): string {
+  if (gm >= 30) return "text-green-600 dark:text-green-400";
+  if (gm >= 15) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
 function formatPercent(val: string | number | null | undefined) {
   if (!val) return "0%";
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
@@ -330,7 +336,7 @@ function ResourcePlanTab({ resourcePlans, isLoading }: Readonly<{ resourcePlans:
                     <TableCell className="text-right">{emp.hourlyGrossCost > 0 ? `$${emp.hourlyGrossCost.toFixed(2)}` : "—"}</TableCell>
                     <TableCell className="text-right">{emp.totalRevenue > 0 ? formatCurrency(emp.totalRevenue) : "—"}</TableCell>
                     <TableCell className="text-right">{emp.totalCost > 0 ? formatCurrency(emp.totalCost) : "—"}</TableCell>
-                    <TableCell className={`text-right font-medium ${gm >= 30 ? "text-green-600 dark:text-green-400" : gm >= 15 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                    <TableCell className={`text-right font-medium ${gmColorClass(gm)}`}>
                       {emp.totalRevenue > 0 ? `${gm.toFixed(1)}%` : "—"}
                     </TableCell>
                   </TableRow>

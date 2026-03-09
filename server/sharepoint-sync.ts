@@ -431,6 +431,56 @@ function hasChanges(existing: Record<string, any>, incoming: Record<string, any>
   return false;
 }
 
+async function upsertOppRecord(
+  trx: any,
+  snakeRecord: Record<string, any>,
+  existingBySpId: Map<string, any>,
+  incomingSpIds: Set<string>,
+): Promise<"inserted" | "updated" | "unchanged"> {
+  const spId = snakeRecord.sharepoint_id;
+  if (!spId) {
+    await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
+    return "inserted";
+  }
+  incomingSpIds.add(String(spId));
+  const existing = existingBySpId.get(String(spId));
+  if (!existing) {
+    await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
+    return "inserted";
+  }
+  if (hasChanges(existing, snakeRecord)) {
+    await trx("pipeline_opportunities").where("id", existing.id).update(snakeRecord);
+    return "updated";
+  }
+  return "unchanged";
+}
+
+async function removeStaleOpps(
+  trx: any,
+  existingBySpId: Map<string, any>,
+  existingWithoutSpId: any[],
+  incomingSpIds: Set<string>,
+  staged: any[],
+): Promise<number> {
+  let removed = 0;
+  for (const [spId, row] of Array.from(existingBySpId)) {
+    if (!incomingSpIds.has(spId)) {
+      await trx("pipeline_opportunities").where("id", row.id).del();
+      removed++;
+    }
+  }
+  if (existingWithoutSpId.length > 0 && staged.length > 0) {
+    const incomingNames = new Set(staged.map((r: any) => r.name));
+    for (const row of existingWithoutSpId) {
+      if (!incomingNames.has(row.name)) {
+        await trx("pipeline_opportunities").where("id", row.id).del();
+        removed++;
+      }
+    }
+  }
+  return removed;
+}
+
 async function performOpenOppsDeltaSync(staged: any[]): Promise<{ inserted: number; updated: number; removed: number; unchanged: number }> {
   let inserted = 0;
   let updated = 0;
@@ -453,46 +503,13 @@ async function performOpenOppsDeltaSync(staged: any[]): Promise<{ inserted: numb
 
     for (const record of staged) {
       const snakeRecord = recordToSnake(record);
-      const spId = snakeRecord.sharepoint_id;
-
-      if (!spId) {
-        await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
-        inserted++;
-        continue;
-      }
-
-      incomingSpIds.add(String(spId));
-      const existing = existingBySpId.get(String(spId));
-
-      if (existing) {
-        if (hasChanges(existing, snakeRecord)) {
-          await trx("pipeline_opportunities").where("id", existing.id).update(snakeRecord);
-          updated++;
-        } else {
-          unchanged++;
-        }
-      } else {
-        await trx("pipeline_opportunities").insert({ ...snakeRecord, fy_year: "open_opps" });
-        inserted++;
-      }
+      const result = await upsertOppRecord(trx, snakeRecord, existingBySpId, incomingSpIds);
+      if (result === "inserted") inserted++;
+      else if (result === "updated") updated++;
+      else unchanged++;
     }
 
-    for (const [spId, row] of Array.from(existingBySpId)) {
-      if (!incomingSpIds.has(spId)) {
-        await trx("pipeline_opportunities").where("id", row.id).del();
-        removed++;
-      }
-    }
-
-    if (existingWithoutSpId.length > 0 && staged.length > 0) {
-      const incomingNames = new Set(staged.map((r: any) => r.name));
-      for (const row of existingWithoutSpId) {
-        if (!incomingNames.has(row.name)) {
-          await trx("pipeline_opportunities").where("id", row.id).del();
-          removed++;
-        }
-      }
-    }
+    removed = await removeStaleOpps(trx, existingBySpId, existingWithoutSpId, incomingSpIds, staged);
   });
 
   return { inserted, updated, removed, unchanged };
@@ -555,6 +572,54 @@ function parseProjectCode(folderName: string): { projectCode: string; projectNam
   return { projectCode, projectName };
 }
 
+function buildInflightDbRecord(record: any): Record<string, any> {
+  return {
+    project_code: record.projectCode,
+    name: record.name,
+    client: record.client,
+    client_code: record.clientCode,
+    client_manager: record.clientManager,
+    engagement_manager: record.engagementManager,
+    vat: record.vat,
+    work_type: record.workType,
+    contract_type: record.contractType,
+    status: record.status,
+    start_date: record.startDate,
+    end_date: record.endDate,
+    contract_value: record.contractValue,
+    ops_commentary: record.opsCommentary,
+    sharepoint_id: record.sharepointId,
+  };
+}
+
+async function upsertInflightRecord(
+  trx: any,
+  record: any,
+  existingBySpId: Map<string, any>,
+): Promise<"inserted" | "updated" | "unchanged"> {
+  const existing = existingBySpId.get(record.sharepointId);
+  const dbRecord = buildInflightDbRecord(record);
+
+  if (existing) {
+    const changed = Object.entries(dbRecord).some(([k, v]) => {
+      if (k === "sharepoint_id") return false;
+      return String(existing[k] ?? "") !== String(v ?? "");
+    });
+    if (changed) {
+      await trx("projects").where("id", existing.id).update(dbRecord);
+      return "updated";
+    }
+    return "unchanged";
+  }
+  const existingByCode = await trx("projects").where("project_code", record.projectCode).first();
+  if (existingByCode) {
+    await trx("projects").where("id", existingByCode.id).update(dbRecord);
+    return "updated";
+  }
+  await trx("projects").insert(dbRecord);
+  return "inserted";
+}
+
 async function performInflightDeltaSync(staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[]): Promise<{ inserted: number; updated: number; removed: number; unchanged: number }> {
   let inserted = 0;
   let updated = 0;
@@ -572,47 +637,10 @@ async function performInflightDeltaSync(staged: { sharepointId: string; projectC
 
     for (const record of staged) {
       incomingSpIds.add(record.sharepointId);
-      const existing = existingBySpId.get(record.sharepointId);
-
-      const dbRecord = {
-        project_code: record.projectCode,
-        name: record.name,
-        client: record.client,
-        client_code: record.clientCode,
-        client_manager: record.clientManager,
-        engagement_manager: record.engagementManager,
-        vat: record.vat,
-        work_type: record.workType,
-        contract_type: record.contractType,
-        status: record.status,
-        start_date: record.startDate,
-        end_date: record.endDate,
-        contract_value: record.contractValue,
-        ops_commentary: record.opsCommentary,
-        sharepoint_id: record.sharepointId,
-      };
-
-      if (existing) {
-        const changed = Object.entries(dbRecord).some(([k, v]) => {
-          if (k === "sharepoint_id") return false;
-          return String(existing[k] ?? "") !== String(v ?? "");
-        });
-        if (changed) {
-          await trx("projects").where("id", existing.id).update(dbRecord);
-          updated++;
-        } else {
-          unchanged++;
-        }
-      } else {
-        const existingByCode = await trx("projects").where("project_code", record.projectCode).first();
-        if (existingByCode) {
-          await trx("projects").where("id", existingByCode.id).update(dbRecord);
-          updated++;
-        } else {
-          await trx("projects").insert(dbRecord);
-          inserted++;
-        }
-      }
+      const result = await upsertInflightRecord(trx, record, existingBySpId);
+      if (result === "inserted") inserted++;
+      else if (result === "updated") updated++;
+      else unchanged++;
     }
 
     for (const [spId, row] of Array.from(existingBySpId)) {
@@ -695,6 +723,27 @@ async function discoverInflightFolder(token: SharePointToken, siteId: string): P
   throw new Error(`Inflight folder not found in General/. Available folders: ${generalChildren.join(", ") || "(none)"}`);
 }
 
+function buildInflightStagedRecord(item: SharePointListItem, spId: string, parsed: { projectCode: string; projectName: string }) {
+  const fields = extractItemFields(item);
+  return {
+    sharepointId: spId,
+    projectCode: parsed.projectCode,
+    name: parsed.projectName,
+    client: extractFieldText(item.Client || item.ClientName) || null,
+    clientCode: fields.clientCode,
+    clientManager: fields.csdLead,
+    engagementManager: fields.casLead,
+    vat: fields.vat,
+    workType: fields.workType,
+    contractType: cleanContractType(extractFieldText(item.ContractType || item.Contract_x0020_Type || item["WorkType_x0028_FTorContract_x0029_"])),
+    status: "active" as const,
+    startDate: fields.startDate,
+    endDate: fields.expiryDate,
+    contractValue: formatNumericField(item["Value_x0024_exGST"] ?? item.Value ?? item.ContractValue, 2),
+    opsCommentary: fields.comment,
+  };
+}
+
 export async function syncSharePointInflightProjects(): Promise<{
   imported: number;
   updated: number;
@@ -733,24 +782,7 @@ export async function syncSharePointInflightProjects(): Promise<{
     }
 
     try {
-      const fields = extractItemFields(item);
-      staged.push({
-        sharepointId: spId,
-        projectCode: parsed.projectCode,
-        name: parsed.projectName,
-        client: extractFieldText(item.Client || item.ClientName) || null,
-        clientCode: fields.clientCode,
-        clientManager: fields.csdLead,
-        engagementManager: fields.casLead,
-        vat: fields.vat,
-        workType: fields.workType,
-        contractType: cleanContractType(extractFieldText(item.ContractType || item.Contract_x0020_Type || item["WorkType_x0028_FTorContract_x0029_"])),
-        status: "active",
-        startDate: fields.startDate,
-        endDate: fields.expiryDate,
-        contractValue: formatNumericField(item["Value_x0024_exGST"] ?? item.Value ?? item.ContractValue, 2),
-        opsCommentary: fields.comment,
-      });
+      staged.push(buildInflightStagedRecord(item, spId, parsed));
     } catch (err: any) {
       errors.push(`"${folderName}": ${err.message}`);
     }
@@ -857,7 +889,7 @@ function isJobPlanNameValid(name: string): boolean {
 }
 
 function extractProjectCode(filename: string): string | null {
-  const m = filename.match(/^([A-Z]{2,4}\d{3}(?:-\d{2,3})?)/i);
+  const m = /^([A-Z]{2,4}\d{3}(?:-\d{2,3})?)/i.exec(filename);
   return m ? m[1].toUpperCase() : null;
 }
 
@@ -884,8 +916,8 @@ function jpDateToMonth(d: Date): string {
 
 function jpParseNum(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(String(v));
-  return isNaN(n) ? null : n;
+  const n = typeof v === "number" ? v : Number.parseFloat(String(v));
+  return Number.isNaN(n) ? null : n;
 }
 
 function findResourceLoadingRow(ws: any, range: any, XLSX: any): number {
@@ -920,6 +952,29 @@ function extractRates(ws: any, r: number, rateCols: typeof STD_RATE_COLS, XLSX: 
   };
 }
 
+function mergePersonData(existing: PersonData, weeklyAllocs: Record<string, number>, rates: Record<string, any>): void {
+  for (const [k, v] of Object.entries(weeklyAllocs)) {
+    existing.weeklyAllocs[k] = v;
+  }
+  for (const [k, v] of Object.entries(rates)) {
+    if (v !== null && ((existing.rates as any)[k] === null || (existing.rates as any)[k] === undefined)) {
+      (existing.rates as any)[k] = v;
+    }
+  }
+}
+
+function collectWeeklyAllocs(ws: any, r: number, weekCols: { col: number; key: string }[], XLSX: any): Record<string, number> {
+  const weeklyAllocs: Record<string, number> = {};
+  for (const wc of weekCols) {
+    const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
+    const val = jpParseNum(cell?.v);
+    if (val !== null && val > 0 && val <= 2) {
+      weeklyAllocs[wc.key] = Math.round(val * 100);
+    }
+  }
+  return weeklyAllocs;
+}
+
 function extractPersonData(ws: any, range: any, weekCols: { col: number; date: Date; key: string }[], resourceCol: number, rateCols: typeof STD_RATE_COLS, XLSX: any): Map<string, PersonData> {
   const rlRow = findResourceLoadingRow(ws, range, XLSX);
   const startRow = rlRow >= 0 ? rlRow + 1 : JP_HEADER_ROWS;
@@ -933,29 +988,10 @@ function extractPersonData(ws: any, range: any, weekCols: { col: number; date: D
     if (!isJobPlanNameValid(name)) continue;
 
     const rates = extractRates(ws, r, rateCols, XLSX);
-    const weeklyAllocs: Record<string, number> = {};
-    for (const wc of weekCols) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
-      const val = jpParseNum(cell?.v);
-      if (val !== null && val > 0 && val <= 2) {
-        weeklyAllocs[wc.key] = Math.round(val * 100);
-      }
-    }
+    const weeklyAllocs = collectWeeklyAllocs(ws, r, weekCols, XLSX);
 
-    if (rlRow >= 0) {
-      if (!personMap.has(name)) {
-        personMap.set(name, { rates, weeklyAllocs });
-      } else {
-        const existing = personMap.get(name)!;
-        for (const [k, v] of Object.entries(weeklyAllocs)) {
-          existing.weeklyAllocs[k] = v;
-        }
-        for (const [k, v] of Object.entries(rates)) {
-          if (v !== null && ((existing.rates as any)[k] === null || (existing.rates as any)[k] === undefined)) {
-            (existing.rates as any)[k] = v;
-          }
-        }
-      }
+    if (rlRow >= 0 && personMap.has(name)) {
+      mergePersonData(personMap.get(name)!, weeklyAllocs, rates);
     } else {
       personMap.set(name, { rates, weeklyAllocs });
     }
@@ -970,13 +1006,6 @@ function detectSheetFormat(ws: any, XLSX: any): string {
 }
 
 function processSAU046Sheet(ws: any, range: any, XLSX: any): Map<string, PersonData> {
-  const rateCols = {
-    panelHourly: 4,
-    discount: 5,
-    discountedHourly: 6,
-    discountedDaily: -1,
-    grossCost: 7,
-  };
   const resourceCol = 1;
   let firstWeekCol = -1;
   for (let c = 10; c <= range.e.c; c++) {
@@ -1006,15 +1035,19 @@ function processSAU046Sheet(ws: any, range: any, XLSX: any): Map<string, PersonD
       hourlyGrossCost: costRate,
     };
 
-    const weeklyAllocs: Record<string, number> = {};
-    for (const wc of weekCols) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c: wc.col })];
-      const val = jpParseNum(cell?.v);
-      if (val !== null && val > 0 && val <= 2) weeklyAllocs[wc.key] = Math.round(val * 100);
-    }
+    const weeklyAllocs = collectWeeklyAllocs(ws, r, weekCols, XLSX);
     personMap.set(name, { rates, weeklyAllocs });
   }
   return personMap;
+}
+
+function countValidNames(ws: any, range: any, maxRow: number, XLSX: any): number {
+  let count = 0;
+  for (let r = JP_HEADER_ROWS; r <= maxRow; r++) {
+    const cell = ws[XLSX.utils.encode_cell({ r, c: STD_RESOURCE_COL })];
+    if (cell && isJobPlanNameValid(String(cell.v).trim())) count++;
+  }
+  return count;
 }
 
 function selectBestSheet(wb: any, XLSX: any): string {
@@ -1028,26 +1061,16 @@ function selectBestSheet(wb: any, XLSX: any): string {
 
   for (const name of filtered.length > 0 ? filtered : candidates) {
     const ws = wb.Sheets[name];
-    if (!ws || !ws["!ref"]) continue;
+    if (!ws?.["!ref"]) continue;
     const range = XLSX.utils.decode_range(ws["!ref"]);
-    let count = 0;
-    for (let r = JP_HEADER_ROWS; r <= Math.min(range.e.r, 50); r++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c: STD_RESOURCE_COL })];
-      if (cell && isJobPlanNameValid(String(cell.v).trim())) count++;
-    }
-    if (count > 0) return name;
+    if (countValidNames(ws, range, Math.min(range.e.r, 50), XLSX) > 0) return name;
   }
 
   for (const name of candidates) {
     const ws = wb.Sheets[name];
-    if (!ws || !ws["!ref"]) continue;
+    if (!ws?.["!ref"]) continue;
     const range = XLSX.utils.decode_range(ws["!ref"]);
-    let count = 0;
-    for (let r = JP_HEADER_ROWS; r <= Math.min(range.e.r, 100); r++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c: STD_RESOURCE_COL })];
-      if (cell && isJobPlanNameValid(String(cell.v).trim())) count++;
-    }
-    if (count > 0) return name;
+    if (countValidNames(ws, range, Math.min(range.e.r, 100), XLSX) > 0) return name;
   }
 
   return candidates[0];
@@ -1086,9 +1109,9 @@ async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => 
 
     const parts = n.split(/\s+/);
     if (parts.length >= 2) {
-      const firstLast = `${parts[0]} ${parts[parts.length - 1]}`;
+      const firstLast = `${parts[0]} ${parts.at(-1)}`;
       if (byFullName.has(firstLast)) return byFullName.get(firstLast)!;
-      const firstInit = `${parts[0]} ${parts[parts.length - 1].charAt(0)}`;
+      const firstInit = `${parts[0]} ${parts.at(-1)!.charAt(0)}`;
       if (byFirstInitial.has(firstInit)) return byFirstInitial.get(firstInit)!;
     }
 
@@ -1099,6 +1122,99 @@ async function buildEmployeeLookup(): Promise<{ findEmployee: (name: string) => 
   }
 
   return { findEmployee };
+}
+
+function planDataMatchesExisting(existing: any, totalDays: number, totalH: number, rates: PersonData["rates"], weeklyAllocsJson: string): boolean {
+  const existingWeekly = typeof existing.weekly_allocations === "string" ? existing.weekly_allocations : JSON.stringify(existing.weekly_allocations || {});
+  return (
+    Math.abs(Number(existing.planned_days || 0) - totalDays) < 0.05 &&
+    Math.abs(Number(existing.planned_hours || 0) - totalH) < 0.05 &&
+    Number(existing.charge_out_rate || 0) === (rates.chargeOutRate || 0) &&
+    Number(existing.discount_percent || 0) === (rates.discountPercent || 0) &&
+    Number(existing.discounted_hourly_rate || 0) === (rates.discountedHourlyRate || 0) &&
+    Number(existing.discounted_daily_rate || 0) === (rates.discountedDailyRate || 0) &&
+    Number(existing.hourly_gross_cost || 0) === (rates.hourlyGrossCost || 0) &&
+    existingWeekly === weeklyAllocsJson
+  );
+}
+
+async function syncPersonPlans(
+  project: any,
+  personMap: Map<string, PersonData>,
+  employeeLookup: { findEmployee: (name: string) => { id: number } | null },
+  fileName: string,
+): Promise<{ inserted: number; updated: number; unchanged: number }> {
+  const existingPlans = await db("resource_plans").where("project_id", project.id).select("*");
+  const existingKey = new Map<string, any>();
+  for (const ep of existingPlans) {
+    const monthStr = typeof ep.month === "string" ? ep.month.substring(0, 10) : new Date(ep.month).toISOString().substring(0, 10);
+    existingKey.set(`${ep.employee_id}|${monthStr}`, ep);
+  }
+
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+
+  for (const [name, data] of Array.from(personMap)) {
+    if (Object.keys(data.weeklyAllocs).length === 0) continue;
+
+    const emp = employeeLookup.findEmployee(name);
+    if (!emp) {
+      console.log(`[SharePoint] Job Plans: unmatched employee "${name}" in ${fileName}`);
+      continue;
+    }
+
+    const monthGroups = new Map<string, Record<string, number>>();
+    for (const [weekKey, pct] of Object.entries(data.weeklyAllocs)) {
+      const d = new Date(weekKey + "T00:00:00Z");
+      const monthKey = jpDateToMonth(d);
+      if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, {});
+      monthGroups.get(monthKey)![weekKey] = pct;
+    }
+
+    for (const [monthKey, weekAllocs] of Array.from(monthGroups)) {
+      const totalH: number = Object.values(weekAllocs).reduce((s: number, pct: number) => s + (pct / 100) * STANDARD_WEEKLY_HOURS, 0);
+      const totalDays = totalH / 8;
+      const activeWeeks = Object.values(weekAllocs).filter((v: number) => v > 0);
+      const avgPct = activeWeeks.length > 0 ? activeWeeks.reduce((s: number, v: number) => s + v, 0) / activeWeeks.length : 0;
+
+      const key = `${emp.id}|${monthKey}`;
+      const existing = existingKey.get(key);
+      const weeklyAllocsJson = JSON.stringify(weekAllocs);
+      const planData = {
+        planned_days: totalDays.toFixed(1),
+        planned_hours: totalH.toFixed(1),
+        allocation_percent: avgPct.toFixed(2),
+        weekly_allocations: weeklyAllocsJson,
+        charge_out_rate: data.rates.chargeOutRate,
+        discount_percent: data.rates.discountPercent,
+        discounted_hourly_rate: data.rates.discountedHourlyRate,
+        discounted_daily_rate: data.rates.discountedDailyRate,
+        hourly_gross_cost: data.rates.hourlyGrossCost,
+      };
+
+      if (existing) {
+        if (planDataMatchesExisting(existing, totalDays, totalH, data.rates, weeklyAllocsJson)) {
+          unchanged++;
+        } else {
+          await db("resource_plans").where("id", existing.id).update(planData);
+          existingKey.set(key, { ...existing, ...planData, id: existing.id });
+          updated++;
+        }
+      } else {
+        const [newRow] = await db("resource_plans").insert({
+          project_id: project.id,
+          employee_id: emp.id,
+          month: monthKey,
+          ...planData,
+        }).returning("id");
+        existingKey.set(key, { id: newRow?.id || 0, employee_id: emp.id, month: monthKey, ...planData });
+        inserted++;
+      }
+    }
+  }
+
+  return { inserted, updated, unchanged };
 }
 
 async function parseAndProcessJobPlanFile(
@@ -1121,7 +1237,7 @@ async function parseAndProcessJobPlanFile(
 
   const planSheetName = selectBestSheet(wb, XLSX);
   const ws = wb.Sheets[planSheetName];
-  if (!ws || !ws["!ref"]) {
+  if (!ws?.["!ref"]) {
     return { inserted: 0, updated: 0, unchanged: 0, processed: false, error: `${fileName}: empty sheet` };
   }
   const range = XLSX.utils.decode_range(ws["!ref"]);
@@ -1161,90 +1277,10 @@ async function parseAndProcessJobPlanFile(
     return { inserted: 0, updated: 0, unchanged: 0, processed: false };
   }
 
-  const existingPlans = await db("resource_plans").where("project_id", project.id).select("*");
-  const existingKey = new Map<string, any>();
-  for (const ep of existingPlans) {
-    const monthStr = typeof ep.month === "string" ? ep.month.substring(0, 10) : new Date(ep.month).toISOString().substring(0, 10);
-    existingKey.set(`${ep.employee_id}|${monthStr}`, ep);
-  }
+  const counts = await syncPersonPlans(project, personMap, employeeLookup, fileName);
 
-  let inserted = 0;
-  let updated = 0;
-  let unchanged = 0;
-
-  for (const [name, data] of personMap) {
-    if (Object.keys(data.weeklyAllocs).length === 0) continue;
-
-    const emp = employeeLookup.findEmployee(name);
-    if (!emp) {
-      console.log(`[SharePoint] Job Plans: unmatched employee "${name}" in ${fileName}`);
-      continue;
-    }
-
-    const monthGroups = new Map<string, Record<string, number>>();
-    for (const [weekKey, pct] of Object.entries(data.weeklyAllocs)) {
-      const d = new Date(weekKey + "T00:00:00Z");
-      const monthKey = jpDateToMonth(d);
-      if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, {});
-      monthGroups.get(monthKey)![weekKey] = pct;
-    }
-
-    for (const [monthKey, weekAllocs] of monthGroups) {
-      const totalH = Object.values(weekAllocs).reduce((s, pct) => s + (pct / 100) * STANDARD_WEEKLY_HOURS, 0);
-      const totalDays = totalH / 8;
-      const activeWeeks = Object.values(weekAllocs).filter((v) => v > 0);
-      const avgPct = activeWeeks.length > 0 ? activeWeeks.reduce((s, v) => s + v, 0) / activeWeeks.length : 0;
-
-      const key = `${emp.id}|${monthKey}`;
-      const existing = existingKey.get(key);
-
-      const weeklyAllocsJson = JSON.stringify(weekAllocs);
-      const planData = {
-        planned_days: totalDays.toFixed(1),
-        planned_hours: totalH.toFixed(1),
-        allocation_percent: avgPct.toFixed(2),
-        weekly_allocations: weeklyAllocsJson,
-        charge_out_rate: data.rates.chargeOutRate,
-        discount_percent: data.rates.discountPercent,
-        discounted_hourly_rate: data.rates.discountedHourlyRate,
-        discounted_daily_rate: data.rates.discountedDailyRate,
-        hourly_gross_cost: data.rates.hourlyGrossCost,
-      };
-
-      if (existing) {
-        const existingWeekly = typeof existing.weekly_allocations === "string" ? existing.weekly_allocations : JSON.stringify(existing.weekly_allocations || {});
-        const dataMatch = (
-          Math.abs(Number(existing.planned_days || 0) - totalDays) < 0.05 &&
-          Math.abs(Number(existing.planned_hours || 0) - totalH) < 0.05 &&
-          Number(existing.charge_out_rate || 0) === (data.rates.chargeOutRate || 0) &&
-          Number(existing.discount_percent || 0) === (data.rates.discountPercent || 0) &&
-          Number(existing.discounted_hourly_rate || 0) === (data.rates.discountedHourlyRate || 0) &&
-          Number(existing.discounted_daily_rate || 0) === (data.rates.discountedDailyRate || 0) &&
-          Number(existing.hourly_gross_cost || 0) === (data.rates.hourlyGrossCost || 0) &&
-          existingWeekly === weeklyAllocsJson
-        );
-        if (dataMatch) {
-          unchanged++;
-        } else {
-          await db("resource_plans").where("id", existing.id).update(planData);
-          existingKey.set(key, { ...existing, ...planData, id: existing.id });
-          updated++;
-        }
-      } else {
-        const [newRow] = await db("resource_plans").insert({
-          project_id: project.id,
-          employee_id: emp.id,
-          month: monthKey,
-          ...planData,
-        }).returning("id");
-        existingKey.set(key, { id: newRow?.id || 0, employee_id: emp.id, month: monthKey, ...planData });
-        inserted++;
-      }
-    }
-  }
-
-  console.log(`[SharePoint] Job Plans: ${projectCode} sheet="${planSheetName}" fmt=${format} ${personMap.size} people, ${inserted} new, ${updated} upd, ${unchanged} unchg`);
-  return { inserted, updated, unchanged, processed: true };
+  console.log(`[SharePoint] Job Plans: ${projectCode} sheet="${planSheetName}" fmt=${format} ${personMap.size} people, ${counts.inserted} new, ${counts.updated} upd, ${counts.unchanged} unchg`);
+  return { ...counts, processed: true };
 }
 
 async function processJobPlanFile(
@@ -1255,6 +1291,31 @@ async function processJobPlanFile(
 ): Promise<{ inserted: number; updated: number; unchanged: number; processed: boolean; error?: string }> {
   const buffer = await downloadExcelFile(file.downloadUrl, token);
   return parseAndProcessJobPlanFile(buffer, file.name, projectByCode, employeeLookup);
+}
+
+async function updateProjectContractValues(): Promise<number> {
+  try {
+    const contractValues: any[] = await db("resource_plans")
+      .select("project_id")
+      .sum({ totalValue: db.raw("COALESCE(CAST(discounted_hourly_rate AS FLOAT), 0) * COALESCE(CAST(planned_hours AS FLOAT), 0)") })
+      .groupBy("project_id");
+
+    let contractUpdated = 0;
+    for (const cv of contractValues) {
+      const val = Number.parseFloat(cv.totalValue || 0);
+      if (val > 0) {
+        await db("projects").where("id", cv.project_id).update({ contract_value: val.toFixed(2) });
+        contractUpdated++;
+      }
+    }
+    if (contractUpdated > 0) {
+      console.log(`[SharePoint] Job Plans: updated contract_value on ${contractUpdated} projects`);
+    }
+    return contractUpdated;
+  } catch (cvErr: any) {
+    console.log(`[SharePoint] Job Plans: contract value calc error: ${cvErr.message}`);
+    return 0;
+  }
 }
 
 export async function syncSharePointJobPlans(): Promise<{
@@ -1310,26 +1371,9 @@ export async function syncSharePointJobPlans(): Promise<{
   parts.push(`${filesProcessed} files processed`);
   if (errors.length > 0) parts.push(`${errors.length} errors`);
 
-  try {
-    const contractValues = await db("resource_plans")
-      .select("project_id")
-      .sum({ totalValue: db.raw("COALESCE(CAST(discounted_hourly_rate AS FLOAT), 0) * COALESCE(CAST(planned_hours AS FLOAT), 0)") })
-      .groupBy("project_id");
-
-    let contractUpdated = 0;
-    for (const cv of contractValues) {
-      const val = parseFloat(cv.totalValue || 0);
-      if (val > 0) {
-        await db("projects").where("id", cv.project_id).update({ contract_value: val.toFixed(2) });
-        contractUpdated++;
-      }
-    }
-    if (contractUpdated > 0) {
-      parts.push(`${contractUpdated} project contract values updated`);
-      console.log(`[SharePoint] Job Plans: updated contract_value on ${contractUpdated} projects`);
-    }
-  } catch (cvErr: any) {
-    console.log(`[SharePoint] Job Plans: contract value calc error: ${cvErr.message}`);
+  const contractUpdated = await updateProjectContractValues();
+  if (contractUpdated > 0) {
+    parts.push(`${contractUpdated} project contract values updated`);
   }
 
   console.log(`[SharePoint] Job Plans sync complete: ${parts.join(", ")}`);

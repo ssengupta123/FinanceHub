@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
@@ -61,6 +60,47 @@ interface ResourceSummary {
   overallocatedWeeks: number;
 }
 
+function processResourcePlan(
+  rp: ResourcePlan,
+  empMap: Map<number, Employee>,
+  projMap: Map<number, Project>,
+  byEmployee: Map<number, ResourceSummary>,
+): void {
+  const emp = empMap.get(rp.employeeId);
+  if (!emp || emp.status === "inactive") return;
+  const proj = projMap.get(rp.projectId);
+  if (proj && (proj.status === "closed" || proj.status === "completed")) return;
+
+  if (!byEmployee.has(rp.employeeId)) {
+    byEmployee.set(rp.employeeId, {
+      employeeId: rp.employeeId,
+      name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
+      role: emp.role || "",
+      weeklyData: new Map(),
+      totalForecastHours: 0,
+      projectCount: 0,
+      overallocatedWeeks: 0,
+    });
+  }
+
+  const res = byEmployee.get(rp.employeeId)!;
+  res.totalForecastHours += parseNum(rp.plannedHours);
+
+  const projectCode = proj?.projectCode || `P${rp.projectId}`;
+  const projectName = proj?.name || "Unknown";
+
+  const allocs = parseAllocations(rp);
+  for (const [weekKey, pct] of Object.entries(allocs)) {
+    if (pct <= 0) continue;
+    if (!res.weeklyData.has(weekKey)) {
+      res.weeklyData.set(weekKey, { totalPct: 0, contributions: [] });
+    }
+    const wd = res.weeklyData.get(weekKey)!;
+    wd.totalPct += pct;
+    wd.contributions.push({ projectCode, projectName, pct });
+  }
+}
+
 export default function ResourceAllocation() {
   const [numWeeks, setNumWeeks] = useState(26);
   const [filterOveralloc, setFilterOveralloc] = useState(false);
@@ -78,7 +118,7 @@ export default function ResourceAllocation() {
     let earliest = new Date();
     for (const rp of plans) {
       const monthDate = new Date(typeof rp.month === "string" ? rp.month : rp.month as any);
-      if (!isNaN(monthDate.getTime()) && monthDate < earliest) earliest = monthDate;
+      if (!Number.isNaN(monthDate.getTime()) && monthDate < earliest) earliest = monthDate;
       const allocs = parseAllocations(rp);
       for (const k of Object.keys(allocs)) {
         const d = new Date(k);
@@ -95,42 +135,10 @@ export default function ResourceAllocation() {
     const byEmployee = new Map<number, ResourceSummary>();
 
     for (const rp of plans) {
-      const emp = empMap.get(rp.employeeId);
-      if (!emp || emp.status === "inactive") continue;
-      const proj = projMap.get(rp.projectId);
-      if (proj && (proj.status === "closed" || proj.status === "completed")) continue;
-
-      if (!byEmployee.has(rp.employeeId)) {
-        byEmployee.set(rp.employeeId, {
-          employeeId: rp.employeeId,
-          name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
-          role: emp.role || "",
-          weeklyData: new Map(),
-          totalForecastHours: 0,
-          projectCount: 0,
-          overallocatedWeeks: 0,
-        });
-      }
-
-      const res = byEmployee.get(rp.employeeId)!;
-      res.totalForecastHours += parseNum(rp.plannedHours);
-
-      const projectCode = proj?.projectCode || `P${rp.projectId}`;
-      const projectName = proj?.name || "Unknown";
-
-      const allocs = parseAllocations(rp);
-      for (const [weekKey, pct] of Object.entries(allocs)) {
-        if ((pct as number) <= 0) continue;
-        if (!res.weeklyData.has(weekKey)) {
-          res.weeklyData.set(weekKey, { totalPct: 0, contributions: [] });
-        }
-        const wd = res.weeklyData.get(weekKey)!;
-        wd.totalPct += pct as number;
-        wd.contributions.push({ projectCode, projectName, pct: pct as number });
-      }
+      processResourcePlan(rp, empMap, projMap, byEmployee);
     }
 
-    for (const res of byEmployee.values()) {
+    for (const res of Array.from(byEmployee.values())) {
       const projIds = new Set(plans.filter(rp => rp.employeeId === res.employeeId).map(rp => rp.projectId));
       res.projectCount = projIds.size;
       res.overallocatedWeeks = Array.from(res.weeklyData.values()).filter(w => w.totalPct > 100).length;
@@ -149,10 +157,11 @@ export default function ResourceAllocation() {
     const groups: { month: string; startIdx: number; count: number }[] = [];
     weeks.forEach((w, i) => {
       const label = w.toLocaleDateString("en-AU", { month: "short" });
-      if (groups.length === 0 || groups[groups.length - 1].month !== label) {
+      const last = groups.at(-1);
+      if (groups.length === 0 || last!.month !== label) {
         groups.push({ month: label, startIdx: i, count: 1 });
       } else {
-        groups[groups.length - 1].count++;
+        last!.count++;
       }
     });
     return groups;
@@ -276,12 +285,13 @@ export default function ResourceAllocation() {
                   </tr>
                   <tr className="border-b">
                     <th className="sticky left-0 bg-card z-20" />
-                    {weeks.map((w, i) => {
-                      const isFirstOfMonth = monthGroups.some(g => g.startIdx === i);
+                    {weeks.map((w) => {
+                      const weekKey = getWeekKey(w);
+                      const isFirstOfMonth = monthGroups.some(g => g.startIdx === weeks.indexOf(w));
                       return (
                         <th
-                          key={i}
-                          className={`text-[10px] font-normal px-0 pb-1 w-10 text-center text-muted-foreground/60 ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""}`}
+                          key={weekKey}
+                          className={`text-[10px] font-normal px-0 pb-1 w-10 text-center text-muted-foreground/60 ${isFirstOfMonth && weeks.indexOf(w) !== 0 ? "border-l border-border/30" : ""}`}
                         >
                           {w.getDate()}
                         </th>
@@ -312,18 +322,25 @@ export default function ResourceAllocation() {
 
 function ResourceRow({
   resource, weeks, monthGroups, expanded, onToggle,
-}: {
+}: Readonly<{
   resource: ResourceSummary;
   weeks: Date[];
   monthGroups: { month: string; startIdx: number; count: number }[];
   expanded: boolean;
   onToggle: () => void;
-}) {
+}>) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onToggle();
+    }
+  };
+
   return (
     <>
       <tr className="border-b hover:bg-muted/10 group" data-testid={`row-resource-${resource.employeeId}`}>
         <td className="p-2 sticky left-0 bg-card z-10 group-hover:bg-muted/10">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={onToggle}>
+          <div className="flex items-center gap-2 cursor-pointer" role="button" tabIndex={0} onClick={onToggle} onKeyDown={handleKeyDown}>
             {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             <div>
               <span className="text-sm font-medium">{resource.name}</span>
@@ -331,7 +348,7 @@ function ResourceRow({
             </div>
           </div>
           <div className="flex items-center gap-2 ml-5 mt-0.5">
-            <Badge variant="outline" className="text-[10px] h-5">{resource.projectCount} project{resource.projectCount !== 1 ? "s" : ""}</Badge>
+            <Badge variant="outline" className="text-[10px] h-5">{resource.projectCount} project{resource.projectCount === 1 ? "" : "s"}</Badge>
             <Badge variant="outline" className="text-[10px] h-5">{resource.totalForecastHours.toFixed(0)} hrs</Badge>
             {resource.overallocatedWeeks > 0 && (
               <Badge variant="destructive" className="text-[10px] h-5">
@@ -341,11 +358,12 @@ function ResourceRow({
             )}
           </div>
         </td>
-        {weeks.map((w, i) => {
+        {weeks.map((w) => {
           const key = getWeekKey(w);
           const wd = resource.weeklyData.get(key);
           const pct = wd?.totalPct || 0;
-          const isFirstOfMonth = monthGroups.some(g => g.startIdx === i);
+          const weekIdx = weeks.indexOf(w);
+          const isFirstOfMonth = monthGroups.some(g => g.startIdx === weekIdx);
 
           let bg = "";
           let textColor = "text-muted-foreground/20";
@@ -368,8 +386,8 @@ function ResourceRow({
 
           return (
             <td
-              key={i}
-              className={`text-center text-[10px] w-10 h-7 ${bg} ${textColor} ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""}`}
+              key={key}
+              className={`text-center text-[10px] w-10 h-7 ${bg} ${textColor} ${isFirstOfMonth && weekIdx !== 0 ? "border-l border-border/30" : ""}`}
               data-testid={`cell-alloc-${resource.employeeId}-${key}`}
             >
               <Tooltip>
@@ -379,8 +397,8 @@ function ResourceRow({
                 <TooltipContent side="top" className="text-xs">
                   <p className="font-medium">{resource.name} — {w.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}</p>
                   <p>Total: {pct}%</p>
-                  {wd?.contributions.map((c, ci) => (
-                    <p key={ci} className="text-muted-foreground">{c.projectCode}: {c.pct}%</p>
+                  {wd?.contributions.map((c) => (
+                    <p key={`${c.projectCode}-${c.pct}`} className="text-muted-foreground">{c.projectCode}: {c.pct}%</p>
                   ))}
                 </TooltipContent>
               </Tooltip>
@@ -394,7 +412,7 @@ function ResourceRow({
             <div className="text-xs text-muted-foreground ml-5 space-y-1">
               {(() => {
                 const projContribs = new Map<string, number>();
-                for (const wd of resource.weeklyData.values()) {
+                for (const wd of Array.from(resource.weeklyData.values())) {
                   for (const c of wd.contributions) {
                     projContribs.set(c.projectCode, (projContribs.get(c.projectCode) || 0) + 1);
                   }
@@ -402,20 +420,21 @@ function ResourceRow({
                 return Array.from(projContribs.entries()).sort(([, a], [, b]) => b - a).map(([code, wks]) => (
                   <div key={code} className="flex items-center gap-2">
                     <Badge variant="outline" className="text-[10px] h-4 px-1">{code}</Badge>
-                    <span>{wks} week{wks !== 1 ? "s" : ""}</span>
+                    <span>{wks} week{wks === 1 ? "" : "s"}</span>
                   </div>
                 ));
               })()}
             </div>
           </td>
-          {weeks.map((w, i) => {
+          {weeks.map((w) => {
             const key = getWeekKey(w);
             const wd = resource.weeklyData.get(key);
-            const isFirstOfMonth = monthGroups.some(g => g.startIdx === i);
+            const weekIdx = weeks.indexOf(w);
+            const isFirstOfMonth = monthGroups.some(g => g.startIdx === weekIdx);
             return (
-              <td key={i} className={`text-[9px] text-center text-muted-foreground align-top py-1 ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""}`}>
-                {wd?.contributions.map((c, ci) => (
-                  <div key={ci} className="truncate" title={`${c.projectCode}: ${c.pct}%`}>
+              <td key={key} className={`text-[9px] text-center text-muted-foreground align-top py-1 ${isFirstOfMonth && weekIdx !== 0 ? "border-l border-border/30" : ""}`}>
+                {wd?.contributions.map((c) => (
+                  <div key={`${c.projectCode}-${c.pct}`} className="truncate" title={`${c.projectCode}: ${c.pct}%`}>
                     {c.pct}
                   </div>
                 ))}

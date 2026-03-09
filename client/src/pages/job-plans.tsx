@@ -5,17 +5,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getCurrentFy } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
-  Users, Clock, FolderOpen, ChevronDown, ChevronRight, Plus, Save, Trash2, Calendar, X,
+  Users, Clock, FolderOpen, ChevronDown, ChevronRight, Plus, Trash2, Calendar, X,
 } from "lucide-react";
 import type { ResourcePlan, Employee, Project } from "@shared/schema";
 
@@ -70,7 +69,7 @@ function mergeAllocationsForEmployee(plans: ResourcePlan[]): Record<string, numb
   for (const rp of plans) {
     const allocs = parseAllocations(rp);
     for (const [k, v] of Object.entries(allocs)) {
-      merged[k] = (merged[k] || 0) + (v as number);
+      merged[k] = (merged[k] || 0) + v;
     }
   }
   return merged;
@@ -151,7 +150,7 @@ export default function JobPlans() {
   const fyOptions = useMemo(() => {
     const cur = getCurrentFy();
     const parts = cur.split("-");
-    const yr = parts.length === 2 ? parseInt(parts[0]) : 25;
+    const yr = parts.length === 2 ? Number.parseInt(parts[0]) : 25;
     const fys: string[] = [];
     for (let y = yr - 3; y <= yr + 1; y++) {
       fys.push(`${String(y).padStart(2, "0")}-${String(y + 1).padStart(2, "0")}`);
@@ -330,7 +329,7 @@ export default function JobPlans() {
 
 function ProjectCard({
   group, expanded, onToggle, weeks, empMap, canEdit, canDelete,
-}: {
+}: Readonly<{
   group: ProjectGroup;
   expanded: boolean;
   onToggle: () => void;
@@ -338,14 +337,17 @@ function ProjectCard({
   empMap: Map<number, Employee>;
   canEdit: boolean;
   canDelete: boolean;
-}) {
+}>) {
   const totalHours = group.plans.reduce((s, rp) => s + parseNum(rp.plannedHours), 0);
 
   return (
     <Card data-testid={`card-project-${group.project.id}`}>
       <div
         className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
         data-testid={`button-toggle-project-${group.project.id}`}
       >
         <div className="flex items-center gap-3">
@@ -356,7 +358,7 @@ function ProjectCard({
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <Badge variant="outline">{group.employees.size} resource{group.employees.size !== 1 ? "s" : ""}</Badge>
+          <Badge variant="outline">{group.employees.size} resource{group.employees.size === 1 ? "" : "s"}</Badge>
           <Badge variant="secondary">{totalHours.toFixed(0)} hrs</Badge>
         </div>
       </div>
@@ -386,14 +388,14 @@ function ProjectCard({
 
 function EmployeeAllocationRow({
   employee, plans, weeks, canEdit, canDelete, projectId,
-}: {
+}: Readonly<{
   employee: Employee;
   plans: ResourcePlan[];
   weeks: Date[];
   canEdit: boolean;
   canDelete: boolean;
   projectId: number;
-}) {
+}>) {
   const { toast } = useToast();
   const [showGrid, setShowGrid] = useState(false);
   const [localAllocs, setLocalAllocs] = useState<Record<string, number> | null>(null);
@@ -405,7 +407,7 @@ function EmployeeAllocationRow({
     const entries = Object.entries(allocs).filter(([, v]) => v > 0).sort(([a], [b]) => a.localeCompare(b));
     if (entries.length === 0) return null;
     const firstDate = new Date(entries[0][0]);
-    const lastDate = new Date(entries[entries.length - 1][0]);
+    const lastDate = new Date(entries.at(-1)![0]);
     const avgPct = Math.round(entries.reduce((s, [, v]) => s + v, 0) / entries.length);
     const fmt = (d: Date) => d.toLocaleDateString("en-AU", { month: "short", year: "2-digit" });
     return { from: fmt(firstDate), to: fmt(lastDate), weeks: entries.length, avgPct };
@@ -504,7 +506,10 @@ function EmployeeAllocationRow({
           </div>
           <div
             className="flex items-center gap-1.5 cursor-pointer group"
+            role="button"
+            tabIndex={0}
             onClick={() => setShowGrid(!showGrid)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowGrid(!showGrid); } }}
             data-testid={`button-alloc-${employee.id}-${projectId}`}
           >
             <Calendar className="h-3 w-3 text-muted-foreground/60" />
@@ -549,12 +554,12 @@ function EmployeeAllocationRow({
 
 function AllocationGrid({
   weeks, allocs, onSetAllocation, onFlushAllocations,
-}: {
+}: Readonly<{
   weeks: Date[];
   allocs: Record<string, number>;
   onSetAllocation: (weekKey: string, val: number) => void;
   onFlushAllocations: () => void;
-}) {
+}>) {
   const dragRef = useRef<{ active: boolean; paintVal: number; startIdx: number }>({
     active: false, paintVal: 0, startIdx: -1,
   });
@@ -564,21 +569,14 @@ function AllocationGrid({
     const groups: { month: string; startIdx: number; count: number }[] = [];
     weeks.forEach((w, i) => {
       const label = w.toLocaleDateString("en-AU", { month: "short" });
-      if (groups.length === 0 || groups[groups.length - 1].month !== label) {
+      if (groups.length === 0 || groups.at(-1)!.month !== label) {
         groups.push({ month: label, startIdx: i, count: 1 });
       } else {
-        groups[groups.length - 1].count++;
+        groups.at(-1)!.count++;
       }
     });
     return groups;
   }, [weeks]);
-
-  const applyPaint = useCallback((idx: number) => {
-    if (!dragRef.current.active) return;
-    const key = getWeekKey(weeks[idx]);
-    onSetAllocation(key, dragRef.current.paintVal);
-    setDragRange({ start: dragRef.current.startIdx, end: idx });
-  }, [weeks, onSetAllocation]);
 
   const handleMouseDown = useCallback((i: number, currentVal: number) => {
     const steps = [0, 20, 50, 80, 100];
@@ -611,8 +609,8 @@ function AllocationGrid({
 
   useEffect(() => {
     const onUp = () => handleMouseUp();
-    window.addEventListener("mouseup", onUp);
-    return () => window.removeEventListener("mouseup", onUp);
+    globalThis.addEventListener("mouseup", onUp);
+    return () => globalThis.removeEventListener("mouseup", onUp);
   }, [handleMouseUp]);
 
   const isDragging = dragRange !== null;
@@ -659,7 +657,7 @@ function AllocationGrid({
                   const isFirstOfMonth = monthGroups.some(g => g.startIdx === i);
                   return (
                     <th
-                      key={i}
+                      key={getWeekKey(w)}
                       className={`text-[11px] font-normal px-0 pb-0.5 w-10 text-center text-muted-foreground/60 ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""}`}
                     >
                       {day}
@@ -694,8 +692,8 @@ function AllocationGrid({
 
                   return (
                     <td
-                      key={i}
-                      className={`text-center text-[11px] font-medium w-10 h-8 cursor-pointer transition-all ${bg} ${textColor} ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""} ${inDrag ? "ring-1 ring-primary" : ""} ${!bg ? "hover:bg-muted/40" : "hover:brightness-110"}`}
+                      key={key}
+                      className={`text-center text-[11px] font-medium w-10 h-8 cursor-pointer transition-all ${bg} ${textColor} ${isFirstOfMonth && i !== 0 ? "border-l border-border/30" : ""} ${inDrag ? "ring-1 ring-primary" : ""} ${bg ? "hover:brightness-110" : "hover:bg-muted/40"}`}
                       onMouseDown={() => handleMouseDown(i, val)}
                       onMouseEnter={() => handleMouseEnter(i)}
                       data-testid={`cell-week-${key}`}

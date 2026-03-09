@@ -70,7 +70,7 @@ export default function DataSources() {
       queryClient.invalidateQueries({ queryKey: ["/api/data-sources"] });
       if (data?.message) {
         toast({ title: "Sync complete", description: data.message });
-      } else if (data?.imported != null) {
+      } else if (data?.imported !== undefined) {
         const parts = [];
         if (data.imported > 0) parts.push(`${data.imported} added`);
         if (data.updated > 0) parts.push(`${data.updated} updated`);
