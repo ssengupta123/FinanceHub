@@ -2774,6 +2774,7 @@ export async function registerRoutes(
       const usedCodes = new Set(Array.from(projByCode.keys()));
       const errors: string[] = [];
       const { cleanVat, cleanContractType } = await import("./sharepoint-sync");
+      const { sanitizeDateFields } = await import("./storage");
 
       for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
@@ -2835,7 +2836,7 @@ export async function registerRoutes(
 
           if (existing) {
             if (Object.keys(updates).length > 0) {
-              await db("projects").where("id", existing.id).update(updates);
+              await db("projects").where("id", existing.id).update(sanitizeDateFields(updates));
               updated++;
             }
           } else {
@@ -2847,12 +2848,12 @@ export async function registerRoutes(
               } while (usedCodes.has(code.toLowerCase()));
             }
             usedCodes.add(code.toLowerCase());
-            await db("projects").insert({
+            await db("projects").insert(sanitizeDateFields({
               project_code: code,
               name: projectName || code,
               status: "active",
               ...updates,
-            });
+            }));
             created++;
           }
         } catch (rowErr: any) {
