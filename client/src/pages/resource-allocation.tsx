@@ -390,7 +390,7 @@ function ResourceRow({
                     }
                   }
                 });
-                const sortedKeys = Array.from(planWeeks.keys()).sort();
+                const sortedKeys = Array.from(planWeeks.keys()).sort((a, b) => a.localeCompare(b));
                 const from = sortedKeys.length > 0 ? new Date(sortedKeys[0]).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
                 const to = sortedKeys.length > 0 ? new Date(sortedKeys[sortedKeys.length - 1]).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit" }) : "—";
                 const avgPct = sortedKeys.length > 0 ? Math.round(Array.from(planWeeks.values()).reduce((s, v) => s + v, 0) / sortedKeys.length) : 0;
