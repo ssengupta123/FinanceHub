@@ -1,0 +1,1501 @@
+Select issues for bulk actions
+
+
+
+Select issues
+
+
+Navigate to issue
+
+
+
+
+72issues
+7h 2min effort
+
+client/src/pages/data-sources.tsx
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L73
+2min effort
+2 days ago
+Code Smell
+Minor
+client/src/pages/job-plans.tsx
+
+
+Remove this unused import of 'CardHeader'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L8
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Remove this unused import of 'CardTitle'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L8
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Remove this unused import of 'Input'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L11
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Remove this unused import of 'Save'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L18
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+This assertion is unnecessary since it does not change the type of the expression.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+redundant
+type-dependent
++
+Open
+Not assigned
+L73
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `Number.parseInt` over `parseInt`.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+convention
+es2015
++
+Open
+Not assigned
+L154
+2min effort
+13 hours ago
+Code Smell
+Minor
+
+
+Mark the props of the component as read-only.
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
+type-dependent
++
+Open
+Not assigned
+L331
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Avoid non-native interactive elements. If using native HTML is not possible, add an appropriate role and support for tabbing, mouse, keyboard, and touch inputs to an interactive content element.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L346
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Visible, non-interactive elements with click handlers must have at least one keyboard listener.
+
+Intentionality
+Reliability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L346
+5min effort
+18 hours ago
+Bug
+Minor
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L359
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Mark the props of the component as read-only.
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
+type-dependent
++
+Open
+Not assigned
+L387
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L408
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Avoid non-native interactive elements. If using native HTML is not possible, add an appropriate role and support for tabbing, mouse, keyboard, and touch inputs to an interactive content element.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L505
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Visible, non-interactive elements with click handlers must have at least one keyboard listener.
+
+Intentionality
+Reliability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L505
+5min effort
+18 hours ago
+Bug
+Minor
+
+
+Mark the props of the component as read-only.
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
+type-dependent
++
+Open
+Not assigned
+L550
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L567
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L570
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Remove this useless assignment to variable "applyPaint".
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+cwe
+unused
++
+Open
+Not assigned
+L576
+1min effort
+18 hours ago
+Code Smell
+Major
+
+
+Prefer `globalThis` over `window`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2020
+portability
++
+Open
+Not assigned
+L614
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `globalThis` over `window`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2020
+portability
++
+Open
+Not assigned
+L615
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L662
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+This branch's code block is the same as the block for the branch on line 681.
+
+Adaptability
+Maintainability
+
+
+2
+Medium
+design
+suspicious
++
+Open
+Not assigned
+L690
+10min effort
+5 hours ago
+Code Smell
+Major
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L697
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L698
+2min effort
+18 hours ago
+Code Smell
+Minor
+client/src/pages/project-detail.tsx
+
+
+Extract this nested ternary operation into an independent statement.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+confusing
++
+Open
+Not assigned
+L333
+5min effort
+4 hours ago
+Code Smell
+Major
+client/src/pages/resource-allocation.tsx
+
+
+Remove this unused import of 'Button'.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+es2015
+type-dependent
+...
++
+Open
+Not assigned
+L6
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `Number.isNaN` over `isNaN`.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+convention
+es2015
++
+Open
+Not assigned
+L81
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L93
+8min effort
+18 hours ago
+Code Smell
+Critical
+
+
+This assertion is unnecessary since it does not change the type of the expression.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+redundant
+type-dependent
++
+Open
+Not assigned
+L123
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+This assertion is unnecessary since it does not change the type of the expression.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+redundant
+type-dependent
++
+Open
+Not assigned
+L128
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+This assertion is unnecessary since it does not change the type of the expression.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+redundant
+type-dependent
++
+Open
+Not assigned
+L129
+1min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L152
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L155
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L283
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Mark the props of the component as read-only.
+
+Consistency
+Maintainability
+
+
+3
+Low
+react
+type-dependent
++
+Open
+Not assigned
+L313
+5min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Avoid non-native interactive elements. If using native HTML is not possible, add an appropriate role and support for tabbing, mouse, keyboard, and touch inputs to an interactive content element.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L326
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Visible, non-interactive elements with click handlers must have at least one keyboard listener.
+
+Intentionality
+Reliability
+
+
+3
+Low
+accessibility
+react
++
+Open
+Not assigned
+L326
+5min effort
+18 hours ago
+Bug
+Minor
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L334
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L371
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L383
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L405
+2min effort
+18 hours ago
+Code Smell
+Minor
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L416
+5min effort
+18 hours ago
+Code Smell
+Major
+
+
+Do not use Array index in keys
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+jsx
+performance
+...
++
+Open
+Not assigned
+L418
+5min effort
+18 hours ago
+Code Smell
+Major
+server/routes.ts
+
+
+Move async function 'buildTimesheetRecord' to the outer scope.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+javascript
+optimization
+...
++
+Open
+Not assigned
+L2503
+5min effort
+1 day ago
+Code Smell
+Major
+
+
+Move function 'parseStaffRow' to the outer scope.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+javascript
+optimization
+...
++
+Open
+Not assigned
+L2595
+5min effort
+1 day ago
+Code Smell
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L2663
+7min effort
+1 day ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 81 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L2704
+1h11min effort
+29 minutes ago
+Code Smell
+Critical
+
+
+Use `.indexOf()` instead of `.findIndex()` when looking for the index of an item.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+array
+javascript
+...
++
+Open
+Not assigned
+L2717
+2min effort
+29 minutes ago
+Code Smell
+Minor
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L2760
+2min effort
+29 minutes ago
+Code Smell
+Minor
+
+
+Remove this useless assignment to variable "cleanContractType".
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+cwe
+unused
++
+Open
+Not assigned
+L2776
+1min effort
+29 minutes ago
+Code Smell
+Major
+
+
+Use the "RegExp.exec()" method instead.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+regex
+type-dependent
++
+Open
+Not assigned
+L2796
+5min effort
+29 minutes ago
+Code Smell
+Minor
+
+
+Use the "RegExp.exec()" method instead.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+regex
+type-dependent
++
+Open
+Not assigned
+L2843
+5min effort
+29 minutes ago
+Code Smell
+Minor
+server/sharepoint-sync.ts
+
+
+Refactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L440
+14min effort
+2 days ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L564
+6min effort
+1 day ago
+Code Smell
+Critical
+
+
+Refactor this function to reduce its Cognitive Complexity from 19 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L698
+9min effort
+1 day ago
+Code Smell
+Critical
+
+
+Use the "RegExp.exec()" method instead.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+regex
+type-dependent
++
+Open
+Not assigned
+L860
+5min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Prefer `Number.parseFloat` over `parseFloat`.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+convention
+es2015
++
+Open
+Not assigned
+L887
+2min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Prefer `Number.isNaN` over `isNaN`.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+convention
+es2015
++
+Open
+Not assigned
+L888
+2min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Refactor this function to reduce its Cognitive Complexity from 33 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L923
+23min effort
+4 hours ago
+Code Smell
+Critical
+
+
+Unexpected negated condition.
+
+Intentionality
+Maintainability
+
+
+3
+Low
+readability
++
+Open
+Not assigned
+L946
+2min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L972
+8min effort
+4 hours ago
+Code Smell
+Critical
+
+
+Remove this useless assignment to variable "rateCols".
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+cwe
+unused
++
+Open
+Not assigned
+L973
+1min effort
+4 hours ago
+Code Smell
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 25 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L1020
+15min effort
+4 hours ago
+Code Smell
+Critical
+
+
+Prefer using an optional chain expression instead, as it's more concise and easier to read.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+type-dependent
++
+Open
+Not assigned
+L1031
+5min effort
+4 hours ago
+Code Smell
+Major
+
+
+Prefer using an optional chain expression instead, as it's more concise and easier to read.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+type-dependent
++
+Open
+Not assigned
+L1043
+5min effort
+4 hours ago
+Code Smell
+Major
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L1089
+5min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Prefer `.at(…)` over `[….length - index]`.
+
+Consistency
+Maintainability
+
+
+3
+Low
+es2022
+performance
+...
++
+Open
+Not assigned
+L1091
+5min effort
+4 hours ago
+Code Smell
+Minor
+
+
+Refactor this function to reduce its Cognitive Complexity from 43 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L1104
+33min effort
+4 hours ago
+Code Smell
+Critical
+
+
+Prefer using an optional chain expression instead, as it's more concise and easier to read.
+
+Intentionality
+Maintainability
+
+
+2
+Medium
+type-dependent
++
+Open
+Not assigned
+L1124
+5min effort
+4 hours ago
+Code Smell
+Major
+
+
+Refactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.
+
+Adaptability
+Maintainability
+
+
+4
+High
+brain-overload
++
+Open
+Not assigned
+L1260
+11min effort
+1 day ago
+Code Smell
+Critical
+
+
+Prefer `Number.parseFloat` over `parseFloat`.
+
+Consistency
+Reliability
+
+
+2
+Medium
+Maintainability
+
+
+3
+Low
+convention
+es2015
++
+Open
+Not assigned
+L1321
+2min effort
+4 hours ago
+Code Smell
+Minor
