@@ -329,24 +329,17 @@ function ResourceRow({
   expanded: boolean;
   onToggle: () => void;
 }>) {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onToggle();
-    }
-  };
-
   return (
     <>
       <tr className="border-b hover:bg-muted/10 group" data-testid={`row-resource-${resource.employeeId}`}>
         <td className="p-2 sticky left-0 bg-card z-10 group-hover:bg-muted/10">
-          <div className="flex items-center gap-2 cursor-pointer" role="button" tabIndex={0} onClick={onToggle} onKeyDown={handleKeyDown}>
+          <button type="button" className="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0 text-left" onClick={onToggle} data-testid={`button-toggle-resource-${resource.employeeId}`}>
             {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             <div>
               <span className="text-sm font-medium">{resource.name}</span>
               {resource.role && <span className="text-xs text-muted-foreground ml-2">{resource.role}</span>}
             </div>
-          </div>
+          </button>
           <div className="flex items-center gap-2 ml-5 mt-0.5">
             <Badge variant="outline" className="text-[10px] h-5">{resource.projectCount} project{resource.projectCount === 1 ? "" : "s"}</Badge>
             <Badge variant="outline" className="text-[10px] h-5">{resource.totalForecastHours.toFixed(0)} hrs</Badge>

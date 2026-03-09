@@ -1150,6 +1150,330 @@ function parseStaffRow(r: any[]) {
   return { fullName, firstName, lastName, costBandLevel, staffType, payrollTax, baseCost, jid, scheduleStart, scheduleEnd, team, location, status };
 }
 
+async function processTimesheetLines(lines: string[], ctx: {
+  empMap: Map<string, number>; empCodes: Set<string>; empCounter: { value: number };
+  projMap: Map<string, number>; projCodes: Set<string>; projCounter: { value: number };
+}) {
+  let imported = 0;
+  const errors: string[] = [];
+  const batchSize = isMSSQL ? 150 : 500;
+  let batch: any[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.length < 12) continue;
+    try {
+      const record = await buildTimesheetRecord(cols, ctx);
+      if (!record) continue;
+      batch.push(record);
+      if (batch.length >= batchSize) {
+        await db("timesheets").insert(batch);
+        imported += batch.length;
+        batch = [];
+      }
+    } catch (err: any) {
+      if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  if (batch.length > 0) {
+    await db("timesheets").insert(batch);
+    imported += batch.length;
+  }
+  return { imported, errors, total: lines.length - 1 };
+}
+
+async function upsertStaffEmployee(
+  parsed: NonNullable<ReturnType<typeof parseStaffRow>>,
+  empByName: Map<string, any>,
+  existingCodes: Set<string>,
+  codeCounter: { value: number },
+) {
+  const existing = empByName.get(parsed.fullName.toLowerCase());
+  if (existing) {
+    await db("employees").where("id", existing.id).update({
+      cost_band_level: parsed.costBandLevel,
+      staff_type: parsed.staffType,
+      payroll_tax: parsed.payrollTax,
+      base_cost: parsed.baseCost.toFixed(2),
+      status: parsed.status,
+      jid: parsed.jid,
+      schedule_start: parsed.scheduleStart,
+      schedule_end: parsed.scheduleEnd,
+      team: parsed.team,
+      location: parsed.location,
+    });
+    return "updated" as const;
+  }
+
+  let empCode = parsed.jid || `E${codeCounter.value++}`;
+  while (existingCodes.has(empCode)) empCode = `E${codeCounter.value++}`;
+  existingCodes.add(empCode);
+
+  const newEmp = await storage.createEmployee({
+    employeeCode: empCode, firstName: parsed.firstName, lastName: parsed.lastName,
+    email: null, role: parsed.costBandLevel || "Staff",
+    costBandLevel: parsed.costBandLevel, staffType: parsed.staffType, grade: null, location: parsed.location,
+    costCenter: null, securityClearance: null,
+    payrollTax: parsed.payrollTax, payrollTaxRate: null,
+    baseCost: parsed.baseCost.toFixed(2),
+    grossCost: "0",
+    baseSalary: null,
+    status: parsed.status, startDate: null, endDate: null,
+    scheduleStart: parsed.scheduleStart, scheduleEnd: parsed.scheduleEnd,
+    resourceGroup: null, team: parsed.team, jid: parsed.jid,
+    onboardingStatus: "completed",
+  });
+  empByName.set(parsed.fullName.toLowerCase(), newEmp);
+  return "created" as const;
+}
+
+async function buildStaffLookupCtx() {
+  const existingEmployees = await storage.getEmployees();
+  const empByName = new Map<string, any>();
+  const existingCodes = new Set<string>();
+  for (const e of existingEmployees) {
+    empByName.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e);
+    existingCodes.add(e.employeeCode);
+  }
+  return { empByName, existingCodes, codeCounter: { value: Date.now() % 100000 } };
+}
+
+async function processStaffRows(
+  rows: any[][], empByName: Map<string, any>, existingCodes: Set<string>, codeCounter: { value: number },
+) {
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r?.[0] || String(r[0]).toLowerCase() === "name") continue;
+    try {
+      const parsed = parseStaffRow(r);
+      if (!parsed) continue;
+      const result = await upsertStaffEmployee(parsed, empByName, existingCodes, codeCounter);
+      if (result === "created") created++;
+      else updated++;
+    } catch (err: any) {
+      if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
+    }
+  }
+  return { created, updated, errors };
+}
+
+function buildProjectStatusColumnMap(headerRow: string[]) {
+  const colIndexExact = (names: string[]): number => {
+    for (const n of names) {
+      const idx = headerRow.indexOf(n);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+  const colIndex = (names: string[]): number => {
+    const exact = colIndexExact(names);
+    if (exact >= 0) return exact;
+    for (const n of names) {
+      if (n.length <= 2) continue;
+      const idx = headerRow.findIndex((h: string) => h.includes(n));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+  return {
+    vpn: colIndexExact(["vpn", "project code", "projectcode", "code"]),
+    ad: colIndexExact(["a/d", "ad", "ad status", "adstatus"]),
+    vat: colIndex(["vat"]),
+    client: colIndex(["client"]),
+    project: colIndex(["project", "project name"]),
+    clientManager: colIndex(["client manager", "client mar", "clientmanager"]),
+    engagementManager: colIndex(["engagement", "engagement manager", "engageme"]),
+    startDate: colIndex(["start date", "start"]),
+    endDate: colIndex(["end date", "end"]),
+    billingCategory: colIndex(["billing cat", "billing category", "billingcategory"]),
+    workType: colIndex(["work type", "worktype"]),
+    panel: colIndex(["panel"]),
+    recurring: colIndex(["recurring"]),
+    workOrderAmount: colIndex(["work order", "work orde", "work order amount"]),
+    budget: colIndex(["budget"]),
+    actual: colIndex(["actual"]),
+    balance: colIndex(["balance"]),
+  };
+}
+
+function getVal(row: any[], idx: number): string | null {
+  if (idx < 0 || row[idx] == null || String(row[idx]).trim() === "") return null;
+  return String(row[idx]).trim();
+}
+
+function getNum(row: any[], idx: number): string | null {
+  if (idx < 0 || row[idx] == null) return null;
+  const n = Number(row[idx]);
+  return Number.isNaN(n) ? null : n.toFixed(2);
+}
+
+function findExistingProject(
+  vpn: string | null, projectName: string | null,
+  projByCode: Map<string, any>, projByName: Map<string, any>,
+) {
+  if (vpn) {
+    const found = projByCode.get(vpn.toLowerCase());
+    if (found) return found;
+  }
+  if (projectName) {
+    const byName = projByName.get(projectName.toLowerCase());
+    if (byName) return byName;
+    const codeMatch = /^([A-Z]{2,5}\d{2,4})/i.exec(projectName);
+    if (codeMatch) return projByCode.get(codeMatch[1].toLowerCase()) ?? null;
+  }
+  return null;
+}
+
+function extractStringFields(
+  r: any[],
+  col: ReturnType<typeof buildProjectStatusColumnMap>,
+  vatCleaner: (v: string | null | undefined) => string | null,
+): Record<string, any> {
+  const updates: Record<string, any> = {};
+  const fieldMap: Array<[number, string]> = [
+    [col.ad, "ad_status"],
+    [col.client, "client"],
+    [col.clientManager, "client_manager"],
+    [col.engagementManager, "engagement_manager"],
+    [col.billingCategory, "billing_category"],
+    [col.workType, "work_type"],
+    [col.panel, "panel"],
+    [col.recurring, "recurring"],
+  ];
+  for (const [idx, key] of fieldMap) {
+    const val = getVal(r, idx);
+    if (val) updates[key] = val;
+  }
+  const vat = getVal(r, col.vat);
+  if (vat) updates.vat = vatCleaner(vat);
+  return updates;
+}
+
+function extractDateFields(
+  r: any[],
+  col: ReturnType<typeof buildProjectStatusColumnMap>,
+): Record<string, any> {
+  const updates: Record<string, any> = {};
+  const sdRaw = col.startDate >= 0 ? r[col.startDate] : null;
+  if (sdRaw != null && String(sdRaw).trim() !== "") updates.start_date = parseExcelDate(sdRaw);
+  const edRaw = col.endDate >= 0 ? r[col.endDate] : null;
+  if (edRaw != null && String(edRaw).trim() !== "") updates.end_date = parseExcelDate(edRaw);
+  return updates;
+}
+
+function extractNumericFields(
+  r: any[],
+  col: ReturnType<typeof buildProjectStatusColumnMap>,
+): Record<string, any> {
+  const updates: Record<string, any> = {};
+  const numericMap: Array<[number, string]> = [
+    [col.workOrderAmount, "work_order_amount"],
+    [col.budget, "budget_amount"],
+    [col.actual, "actual_amount"],
+    [col.balance, "balance_amount"],
+  ];
+  for (const [idx, key] of numericMap) {
+    const val = getNum(r, idx);
+    if (val) updates[key] = val;
+  }
+  return updates;
+}
+
+function buildProjectUpdates(
+  r: any[],
+  col: ReturnType<typeof buildProjectStatusColumnMap>,
+  vatCleaner: (v: string | null | undefined) => string | null,
+): Record<string, any> {
+  return {
+    ...extractStringFields(r, col, vatCleaner),
+    ...extractDateFields(r, col),
+    ...extractNumericFields(r, col),
+  };
+}
+
+function generateProjectCode(
+  vpn: string | null, projectName: string | null,
+  counter: { value: number }, usedCodes: Set<string>,
+): string {
+  let code = vpn || (projectName ? /^([A-Z]{2,5}\d{2,4})/i.exec(projectName)?.[1] : null) || null;
+  if (!code) {
+    do {
+      counter.value++;
+      code = `IMP${String(counter.value).padStart(5, "0")}`;
+    } while (usedCodes.has(code.toLowerCase()));
+  }
+  usedCodes.add(code.toLowerCase());
+  return code;
+}
+
+function buildProjectLookups(existingProjects: any[]): { projByCode: Map<string, any>; projByName: Map<string, any> } {
+  const projByCode = new Map<string, any>();
+  const projByName = new Map<string, any>();
+  for (const p of existingProjects) {
+    if (p.projectCode) projByCode.set(p.projectCode.toLowerCase(), p);
+    if (p.name) projByName.set(p.name.toLowerCase(), p);
+  }
+  return { projByCode, projByName };
+}
+
+async function processProjectStatusRow(
+  r: any[], i: number,
+  col: ReturnType<typeof buildProjectStatusColumnMap>,
+  projByCode: Map<string, any>, projByName: Map<string, any>,
+  createCounter: { value: number }, usedCodes: Set<string>,
+  cleanVat: (v: string | null | undefined) => string | null,
+  sanitizeDateFields: (obj: Record<string, any>) => Record<string, any>,
+): Promise<"updated" | "created" | null> {
+  const vpn = getVal(r, col.vpn);
+  const projectName = getVal(r, col.project);
+  if (!vpn && !projectName) throw new Error("No project code or name");
+
+  const existing = findExistingProject(vpn, projectName, projByCode, projByName);
+  const updates = buildProjectUpdates(r, col, cleanVat);
+
+  if (existing) {
+    if (Object.keys(updates).length > 0) {
+      await db("projects").where("id", existing.id).update(sanitizeDateFields(updates));
+      return "updated";
+    }
+    return null;
+  }
+  const code = generateProjectCode(vpn, projectName, createCounter, usedCodes);
+  await db("projects").insert(sanitizeDateFields({ project_code: code, name: projectName || code, status: "active", ...updates }));
+  return "created";
+}
+
+async function processProjectStatusRows(rows: any[][]) {
+  const headerRow = rows[0].map((h: any) => String(h || "").trim().toLowerCase());
+  const col = buildProjectStatusColumnMap(headerRow);
+  const existingProjects = await storage.getProjects();
+  const { projByCode, projByName } = buildProjectLookups(existingProjects);
+
+  let updated = 0;
+  let created = 0;
+  const createCounter = { value: 0 };
+  const usedCodes = new Set(Array.from(projByCode.keys()));
+  const errors: string[] = [];
+  const { cleanVat } = await import("./sharepoint-sync");
+  const { sanitizeDateFields } = await import("./storage");
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every((c: any) => c == null || String(c).trim() === "")) continue;
+    try {
+      const result = await processProjectStatusRow(r, i, col, projByCode, projByName, createCounter, usedCodes, cleanVat, sanitizeDateFields);
+      if (result === "created") created++;
+      else if (result === "updated") updated++;
+    } catch (rowErr: any) {
+      errors.push(`Row ${i + 1}: ${rowErr.message}`);
+    }
+  }
+  return { updated, created, errors, total: updated + created };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -2554,40 +2878,6 @@ export async function registerRoutes(
     }
   });
 
-  async function processTimesheetLines(lines: string[], ctx: {
-    empMap: Map<string, number>; empCodes: Set<string>; empCounter: { value: number };
-    projMap: Map<string, number>; projCodes: Set<string>; projCounter: { value: number };
-  }) {
-    let imported = 0;
-    const errors: string[] = [];
-    const batchSize = isMSSQL ? 150 : 500;
-    let batch: any[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const cols = parseCSVLine(lines[i]);
-      if (cols.length < 12) continue;
-      try {
-        const record = await buildTimesheetRecord(cols, ctx);
-        if (!record) continue;
-        batch.push(record);
-        if (batch.length >= batchSize) {
-          await db("timesheets").insert(batch);
-          imported += batch.length;
-          batch = [];
-        }
-      } catch (err: any) {
-        if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
-      }
-    }
-    if (batch.length > 0) {
-      await db("timesheets").insert(batch);
-      imported += batch.length;
-    }
-    return { imported, errors, total: lines.length - 1 };
-  }
-
-  // buildTimesheetRecord moved to module scope (above registerRoutes)
-
   // ─── Timesheet CSV Import ───
   app.post("/api/import/timesheets-csv", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
@@ -2616,86 +2906,6 @@ export async function registerRoutes(
     }
   });
 
-  // parseStaffRow moved to module scope (above registerRoutes)
-
-  async function upsertStaffEmployee(
-    parsed: NonNullable<ReturnType<typeof parseStaffRow>>,
-    empByName: Map<string, any>,
-    existingCodes: Set<string>,
-    codeCounter: { value: number },
-  ) {
-    const existing = empByName.get(parsed.fullName.toLowerCase());
-    if (existing) {
-      await db("employees").where("id", existing.id).update({
-        cost_band_level: parsed.costBandLevel,
-        staff_type: parsed.staffType,
-        payroll_tax: parsed.payrollTax,
-        base_cost: parsed.baseCost.toFixed(2),
-        status: parsed.status,
-        jid: parsed.jid,
-        schedule_start: parsed.scheduleStart,
-        schedule_end: parsed.scheduleEnd,
-        team: parsed.team,
-        location: parsed.location,
-      });
-      return "updated" as const;
-    }
-
-    let empCode = parsed.jid || `E${codeCounter.value++}`;
-    while (existingCodes.has(empCode)) empCode = `E${codeCounter.value++}`;
-    existingCodes.add(empCode);
-
-    const newEmp = await storage.createEmployee({
-      employeeCode: empCode, firstName: parsed.firstName, lastName: parsed.lastName,
-      email: null, role: parsed.costBandLevel || "Staff",
-      costBandLevel: parsed.costBandLevel, staffType: parsed.staffType, grade: null, location: parsed.location,
-      costCenter: null, securityClearance: null,
-      payrollTax: parsed.payrollTax, payrollTaxRate: null,
-      baseCost: parsed.baseCost.toFixed(2),
-      grossCost: "0",
-      baseSalary: null,
-      status: parsed.status, startDate: null, endDate: null,
-      scheduleStart: parsed.scheduleStart, scheduleEnd: parsed.scheduleEnd,
-      resourceGroup: null, team: parsed.team, jid: parsed.jid,
-      onboardingStatus: "completed",
-    });
-    empByName.set(parsed.fullName.toLowerCase(), newEmp);
-    return "created" as const;
-  }
-
-  async function buildStaffLookupCtx() {
-    const existingEmployees = await storage.getEmployees();
-    const empByName = new Map<string, any>();
-    const existingCodes = new Set<string>();
-    for (const e of existingEmployees) {
-      empByName.set(`${e.firstName} ${e.lastName}`.toLowerCase(), e);
-      existingCodes.add(e.employeeCode);
-    }
-    return { empByName, existingCodes, codeCounter: { value: Date.now() % 100000 } };
-  }
-
-  async function processStaffRows(
-    rows: any[][], empByName: Map<string, any>, existingCodes: Set<string>, codeCounter: { value: number },
-  ) {
-    let created = 0;
-    let updated = 0;
-    const errors: string[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r?.[0] || String(r[0]).toLowerCase() === "name") continue;
-      try {
-        const parsed = parseStaffRow(r);
-        if (!parsed) continue;
-        const result = await upsertStaffEmployee(parsed, empByName, existingCodes, codeCounter);
-        if (result === "created") created++;
-        else updated++;
-      } catch (err: any) {
-        if (errors.length < 20) errors.push(`Row ${i + 1}: ${err.message}`);
-      }
-    }
-    return { created, updated, errors };
-  }
-
   // ─── Staff SOT Import (Upsert) ───
   app.post("/api/import/staff-sot", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {
     try {
@@ -2712,174 +2922,6 @@ export async function registerRoutes(
       res.status(500).json({ message: err.message || "Staff SOT import failed" });
     }
   });
-
-  function buildProjectStatusColumnMap(headerRow: string[]) {
-    const colIndexExact = (names: string[]): number => {
-      for (const n of names) {
-        const idx = headerRow.indexOf(n);
-        if (idx >= 0) return idx;
-      }
-      return -1;
-    };
-    const colIndex = (names: string[]): number => {
-      const exact = colIndexExact(names);
-      if (exact >= 0) return exact;
-      for (const n of names) {
-        if (n.length <= 2) continue;
-        const idx = headerRow.findIndex((h: string) => h.includes(n));
-        if (idx >= 0) return idx;
-      }
-      return -1;
-    };
-    return {
-      vpn: colIndexExact(["vpn", "project code", "projectcode", "code"]),
-      ad: colIndexExact(["a/d", "ad", "ad status", "adstatus"]),
-      vat: colIndex(["vat"]),
-      client: colIndex(["client"]),
-      project: colIndex(["project", "project name"]),
-      clientManager: colIndex(["client manager", "client mar", "clientmanager"]),
-      engagementManager: colIndex(["engagement", "engagement manager", "engageme"]),
-      startDate: colIndex(["start date", "start"]),
-      endDate: colIndex(["end date", "end"]),
-      billingCategory: colIndex(["billing cat", "billing category", "billingcategory"]),
-      workType: colIndex(["work type", "worktype"]),
-      panel: colIndex(["panel"]),
-      recurring: colIndex(["recurring"]),
-      workOrderAmount: colIndex(["work order", "work orde", "work order amount"]),
-      budget: colIndex(["budget"]),
-      actual: colIndex(["actual"]),
-      balance: colIndex(["balance"]),
-    };
-  }
-
-  function getVal(row: any[], idx: number): string | null {
-    if (idx < 0 || row[idx] == null || String(row[idx]).trim() === "") return null;
-    return String(row[idx]).trim();
-  }
-
-  function getNum(row: any[], idx: number): string | null {
-    if (idx < 0 || row[idx] == null) return null;
-    const n = Number(row[idx]);
-    return Number.isNaN(n) ? null : n.toFixed(2);
-  }
-
-  function findExistingProject(
-    vpn: string | null, projectName: string | null,
-    projByCode: Map<string, any>, projByName: Map<string, any>,
-  ) {
-    if (vpn) {
-      const found = projByCode.get(vpn.toLowerCase());
-      if (found) return found;
-    }
-    if (projectName) {
-      const byName = projByName.get(projectName.toLowerCase());
-      if (byName) return byName;
-      const codeMatch = /^([A-Z]{2,5}\d{2,4})/i.exec(projectName);
-      if (codeMatch) return projByCode.get(codeMatch[1].toLowerCase()) ?? null;
-    }
-    return null;
-  }
-
-  function buildProjectUpdates(
-    r: any[],
-    col: ReturnType<typeof buildProjectStatusColumnMap>,
-    vatCleaner: (v: string | null | undefined) => string | null,
-  ): Record<string, any> {
-    const updates: Record<string, any> = {};
-    const ad = getVal(r, col.ad);
-    if (ad) updates.ad_status = ad;
-    const vat = getVal(r, col.vat);
-    if (vat) updates.vat = vatCleaner(vat);
-    const client = getVal(r, col.client);
-    if (client) updates.client = client;
-    const cm = getVal(r, col.clientManager);
-    if (cm) updates.client_manager = cm;
-    const em = getVal(r, col.engagementManager);
-    if (em) updates.engagement_manager = em;
-    const sdRaw = col.startDate >= 0 ? r[col.startDate] : null;
-    if (sdRaw != null && String(sdRaw).trim() !== "") updates.start_date = parseExcelDate(sdRaw);
-    const edRaw = col.endDate >= 0 ? r[col.endDate] : null;
-    if (edRaw != null && String(edRaw).trim() !== "") updates.end_date = parseExcelDate(edRaw);
-    const bc = getVal(r, col.billingCategory);
-    if (bc) updates.billing_category = bc;
-    const wt = getVal(r, col.workType);
-    if (wt) updates.work_type = wt;
-    const panel = getVal(r, col.panel);
-    if (panel) updates.panel = panel;
-    const recurring = getVal(r, col.recurring);
-    if (recurring) updates.recurring = recurring;
-    const woa = getNum(r, col.workOrderAmount);
-    if (woa) updates.work_order_amount = woa;
-    const budget = getNum(r, col.budget);
-    if (budget) updates.budget_amount = budget;
-    const actual = getNum(r, col.actual);
-    if (actual) updates.actual_amount = actual;
-    const balance = getNum(r, col.balance);
-    if (balance) updates.balance_amount = balance;
-    return updates;
-  }
-
-  function generateProjectCode(
-    vpn: string | null, projectName: string | null,
-    counter: { value: number }, usedCodes: Set<string>,
-  ): string {
-    let code = vpn || (projectName ? /^([A-Z]{2,5}\d{2,4})/i.exec(projectName)?.[1] : null) || null;
-    if (!code) {
-      do {
-        counter.value++;
-        code = `IMP${String(counter.value).padStart(5, "0")}`;
-      } while (usedCodes.has(code.toLowerCase()));
-    }
-    usedCodes.add(code.toLowerCase());
-    return code;
-  }
-
-  async function processProjectStatusRows(rows: any[][]) {
-    const headerRow = rows[0].map((h: any) => String(h || "").trim().toLowerCase());
-    const col = buildProjectStatusColumnMap(headerRow);
-    const existingProjects = await storage.getProjects();
-    const projByCode = new Map<string, any>();
-    const projByName = new Map<string, any>();
-    for (const p of existingProjects) {
-      if (p.projectCode) projByCode.set(p.projectCode.toLowerCase(), p);
-      if (p.name) projByName.set(p.name.toLowerCase(), p);
-    }
-
-    let updated = 0;
-    let created = 0;
-    const createCounter = { value: 0 };
-    const usedCodes = new Set(Array.from(projByCode.keys()));
-    const errors: string[] = [];
-    const { cleanVat } = await import("./sharepoint-sync");
-    const { sanitizeDateFields } = await import("./storage");
-
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || r.every((c: any) => c == null || String(c).trim() === "")) continue;
-      try {
-        const vpn = getVal(r, col.vpn);
-        const projectName = getVal(r, col.project);
-        if (!vpn && !projectName) { errors.push(`Row ${i + 1}: No project code or name`); continue; }
-
-        const existing = findExistingProject(vpn, projectName, projByCode, projByName);
-        const updates = buildProjectUpdates(r, col, cleanVat);
-
-        if (existing) {
-          if (Object.keys(updates).length > 0) {
-            await db("projects").where("id", existing.id).update(sanitizeDateFields(updates));
-            updated++;
-          }
-        } else {
-          const code = generateProjectCode(vpn, projectName, createCounter, usedCodes);
-          await db("projects").insert(sanitizeDateFields({ project_code: code, name: projectName || code, status: "active", ...updates }));
-          created++;
-        }
-      } catch (rowErr: any) {
-        errors.push(`Row ${i + 1}: ${rowErr.message}`);
-      }
-    }
-    return { updated, created, errors, total: updated + created };
-  }
 
   // ─── Project Status Excel Import ───
   app.post("/api/import/project-status", requirePermission("upload", "upload"), upload.single("file"), async (req, res) => {

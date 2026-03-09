@@ -723,6 +723,48 @@ async function discoverInflightFolder(token: SharePointToken, siteId: string): P
   throw new Error(`Inflight folder not found in General/. Available folders: ${generalChildren.join(", ") || "(none)"}`);
 }
 
+function buildSyncResultParts(counts: { inserted: number; updated: number; removed: number; unchanged: number }, errors: string[], labels?: { added?: string; removed?: string }): string[] {
+  const parts: string[] = [];
+  if (counts.inserted > 0) parts.push(`${counts.inserted} ${labels?.added || "added"}`);
+  if (counts.updated > 0) parts.push(`${counts.updated} updated`);
+  if (counts.removed > 0) parts.push(`${counts.removed} ${labels?.removed || "removed"}`);
+  if (counts.unchanged > 0) parts.push(`${counts.unchanged} unchanged`);
+  if (errors.length > 0) parts.push(`${errors.length} errors`);
+  return parts;
+}
+
+function stageInflightItems(allItems: SharePointListItem[]): { staged: ReturnType<typeof buildInflightStagedRecord>[]; errors: string[]; skippedNames: string[]; noSpId: string[] } {
+  const staged: ReturnType<typeof buildInflightStagedRecord>[] = [];
+  const errors: string[] = [];
+  const skippedNames: string[] = [];
+  const noSpId: string[] = [];
+
+  for (const item of allItems) {
+    const folderName = item.Title || item.FileLeafRef || "";
+    if (!folderName) continue;
+
+    const parsed = parseProjectCode(folderName);
+    if (!parsed) {
+      skippedNames.push(folderName);
+      continue;
+    }
+
+    const spId = item._sharepointItemId ? String(item._sharepointItemId) : null;
+    if (!spId) {
+      noSpId.push(folderName);
+      continue;
+    }
+
+    try {
+      staged.push(buildInflightStagedRecord(item, spId, parsed));
+    } catch (err: any) {
+      errors.push(`"${folderName}": ${err.message}`);
+    }
+  }
+
+  return { staged, errors, skippedNames, noSpId };
+}
+
 function buildInflightStagedRecord(item: SharePointListItem, spId: string, parsed: { projectCode: string; projectName: string }) {
   const fields = extractItemFields(item);
   return {
@@ -759,34 +801,7 @@ export async function syncSharePointInflightProjects(): Promise<{
   const { items: allItems, usedPath } = await discoverInflightFolder(token, siteId);
   console.log(`[SharePoint] Inflight: Retrieved ${allItems.length} items from ${usedPath}`);
 
-  const staged: { sharepointId: string; projectCode: string; name: string; client: string | null; clientCode: string | null; clientManager: string | null; engagementManager: string | null; vat: string | null; workType: string | null; contractType: string | null; status: string; startDate: string | null; endDate: string | null; contractValue: string | null; opsCommentary: string | null }[] = [];
-  const errors: string[] = [];
-
-  const skippedNames: string[] = [];
-  const noSpId: string[] = [];
-
-  for (const item of allItems) {
-    const folderName = item.Title || item.FileLeafRef || "";
-    if (!folderName) continue;
-
-    const parsed = parseProjectCode(folderName);
-    if (!parsed) {
-      skippedNames.push(folderName);
-      continue;
-    }
-
-    const spId = item._sharepointItemId ? String(item._sharepointItemId) : null;
-    if (!spId) {
-      noSpId.push(folderName);
-      continue;
-    }
-
-    try {
-      staged.push(buildInflightStagedRecord(item, spId, parsed));
-    } catch (err: any) {
-      errors.push(`"${folderName}": ${err.message}`);
-    }
-  }
+  const { staged, errors, skippedNames, noSpId } = stageInflightItems(allItems);
 
   console.log(`[SharePoint] Inflight: Staged ${staged.length} projects (${errors.length} errors, ${skippedNames.length} skipped by name parse, ${noSpId.length} no SP id)`);
   if (skippedNames.length > 0) {
@@ -801,13 +816,7 @@ export async function syncSharePointInflightProjects(): Promise<{
 
   const counts = await performInflightDeltaSync(staged);
 
-  const parts = [];
-  if (counts.inserted > 0) parts.push(`${counts.inserted} added`);
-  if (counts.updated > 0) parts.push(`${counts.updated} updated`);
-  if (counts.removed > 0) parts.push(`${counts.removed} archived`);
-  if (counts.unchanged > 0) parts.push(`${counts.unchanged} unchanged`);
-  if (errors.length > 0) parts.push(`${errors.length} errors`);
-
+  const parts = buildSyncResultParts(counts, errors, { removed: "archived" });
   console.log(`[SharePoint] Inflight sync complete: ${parts.join(", ")}`);
 
   return {
@@ -1138,6 +1147,73 @@ function planDataMatchesExisting(existing: any, totalDays: number, totalH: numbe
   );
 }
 
+function groupWeeklyAllocsByMonth(weeklyAllocs: Record<string, number>): Map<string, Record<string, number>> {
+  const monthGroups = new Map<string, Record<string, number>>();
+  for (const [weekKey, pct] of Object.entries(weeklyAllocs)) {
+    const d = new Date(weekKey + "T00:00:00Z");
+    const monthKey = jpDateToMonth(d);
+    if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, {});
+    monthGroups.get(monthKey)![weekKey] = pct;
+  }
+  return monthGroups;
+}
+
+function buildPlanData(weekAllocs: Record<string, number>, rates: PersonData["rates"]): { planData: Record<string, any>; totalDays: number; totalH: number; weeklyAllocsJson: string } {
+  const totalH = Object.values(weekAllocs).reduce((s: number, pct: number) => s + (pct / 100) * STANDARD_WEEKLY_HOURS, 0);
+  const totalDays = totalH / 8;
+  const activeWeeks = Object.values(weekAllocs).filter((v: number) => v > 0);
+  const avgPct = activeWeeks.length > 0 ? activeWeeks.reduce((s: number, v: number) => s + v, 0) / activeWeeks.length : 0;
+  const weeklyAllocsJson = JSON.stringify(weekAllocs);
+
+  return {
+    totalDays,
+    totalH,
+    weeklyAllocsJson,
+    planData: {
+      planned_days: totalDays.toFixed(1),
+      planned_hours: totalH.toFixed(1),
+      allocation_percent: avgPct.toFixed(2),
+      weekly_allocations: weeklyAllocsJson,
+      charge_out_rate: rates.chargeOutRate,
+      discount_percent: rates.discountPercent,
+      discounted_hourly_rate: rates.discountedHourlyRate,
+      discounted_daily_rate: rates.discountedDailyRate,
+      hourly_gross_cost: rates.hourlyGrossCost,
+    },
+  };
+}
+
+async function upsertPersonMonthPlan(
+  projectId: number,
+  empId: number,
+  monthKey: string,
+  weekAllocs: Record<string, number>,
+  rates: PersonData["rates"],
+  existingKey: Map<string, any>,
+): Promise<"inserted" | "updated" | "unchanged"> {
+  const { planData, totalDays, totalH, weeklyAllocsJson } = buildPlanData(weekAllocs, rates);
+  const key = `${empId}|${monthKey}`;
+  const existing = existingKey.get(key);
+
+  if (existing) {
+    if (planDataMatchesExisting(existing, totalDays, totalH, rates, weeklyAllocsJson)) {
+      return "unchanged";
+    }
+    await db("resource_plans").where("id", existing.id).update(planData);
+    existingKey.set(key, { ...existing, ...planData, id: existing.id });
+    return "updated";
+  }
+
+  const [newRow] = await db("resource_plans").insert({
+    project_id: projectId,
+    employee_id: empId,
+    month: monthKey,
+    ...planData,
+  }).returning("id");
+  existingKey.set(key, { id: newRow?.id || 0, employee_id: empId, month: monthKey, ...planData });
+  return "inserted";
+}
+
 async function syncPersonPlans(
   project: any,
   personMap: Map<string, PersonData>,
@@ -1164,53 +1240,13 @@ async function syncPersonPlans(
       continue;
     }
 
-    const monthGroups = new Map<string, Record<string, number>>();
-    for (const [weekKey, pct] of Object.entries(data.weeklyAllocs)) {
-      const d = new Date(weekKey + "T00:00:00Z");
-      const monthKey = jpDateToMonth(d);
-      if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, {});
-      monthGroups.get(monthKey)![weekKey] = pct;
-    }
+    const monthGroups = groupWeeklyAllocsByMonth(data.weeklyAllocs);
 
     for (const [monthKey, weekAllocs] of Array.from(monthGroups)) {
-      const totalH: number = Object.values(weekAllocs).reduce((s: number, pct: number) => s + (pct / 100) * STANDARD_WEEKLY_HOURS, 0);
-      const totalDays = totalH / 8;
-      const activeWeeks = Object.values(weekAllocs).filter((v: number) => v > 0);
-      const avgPct = activeWeeks.length > 0 ? activeWeeks.reduce((s: number, v: number) => s + v, 0) / activeWeeks.length : 0;
-
-      const key = `${emp.id}|${monthKey}`;
-      const existing = existingKey.get(key);
-      const weeklyAllocsJson = JSON.stringify(weekAllocs);
-      const planData = {
-        planned_days: totalDays.toFixed(1),
-        planned_hours: totalH.toFixed(1),
-        allocation_percent: avgPct.toFixed(2),
-        weekly_allocations: weeklyAllocsJson,
-        charge_out_rate: data.rates.chargeOutRate,
-        discount_percent: data.rates.discountPercent,
-        discounted_hourly_rate: data.rates.discountedHourlyRate,
-        discounted_daily_rate: data.rates.discountedDailyRate,
-        hourly_gross_cost: data.rates.hourlyGrossCost,
-      };
-
-      if (existing) {
-        if (planDataMatchesExisting(existing, totalDays, totalH, data.rates, weeklyAllocsJson)) {
-          unchanged++;
-        } else {
-          await db("resource_plans").where("id", existing.id).update(planData);
-          existingKey.set(key, { ...existing, ...planData, id: existing.id });
-          updated++;
-        }
-      } else {
-        const [newRow] = await db("resource_plans").insert({
-          project_id: project.id,
-          employee_id: emp.id,
-          month: monthKey,
-          ...planData,
-        }).returning("id");
-        existingKey.set(key, { id: newRow?.id || 0, employee_id: emp.id, month: monthKey, ...planData });
-        inserted++;
-      }
+      const result = await upsertPersonMonthPlan(project.id, emp.id, monthKey, weekAllocs, data.rates, existingKey);
+      if (result === "inserted") inserted++;
+      else if (result === "updated") updated++;
+      else unchanged++;
     }
   }
 
@@ -1318,6 +1354,44 @@ async function updateProjectContractValues(): Promise<number> {
   }
 }
 
+async function processAllJobPlanFiles(
+  files: { name: string; downloadUrl: string; id: string }[],
+  token: SharePointToken,
+  projectByCode: Map<string, any>,
+  employeeLookup: { findEmployee: (name: string) => { id: number } | null },
+  errors: string[],
+): Promise<{ inserted: number; updated: number; unchanged: number; filesProcessed: number }> {
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+  let filesProcessed = 0;
+
+  for (const file of files) {
+    try {
+      const result = await processJobPlanFile(file, token, projectByCode, employeeLookup);
+      inserted += result.inserted;
+      updated += result.updated;
+      unchanged += result.unchanged;
+      if (result.processed) filesProcessed++;
+      if (result.error) errors.push(result.error);
+    } catch (err: any) {
+      errors.push(`"${file.name}": ${err.message}`);
+    }
+  }
+
+  return { inserted, updated, unchanged, filesProcessed };
+}
+
+function buildJobPlanResultParts(totalInserted: number, totalUpdated: number, totalUnchanged: number, filesProcessed: number, errors: string[]): string[] {
+  const parts: string[] = [];
+  if (totalInserted > 0) parts.push(`${totalInserted} plans added`);
+  if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+  if (totalUnchanged > 0) parts.push(`${totalUnchanged} unchanged`);
+  parts.push(`${filesProcessed} files processed`);
+  if (errors.length > 0) parts.push(`${errors.length} errors`);
+  return parts;
+}
+
 export async function syncSharePointJobPlans(): Promise<{
   imported: number;
   updated: number;
@@ -1351,25 +1425,13 @@ export async function syncSharePointJobPlans(): Promise<{
 
   const employeeLookup = await buildEmployeeLookup();
 
-  for (const file of files) {
-    try {
-      const result = await processJobPlanFile(file, token, projectByCode, employeeLookup);
-      totalInserted += result.inserted;
-      totalUpdated += result.updated;
-      totalUnchanged += result.unchanged;
-      if (result.processed) filesProcessed++;
-      if (result.error) errors.push(result.error);
-    } catch (err: any) {
-      errors.push(`"${file.name}": ${err.message}`);
-    }
-  }
+  const fileCounts = await processAllJobPlanFiles(files, token, projectByCode, employeeLookup, errors);
+  totalInserted = fileCounts.inserted;
+  totalUpdated = fileCounts.updated;
+  totalUnchanged = fileCounts.unchanged;
+  filesProcessed = fileCounts.filesProcessed;
 
-  const parts = [];
-  if (totalInserted > 0) parts.push(`${totalInserted} plans added`);
-  if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
-  if (totalUnchanged > 0) parts.push(`${totalUnchanged} unchanged`);
-  parts.push(`${filesProcessed} files processed`);
-  if (errors.length > 0) parts.push(`${errors.length} errors`);
+  const parts = buildJobPlanResultParts(totalInserted, totalUpdated, totalUnchanged, filesProcessed, errors);
 
   const contractUpdated = await updateProjectContractValues();
   if (contractUpdated > 0) {

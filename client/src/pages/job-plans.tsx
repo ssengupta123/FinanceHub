@@ -342,12 +342,10 @@ function ProjectCard({
 
   return (
     <Card data-testid={`card-project-${group.project.id}`}>
-      <div
-        className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
+        className="w-full p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors text-left"
         onClick={onToggle}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
         data-testid={`button-toggle-project-${group.project.id}`}
       >
         <div className="flex items-center gap-3">
@@ -361,7 +359,7 @@ function ProjectCard({
           <Badge variant="outline">{group.employees.size} resource{group.employees.size === 1 ? "" : "s"}</Badge>
           <Badge variant="secondary">{totalHours.toFixed(0)} hrs</Badge>
         </div>
-      </div>
+      </button>
       {expanded && (
         <div className="border-t">
           {Array.from(group.employees).map(empId => {
@@ -504,12 +502,10 @@ function EmployeeAllocationRow({
             <span className="font-medium text-sm">{employee.firstName} {employee.lastName}</span>
             {employee.role && <span className="text-muted-foreground text-xs ml-2">{employee.role}</span>}
           </div>
-          <div
+          <button
+            type="button"
             className="flex items-center gap-1.5 cursor-pointer group"
-            role="button"
-            tabIndex={0}
             onClick={() => setShowGrid(!showGrid)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowGrid(!showGrid); } }}
             data-testid={`button-alloc-${employee.id}-${projectId}`}
           >
             <Calendar className="h-3 w-3 text-muted-foreground/60" />
@@ -523,7 +519,7 @@ function EmployeeAllocationRow({
                 Set allocation...
               </span>
             )}
-          </div>
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="text-xs">{totalHours.toFixed(0)} hrs</Badge>
@@ -569,10 +565,10 @@ function AllocationGrid({
     const groups: { month: string; startIdx: number; count: number }[] = [];
     weeks.forEach((w, i) => {
       const label = w.toLocaleDateString("en-AU", { month: "short" });
-      if (groups.length === 0 || groups.at(-1)!.month !== label) {
-        groups.push({ month: label, startIdx: i, count: 1 });
-      } else {
+      if (groups.length > 0 && groups.at(-1)!.month === label) {
         groups.at(-1)!.count++;
+      } else {
+        groups.push({ month: label, startIdx: i, count: 1 });
       }
     });
     return groups;
@@ -676,13 +672,10 @@ function AllocationGrid({
 
                   let bg = "";
                   let textColor = "text-muted-foreground/20";
-                  if (val > 100) {
-                    bg = "bg-red-100 dark:bg-red-900/30";
-                    textColor = "text-red-700 dark:text-red-400";
-                  } else if (val >= 80) {
+                  if (val >= 80 && val <= 100) {
                     bg = "bg-green-100 dark:bg-green-900/30";
                     textColor = "text-green-700 dark:text-green-400";
-                  } else if (val >= 50) {
+                  } else if (val >= 50 && val < 80) {
                     bg = "bg-amber-100 dark:bg-amber-900/30";
                     textColor = "text-amber-700 dark:text-amber-400";
                   } else if (val > 0) {
