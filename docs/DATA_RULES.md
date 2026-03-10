@@ -66,7 +66,7 @@ Projected Total = YTD Actual Revenue + Remaining Contracted Revenue + Pipeline W
 
 **Components:**
 - **YTD Actual Revenue:** Sum of `project_monthly` revenue for all elapsed FY months
-- **Remaining Contracted Revenue:** Sum of balance amounts (work order amount minus actual amount) from active, non-closed projects. GP is estimated using each project's to-date GM%. This represents the unspent contract value still to be delivered.
+- **Remaining Contracted Revenue:** Total budgeted amount across active (non-closed) projects minus YTD actual revenue. GP is estimated using a weighted average of each project's to-date GM%. This represents the portion of budgeted revenue not yet realised.
 - **Pipeline Weighted Revenue:** Sum of pipeline opportunity values multiplied by win probability percentages
 
 The same formula applies to GP:
