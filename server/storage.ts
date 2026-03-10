@@ -493,7 +493,7 @@ async function computeResourcePlanForecast(
 }
 
 async function computeQuarterActuals(
-  vatName: string,
+  _vatName: string,
   fyYear: string,
   projectIds: number[],
   quarterFyMonths: Record<string, number[]>,
@@ -507,13 +507,12 @@ async function computeQuarterActuals(
       continue;
     }
     const monthlyData = await db("project_monthly")
-      .join("projects", "project_monthly.project_id", "projects.id")
-      .where("projects.vat", vatName)
-      .where("project_monthly.fy_year", fyYear)
-      .whereIn("project_monthly.month", eligibleMonths)
+      .whereIn("project_id", projectIds)
+      .where("fy_year", fyYear)
+      .whereIn("month", eligibleMonths)
       .select(
-        db.raw("COALESCE(SUM(CAST(project_monthly.revenue AS DECIMAL(14,2))), 0) as total_revenue"),
-        db.raw("COALESCE(SUM(CAST(project_monthly.profit AS DECIMAL(14,2))), 0) as total_profit")
+        db.raw("COALESCE(SUM(CAST(revenue AS DECIMAL(14,2))), 0) as total_revenue"),
+        db.raw("COALESCE(SUM(CAST(profit AS DECIMAL(14,2))), 0) as total_profit")
       );
 
     const revenue = Number.parseFloat(monthlyData[0]?.total_revenue || "0");
@@ -1126,10 +1125,26 @@ export class DatabaseStorage implements IStorage {
 
     const maxMonth = elapsedMonths || 12;
 
+    const vatAliases: Record<string, string[]> = {
+      "DAFF": ["DAFF", "daff"],
+      "SAU": ["SAU", "sau"],
+      "VIC Gov": ["VIC Gov", "Vic Gov", "VIC", "vic gov"],
+      "DISR": ["DISR", "disr"],
+      "GROWTH": ["GROWTH", "Growth", "growth"],
+      "Emerging": ["Emerging", "emerging"],
+      "P&P": ["P&P", "p&p"],
+    };
+    const vatNormalise = (raw: string): string => {
+      for (const [canonical, aliases] of Object.entries(vatAliases)) {
+        if (aliases.includes(raw) || raw.toLowerCase() === canonical.toLowerCase()) return canonical;
+      }
+      return raw;
+    };
+
     const allProjects = await db("projects").select("id", "vat");
     const projectsByVat: Record<string, number[]> = {};
     for (const p of allProjects) {
-      const vat = p.vat || "Other";
+      const vat = vatNormalise(p.vat || "Other");
       if (!projectsByVat[vat]) projectsByVat[vat] = [];
       projectsByVat[vat].push(p.id);
     }
