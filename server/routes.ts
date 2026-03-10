@@ -647,21 +647,12 @@ export function buildJobStatusProjectData(r: any[], projectName: string, codeCou
     endDate: excelDateToString(r[8]),
     workOrderAmount: toNum(r[13]),
     budgetAmount: toNum(r[14]),
-    actualAmount: toNum(r[15]),
-    balanceAmount: toNum(r[16]),
-    forecastedRevenue: toNum(r[18]),
-    forecastedGrossCost: toNum(r[29]),
     contractValue: toNum(r[13]),
     varianceAtCompletion: toNum(r[19]),
-    variancePercent: toDecimal(r[20]),
     varianceToContractPercent: toDecimal(r[21]),
     writeOff: toNum(r[22]),
     opsCommentary: r[23] ? String(r[23]) : null,
     soldGmPercent: toDecimal(r[31]),
-    toDateGrossProfit: toNum(r[30]),
-    toDateGmPercent: toDecimal(r[32]),
-    gpAtCompletion: toNum(r[33]),
-    forecastGmPercent: toDecimal(r[34]),
     description: null,
   };
 }
@@ -1371,9 +1362,6 @@ function extractNumericFields(
   const updates: Record<string, any> = {};
   const numericMap: Array<[number, string]> = [
     [col.workOrderAmount, "work_order_amount"],
-    [col.budget, "budget_amount"],
-    [col.actual, "actual_amount"],
-    [col.balance, "balance_amount"],
   ];
   for (const [idx, key] of numericMap) {
     const val = getNum(r, idx);
@@ -4244,9 +4232,7 @@ async function importJobStatus(ws: XLSX.WorkSheet): Promise<{ imported: number; 
         continue;
       }
       existingNames.add(projectName.toLowerCase());
-      const project = await storage.createProject(buildJobStatusProjectData(r, projectName, codeCounter++));
-      const fyYear = deriveFyYear(excelDateToString(r[7]));
-      await createJobStatusMonthlyData(project, r, fyYear);
+      await storage.createProject(buildJobStatusProjectData(r, projectName, codeCounter++));
       imported++;
     } catch (err: any) {
       errors.push(`Row ${i + 2}: ${err.message}`);

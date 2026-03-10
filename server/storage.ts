@@ -421,6 +421,77 @@ export function buildVatNameList(refVats: Array<{ key: string }>, targetModels: 
   return vatNames;
 }
 
+function fyMonthToCalendarMonth(fyMonth: number, fyYear: string): { year: number; month: number } {
+  const parts = fyYear.split("-");
+  const startYear = 2000 + Number(parts[0]);
+  if (fyMonth <= 6) {
+    return { year: startYear, month: fyMonth + 6 };
+  }
+  return { year: startYear + 1, month: fyMonth - 6 };
+}
+
+function getWeekMondaysForMonth(year: number, month: number): string[] {
+  const mondays: string[] = [];
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+
+  let d = new Date(firstDay);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+
+  while (d <= lastDay) {
+    if (d.getMonth() === month - 1) {
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      mondays.push(key);
+    }
+    d.setDate(d.getDate() + 7);
+  }
+  return mondays;
+}
+
+async function computeResourcePlanForecast(
+  vatName: string,
+  fyYear: string,
+  projectIds: number[],
+  futureMonths: number[],
+): Promise<{ revenue: number; cost: number }> {
+  if (projectIds.length === 0 || futureMonths.length === 0) return { revenue: 0, cost: 0 };
+
+  const plans = await db("resource_plans")
+    .whereIn("project_id", projectIds)
+    .select("project_id", "planned_hours", "discounted_hourly_rate", "hourly_gross_cost", "weekly_allocations");
+
+  let totalRevenue = 0;
+  let totalCost = 0;
+
+  for (const plan of plans) {
+    const hourlyRate = Number(plan.discounted_hourly_rate) || 0;
+    const costRate = Number(plan.hourly_gross_cost) || 0;
+    let allocations: Record<string, number> = {};
+    try {
+      allocations = plan.weekly_allocations ? JSON.parse(plan.weekly_allocations) : {};
+    } catch {
+      continue;
+    }
+
+    if (Object.keys(allocations).length === 0) continue;
+
+    for (const fyMonth of futureMonths) {
+      const { year, month } = fyMonthToCalendarMonth(fyMonth, fyYear);
+      const mondays = getWeekMondaysForMonth(year, month);
+
+      for (const monday of mondays) {
+        const alloc = Number(allocations[monday]) || 0;
+        if (alloc <= 0) continue;
+        const weekHours = (alloc / 100) * 40;
+        totalRevenue += weekHours * hourlyRate;
+        totalCost += weekHours * costRate;
+      }
+    }
+  }
+
+  return { revenue: totalRevenue, cost: totalCost };
+}
+
 async function computeQuarterActuals(
   vatName: string,
   fyYear: string,
@@ -1084,9 +1155,23 @@ export class DatabaseStorage implements IStorage {
           acc[q] = months.filter(m => m > maxMonth);
           return acc;
         }, {});
-      const forecast = Object.keys(forecastMonths).length > 0
-        ? await computeQuarterActuals(vatName, fyYear, projectIds, forecastMonths, 12)
-        : [];
+      let forecast: { quarter: string; revenue: number; gmContribution: number; gmPercent: number }[] = [];
+      if (Object.keys(forecastMonths).length > 0) {
+        const pmForecast = await computeQuarterActuals(vatName, fyYear, projectIds, forecastMonths, 12);
+        forecast = [];
+        for (const qf of pmForecast) {
+          const qMonths = forecastMonths[qf.quarter] || [];
+          const rpForecast = await computeResourcePlanForecast(vatName, fyYear, projectIds, qMonths);
+          const combinedRev = qf.revenue + rpForecast.revenue;
+          const combinedGm = qf.gmContribution + (rpForecast.revenue - rpForecast.cost);
+          forecast.push({
+            quarter: qf.quarter,
+            revenue: combinedRev,
+            gmContribution: combinedGm,
+            gmPercent: combinedRev > 0 ? combinedGm / combinedRev : 0,
+          });
+        }
+      }
       results.push({ vatName, targets: vatTargets, actuals, forecast });
     }
 

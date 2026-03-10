@@ -34,7 +34,7 @@ import { Plus, TrendingUp, TrendingDown, Target, DollarSign, Calendar, ChevronRi
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentFy, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
+import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
 import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -355,34 +355,41 @@ type YtdActuals = {
   totalCost: number;
   totalGP: number;
   elapsedMonths: number;
+  remainingRevenue: number;
+  remainingGP: number;
 };
 
 function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY: string): YtdActuals {
   const monthlyRevenue = new Array(12).fill(0);
   const monthlyGP = new Array(12).fill(0);
   const elapsedMonths = getElapsedFyMonths(selectedFY);
-  const fyInfo = getElapsedFyInfo(selectedFY);
 
-  if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths };
+  if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths, remainingRevenue: 0, remainingGP: 0 };
 
   const fyRows = monthlyData.filter(m => m.fyYear === selectedFY);
   let totalRevenue = 0;
   let totalCost = 0;
+  let remainingRevenue = 0;
+  let remainingGP = 0;
 
   for (const row of fyRows) {
     const month = row.month ?? 0;
-    if (month < 1 || month > 12 || month > elapsedMonths) continue;
+    if (month < 1 || month > 12) continue;
     const rev = Number(row.revenue) || 0;
     const cost = Number(row.cost) || 0;
-    const isPartialMonth = fyInfo.isCurrentFy && month === fyInfo.currentFyMonth;
-    const factor = isPartialMonth ? fyInfo.dayFraction : 1;
-    monthlyRevenue[month - 1] += rev * factor;
-    monthlyGP[month - 1] += (rev - cost) * factor;
-    totalRevenue += rev * factor;
-    totalCost += cost * factor;
+
+    if (month <= elapsedMonths) {
+      monthlyRevenue[month - 1] += rev;
+      monthlyGP[month - 1] += rev - cost;
+      totalRevenue += rev;
+      totalCost += cost;
+    } else {
+      remainingRevenue += rev;
+      remainingGP += rev - cost;
+    }
   }
 
-  return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
+  return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths, remainingRevenue, remainingGP };
 }
 
 function ScenarioMetricValue({ isLoading, value, fallback, testId, className, skeletonWidth = "w-24" }: Readonly<{
@@ -418,8 +425,8 @@ function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, m
   const remaining = computeRemainingPipeline(scenarioResults, ytd.elapsedMonths);
   const pipelineRev = remaining.rev;
   const pipelineGP = remaining.gp;
-  const projectedRev = ytd.totalRevenue + pipelineRev;
-  const projectedGP = ytd.totalGP + pipelineGP;
+  const projectedRev = ytd.totalRevenue + ytd.remainingRevenue + pipelineRev;
+  const projectedGP = ytd.totalGP + ytd.remainingGP + pipelineGP;
   const projectedMargin = projectedRev > 0 ? (projectedGP / projectedRev) * 100 : 0;
   const gap = revenueGoal - projectedRev;
   const meetsGoal = projectedRev >= revenueGoal;
@@ -428,7 +435,7 @@ function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, m
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">YTD Actual Revenue</CardTitle>
@@ -437,6 +444,16 @@ function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, m
           <CardContent>
             <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(ytd.totalRevenue)} fallback="$0" testId="text-ytd-revenue" />
             <p className="text-xs text-muted-foreground">{ytd.elapsedMonths} of 12 months elapsed</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Remaining Contracted</CardTitle>
+            <BarChart3 className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(ytd.remainingRevenue)} fallback="$0" testId="text-remaining-revenue" />
+            <p className="text-xs text-muted-foreground">Contracted revenue for remaining months</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-amber-500">
@@ -456,7 +473,7 @@ function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, m
           </CardHeader>
           <CardContent>
             <ScenarioMetricValue isLoading={isLoading} value={formatCurrency(projectedRev)} fallback="$0" testId="text-projected-revenue" className={meetsGoal ? "text-green-600 dark:text-green-400" : ""} />
-            <p className="text-xs text-muted-foreground">Goal: {formatCurrency(revenueGoal)}</p>
+            <p className="text-xs text-muted-foreground">YTD + Remaining + Pipeline = Goal: {formatCurrency(revenueGoal)}</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-red-500">
@@ -1070,11 +1087,11 @@ export default function Scenarios() {
 
   const ytdActuals = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
 
-  const ytdMarginRatio = ytdActuals.totalRevenue > 0 ? (ytdActuals.totalGP / ytdActuals.totalRevenue) : 0;
+  const gpFallbackRate = 0.20;
 
   const scenarioResults = useMemo(() => computeScenarioResults({
-    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginFallback: ytdMarginRatio,
-  }), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginRatio]);
+    pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, ytdMarginFallback: gpFallbackRate,
+  }), [pipeline, filteredPipeline, winRates, revenueGoal, marginGoal, isOpenOpps, selectedFY, gpFallbackRate]);
 
   const isLoading = loadingPipeline || loadingScenarios || loadingMonthly;
 
@@ -1161,12 +1178,13 @@ export default function Scenarios() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">Expand a classification and use checkboxes to include/exclude individual opportunities</p>
-            {ytdMarginRatio > 0 && (
-              <p className="text-xs text-muted-foreground italic">GP estimated using YTD actual margin ({formatPercent(ytdMarginRatio * 100)}) where pipeline GP data is missing</p>
-            )}
+            <p className="text-xs text-amber-600 dark:text-amber-400 italic flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+              GP estimated using default 20% margin where pipeline GP data is missing
+            </p>
           </CardHeader>
           <CardContent>
-            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={ytdMarginRatio} allFyPipeline={allFyPipeline} excludedOppIds={excludedOppIds} onToggleOpp={toggleOpp} onToggleAllOpps={toggleAllOpps} selectedFY={selectedFY} />
+            <ClassificationBreakdownTable scenarioResults={scenarioResults} winRates={winRates} isLoading={isLoading} isOpenOpps={isOpenOpps} ytdMarginFallback={gpFallbackRate} allFyPipeline={allFyPipeline} excludedOppIds={excludedOppIds} onToggleOpp={toggleOpp} onToggleAllOpps={toggleAllOpps} selectedFY={selectedFY} />
           </CardContent>
         </Card>
 

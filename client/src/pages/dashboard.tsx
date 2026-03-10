@@ -36,19 +36,19 @@ function formatPercent(val: number | null | undefined) {
   return `${(val * 100).toFixed(1)}%`;
 }
 
-function ragColor(actual: number, target: number, warningThreshold = 0.8): string {
+function ragColor(actual: number, target: number, warningThreshold = 0.9): string {
   if (actual >= target) return "text-green-600 dark:text-green-400";
   if (actual >= target * warningThreshold) return "text-amber-500 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
 }
 
-function ragBg(actual: number, target: number, warningThreshold = 0.8): string {
+function ragBg(actual: number, target: number, warningThreshold = 0.9): string {
   if (actual >= target) return "bg-green-500/15 border-green-500/30";
   if (actual >= target * warningThreshold) return "bg-amber-500/15 border-amber-500/30";
   return "bg-red-500/15 border-red-500/30";
 }
 
-function RagDot({ actual, target, warningThreshold = 0.8 }: Readonly<{ actual: number; target: number; warningThreshold?: number }>) {
+function RagDot({ actual, target, warningThreshold = 0.9 }: Readonly<{ actual: number; target: number; warningThreshold?: number }>) {
   let color = "bg-green-500";
   if (actual < target * warningThreshold) color = "bg-red-500";
   else if (actual < target) color = "bg-amber-500";
@@ -153,18 +153,11 @@ export default function Dashboard() {
     let rev = 0;
     let cost = 0;
     for (const m of ytdProjectMonthly) {
-      const mRev = Number.parseFloat(m.revenue || "0");
-      const mCost = Number.parseFloat(m.cost || "0");
-      if (fyInfo.isCurrentFy && (m.month ?? 0) === fyInfo.currentFyMonth) {
-        rev += mRev * fyInfo.dayFraction;
-        cost += mCost * fyInfo.dayFraction;
-      } else {
-        rev += mRev;
-        cost += mCost;
-      }
+      rev += Number.parseFloat(m.revenue || "0");
+      cost += Number.parseFloat(m.cost || "0");
     }
     return { totalRevenue: rev, totalCosts: cost };
-  }, [ytdProjectMonthly, fyInfo]);
+  }, [ytdProjectMonthly]);
 
   const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCosts) / totalRevenue : 0;
 
@@ -190,13 +183,11 @@ export default function Dashboard() {
     ytdProjectMonthly.forEach(m => {
       const billing = projectBillingMap.get(m.projectId) || "Other";
       if (!result[billing]) result[billing] = { revenue: 0, cost: 0 };
-      const isPartialMonth = fyInfo.isCurrentFy && (m.month ?? 0) === fyInfo.currentFyMonth;
-      const factor = isPartialMonth ? fyInfo.dayFraction : 1;
-      result[billing].revenue += Number.parseFloat(m.revenue || "0") * factor;
-      result[billing].cost += Number.parseFloat(m.cost || "0") * factor;
+      result[billing].revenue += Number.parseFloat(m.revenue || "0");
+      result[billing].cost += Number.parseFloat(m.cost || "0");
     });
     return result;
-  }, [ytdProjectMonthly, projectBillingMap, fyInfo]);
+  }, [ytdProjectMonthly, projectBillingMap]);
 
   const fixedRevenue = billingBreakdown["Fixed"]?.revenue || 0;
   const fixedCost = billingBreakdown["Fixed"]?.cost || 0;
@@ -220,14 +211,37 @@ export default function Dashboard() {
     .filter(d => d.revenue > 0)
     .map(d => ({ name: `${d.classification} - ${d.name}`, value: d.revenue, color: CLASSIFICATION_COLORS[d.classification] }));
 
-  const monthlyTrendData = FY_MONTHS.map((month, mi) => {
-    const monthNum = mi + 1;
-    const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
-    const revenue = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
-    const cost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
-    const profit = revenue - cost;
-    return { month, revenue, cost, profit };
-  });
+  const monthlyTrendData = useMemo(() => {
+    let avgRevenue = 0;
+    let avgCost = 0;
+    if (elapsedMonths > 0) {
+      let totRev = 0;
+      let totCost = 0;
+      for (let m = 1; m <= elapsedMonths; m++) {
+        const recs = fyProjectMonthly.filter(r => r.month === m);
+        totRev += recs.reduce((s, r) => s + Number.parseFloat(r.revenue || "0"), 0);
+        totCost += recs.reduce((s, r) => s + Number.parseFloat(r.cost || "0"), 0);
+      }
+      avgRevenue = totRev / elapsedMonths;
+      avgCost = totCost / elapsedMonths;
+    }
+
+    return FY_MONTHS.map((month, mi) => {
+      const monthNum = mi + 1;
+      const monthlyRecords = fyProjectMonthly.filter(m => m.month === monthNum);
+      const actualRevenue = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
+      const actualCost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
+      const isElapsed = monthNum <= elapsedMonths;
+
+      if (isElapsed) {
+        return { month, revenue: actualRevenue, cost: actualCost, profit: actualRevenue - actualCost, projectedRevenue: null as number | null, projectedCost: null as number | null, projectedProfit: null as number | null };
+      }
+
+      const futureRev = actualRevenue > 0 ? actualRevenue : avgRevenue;
+      const futureCost = actualCost > 0 ? actualCost : avgCost;
+      return { month, revenue: null as number | null, cost: null as number | null, profit: null as number | null, projectedRevenue: futureRev, projectedCost: futureCost, projectedProfit: futureRev - futureCost };
+    });
+  }, [fyProjectMonthly, elapsedMonths]);
 
   const cumulativeYTDData = useMemo(() => {
     const monthlyTarget = REVENUE_TARGET / 12;
@@ -242,10 +256,8 @@ export default function Dashboard() {
       const cost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
       cumTarget += monthlyTarget;
       if (isElapsed) {
-        const isPartialMonth = fyInfo.isCurrentFy && monthNum === fyInfo.currentFyMonth;
-        const factor = isPartialMonth ? fyInfo.dayFraction : 1;
-        cumRevenue += revenue * factor;
-        cumCost += cost * factor;
+        cumRevenue += revenue;
+        cumCost += cost;
       }
       return {
         month,
@@ -255,7 +267,7 @@ export default function Dashboard() {
         cumTarget,
       };
     });
-  }, [fyProjectMonthly, elapsedMonths, fyInfo, REVENUE_TARGET]);
+  }, [fyProjectMonthly, elapsedMonths, REVENUE_TARGET]);
 
   const isLoading = loadingProjects || loadingEmployees || loadingUtil || loadingPipeline || loadingMonthly;
 
@@ -407,9 +419,12 @@ export default function Dashboard() {
                   <YAxis tickFormatter={(v) => formatCurrency(v)} className="text-xs" tick={{ fontSize: 10 }} width={50} />
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
                   <Legend wrapperStyle={{ fontSize: "11px" }} />
-                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
-                  <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} />
-                  <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} />
+                  <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} connectNulls={false} />
+                  <Area type="monotone" dataKey="cost" name="Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.1} strokeWidth={2} connectNulls={false} />
+                  <Area type="monotone" dataKey="profit" name="Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} strokeWidth={2} connectNulls={false} />
+                  <Area type="monotone" dataKey="projectedRevenue" name="Projected Revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.08} strokeWidth={2} strokeDasharray="6 3" connectNulls={false} />
+                  <Area type="monotone" dataKey="projectedCost" name="Projected Cost" stroke="#ef4444" fill="#ef4444" fillOpacity={0.05} strokeWidth={2} strokeDasharray="6 3" connectNulls={false} />
+                  <Area type="monotone" dataKey="projectedProfit" name="Projected Profit" stroke="#16a34a" fill="#16a34a" fillOpacity={0.05} strokeWidth={2} strokeDasharray="6 3" connectNulls={false} />
                 </AreaChart>
               </ResponsiveContainer>
             )}

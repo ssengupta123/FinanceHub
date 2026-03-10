@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getElapsedFyMonths } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -58,20 +58,20 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
 function gpRagColor(gpPercent: number): string {
-  if (gpPercent >= 20) return "bg-green-500";
-  if (gpPercent >= 10) return "bg-amber-500";
+  if (gpPercent >= 30) return "bg-green-500";
+  if (gpPercent >= 15) return "bg-amber-500";
   return "bg-red-500";
 }
 
 function gmColorClass(gm: number): string {
-  if (gm >= 20) return "text-green-600 dark:text-green-400";
-  if (gm >= 10) return "text-yellow-600 dark:text-yellow-400";
+  if (gm >= 30) return "text-green-600 dark:text-green-400";
+  if (gm >= 15) return "text-yellow-600 dark:text-yellow-400";
   return "text-red-600 dark:text-red-400";
 }
 
 function gpPercentColorClass(gpPercent: number): string {
-  if (gpPercent >= 40) return "text-green-600 dark:text-green-400";
-  if (gpPercent >= 20) return "text-yellow-600 dark:text-yellow-400";
+  if (gpPercent >= 30) return "text-green-600 dark:text-green-400";
+  if (gpPercent >= 15) return "text-yellow-600 dark:text-yellow-400";
   return "text-red-600 dark:text-red-400";
 }
 
@@ -114,27 +114,21 @@ function buildClientRows(
   fyProjects: Project[],
   monthlyByProject: Map<number, ProjectMonthly[]>,
   elapsedMonths: number,
-  fyInfo?: { isCurrentFy: boolean; currentFyMonth: number; dayFraction: number },
 ): ClientRow[] {
   return fyProjects.map((p) => {
     const rows = monthlyByProject.get(p.id) || [];
 
-    const dayFactor = (month: number) => {
-      if (fyInfo?.isCurrentFy && month === fyInfo.currentFyMonth) return fyInfo.dayFraction;
-      return 1;
-    };
-
     const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
       rows
         .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
-        .reduce((s, r) => s + parseNum(r[field]) * dayFactor(r.month ?? 0), 0);
+        .reduce((s, r) => s + parseNum(r[field]), 0);
 
     const q1Rev = sumRange(1, 3, "revenue");
     const q2Rev = sumRange(4, 6, "revenue");
     const q3Rev = sumRange(7, 9, "revenue");
     const q4Rev = sumRange(10, 12, "revenue");
     const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
-    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost) * dayFactor(r.month ?? 0), 0);
+    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
     const ytdGP = ytdRevenue - ytdCost;
     const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
 
@@ -166,8 +160,8 @@ function gpCardClassName(isLoading: boolean, totalGP: number): string {
 
 function computeGpMarginBorder(loading: boolean, gpPercent: number): string {
   if (loading) return "";
-  if (gpPercent >= 20) return "border-green-500/50";
-  if (gpPercent >= 10) return "border-amber-500/50";
+  if (gpPercent >= 30) return "border-green-500/50";
+  if (gpPercent >= 15) return "border-amber-500/50";
   return "border-red-500/50";
 }
 
@@ -283,7 +277,6 @@ export default function FinanceDashboard() {
   const isCol = (key: FinanceColumnKey) => visibleColumns.has(key);
 
   const elapsedMonths = getElapsedFyMonths(selectedFY);
-  const fyInfo = getElapsedFyInfo(selectedFY);
 
   const monthlyByProject = new Map<number, ProjectMonthly[]>();
   fyMonthlyData.forEach((m) => {
@@ -292,7 +285,7 @@ export default function FinanceDashboard() {
     monthlyByProject.set(m.projectId, list);
   });
 
-  const clientRows = buildClientRows(fyProjects, monthlyByProject, elapsedMonths, fyInfo);
+  const clientRows = buildClientRows(fyProjects, monthlyByProject, elapsedMonths);
 
   clientRows.sort((a, b) => getStatusOrder(a.status) - getStatusOrder(b.status) || a.client.localeCompare(b.client));
 

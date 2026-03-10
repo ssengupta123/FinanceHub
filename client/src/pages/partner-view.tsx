@@ -212,7 +212,9 @@ export default function PartnerView() {
 
   const partnerOpps = useMemo(() => {
     return allOpps.filter(o => {
-      if (!o.partner || o.partner.trim() === "" || o.partner === "(blank)") return false;
+      const hasPartnerField = o.partner && o.partner.trim() !== "" && o.partner !== "(blank)";
+      const hasPartnerCategory = o.category && o.category.toLowerCase().includes("partner");
+      if (!hasPartnerField && !hasPartnerCategory) return false;
       if (selectedFy !== "all" && o.fyYear && o.fyYear !== selectedFy) return false;
       return true;
     });
