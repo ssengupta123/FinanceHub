@@ -168,22 +168,7 @@ export default function ResourceAllocation() {
   const empMap = useMemo(() => new Map(employees?.map(e => [e.id, e]) || []), [employees]);
   const projMap = useMemo(() => new Map(projects?.map(p => [p.id, p]) || []), [projects]);
 
-  const earliestDate = useMemo(() => {
-    if (!plans?.length) return new Date();
-    let earliest = new Date();
-    for (const rp of plans) {
-      const monthDate = new Date(typeof rp.month === "string" ? rp.month : rp.month as any);
-      if (!Number.isNaN(monthDate.getTime()) && monthDate < earliest) earliest = monthDate;
-      const allocs = parseAllocations(rp);
-      for (const k of Object.keys(allocs)) {
-        const d = new Date(k);
-        if (d < earliest) earliest = d;
-      }
-    }
-    return earliest;
-  }, [plans]);
-
-  const weeks = useMemo(() => getWeekDates(earliestDate, numWeeks), [earliestDate, numWeeks]);
+  const weeks = useMemo(() => getWeekDates(new Date(), numWeeks), [numWeeks]);
 
   const resources = useMemo((): ResourceSummary[] => {
     if (!plans?.length) return [];
