@@ -384,20 +384,20 @@ function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY
   return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
 }
 
-function computeRemainingContracted(projects: Project[] | undefined): { remainingRevenue: number; remainingGP: number } {
+function computeRemainingContracted(projects: Project[] | undefined, ytdRevenue: number): { remainingRevenue: number; remainingGP: number } {
   if (!projects) return { remainingRevenue: 0, remainingGP: 0 };
-  let remainingRevenue = 0;
-  let remainingGP = 0;
+  let totalSold = 0;
+  let weightedGmSum = 0;
   for (const p of projects) {
-    if (p.status === "closed" || p.status === "Closed" || p.adStatus === "Closed") continue;
-    const budget = Number(p.budgetAmount) || 0;
-    const actual = Number(p.actualAmount) || 0;
-    const remaining = Math.max(0, budget - actual);
-    if (remaining <= 0) continue;
+    const cv = Number(p.contractValue) || 0;
+    if (cv <= 0) continue;
+    totalSold += cv;
     const gmPercent = Number(p.toDateGmPercent) || 0;
-    remainingRevenue += remaining;
-    remainingGP += remaining * (gmPercent / 100);
+    weightedGmSum += cv * (gmPercent / 100);
   }
+  const remainingRevenue = Math.max(0, totalSold - ytdRevenue);
+  const avgGm = totalSold > 0 ? weightedGmSum / totalSold : 0;
+  const remainingGP = remainingRevenue * avgGm;
   return { remainingRevenue, remainingGP };
 }
 
@@ -1096,7 +1096,7 @@ export default function Scenarios() {
   const isOpenOpps = selectedFY === "open_opps";
 
   const ytdBase = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
-  const remaining = useMemo(() => computeRemainingContracted(projects), [projects]);
+  const remaining = useMemo(() => computeRemainingContracted(projects, ytdBase.totalRevenue), [projects, ytdBase.totalRevenue]);
   const ytdActuals: YtdActuals = useMemo(() => ({
     ...ytdBase,
     remainingRevenue: remaining.remainingRevenue,
