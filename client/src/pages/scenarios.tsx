@@ -1095,8 +1095,18 @@ export default function Scenarios() {
 
   const isOpenOpps = selectedFY === "open_opps";
 
+  const fyProjectIds = useMemo(() => {
+    if (!monthlyData) return new Set<number>();
+    return new Set(monthlyData.filter(m => m.fyYear === selectedFY).map(m => m.projectId));
+  }, [monthlyData, selectedFY]);
+
+  const fyProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects.filter(p => fyProjectIds.has(p.id));
+  }, [projects, fyProjectIds]);
+
   const ytdBase = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
-  const remaining = useMemo(() => computeRemainingContracted(projects, ytdBase.totalRevenue), [projects, ytdBase.totalRevenue]);
+  const remaining = useMemo(() => computeRemainingContracted(fyProjects, ytdBase.totalRevenue), [fyProjects, ytdBase.totalRevenue]);
   const ytdActuals: YtdActuals = useMemo(() => ({
     ...ytdBase,
     remainingRevenue: remaining.remainingRevenue,
