@@ -95,10 +95,12 @@ function processResourcePlans(
   for (const rp of plans) {
     const emp = empMap.get(rp.employeeId);
     if (!emp || emp.status === "inactive") continue;
-    if (staffTypeFilter !== "All") {
-      const empStaffType = emp.staffType || "Permanent";
-      if (empStaffType !== staffTypeFilter) continue;
+    const empStaffType = emp.staffType || "Permanent";
+    if (empStaffType === "Contractor") {
+      const endDate = emp.endDate || emp.scheduleEnd;
+      if (endDate && new Date(endDate) < new Date()) continue;
     }
+    if (staffTypeFilter !== "All" && empStaffType !== staffTypeFilter) continue;
     const proj = projMap.get(rp.projectId);
     if (proj && (proj.status === "closed" || proj.status === "completed")) continue;
 
