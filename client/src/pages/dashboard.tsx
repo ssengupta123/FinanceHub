@@ -326,7 +326,7 @@ export default function Dashboard() {
         <Link href="/utilization?filter=bench" className="block">
           <Card className={`border cursor-pointer hover-elevate ${ragBg(avgUtilization, UTILIZATION_TARGET)}`} data-testid="card-utilisation-link">
             <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 sm:pb-2 p-3 sm:p-6">
-              <CardTitle className="text-xs sm:text-sm font-medium">Utilisation</CardTitle>
+              <CardTitle className="text-xs sm:text-sm font-medium">CSD Utilisation</CardTitle>
               <RagDot actual={avgUtilization} target={UTILIZATION_TARGET} />
             </CardHeader>
             <CardContent className="p-3 sm:p-6 pt-0">

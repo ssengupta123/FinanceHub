@@ -2329,10 +2329,12 @@ export async function registerRoutes(
         const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
         const fyStart = `${fyStartYear}-07-01`;
         const fyEnd = `${fyStartYear + 1}-07-01`;
+        // Dashboard utilisation is CSD (team = 'CSD') only
         const result = await db.raw(`
           SELECT
             (SELECT COUNT(*) FROM employees
              WHERE staff_type = 'Permanent' AND status != 'inactive'
+             AND team = 'CSD'
              AND first_name NOT LIKE 'Perm-%' AND first_name NOT LIKE 'Contractor-%' AND first_name != 'Contingency'
             ) as total_permanent,
             (SELECT COUNT(DISTINCT t.employee_id)
@@ -2340,6 +2342,7 @@ export async function registerRoutes(
              JOIN employees e ON e.id = t.employee_id
              JOIN projects p ON p.id = t.project_id
              WHERE e.staff_type = 'Permanent' AND e.status != 'inactive'
+             AND e.team = 'CSD'
              AND e.first_name NOT LIKE 'Perm-%' AND e.first_name NOT LIKE 'Contractor-%' AND e.first_name != 'Contingency'
              AND p.client != 'Internal' AND p.client != 'RGT'
              AND (p.status = 'active' OR p.ad_status = 'Active')
