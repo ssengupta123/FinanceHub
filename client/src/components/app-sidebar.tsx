@@ -11,7 +11,7 @@ import {
   Clock,
   Receipt,
   Target,
-  LineChart,
+
   Database,
   FlaskConical,
   GitBranch,
@@ -72,7 +72,7 @@ const navGroups = [
     items: [
       { title: "Pipeline", icon: GitBranch, path: "/pipeline", resource: "pipeline" },
       { title: "What-If Scenarios", icon: FlaskConical, path: "/scenarios", resource: "scenarios" },
-      { title: "Forecasts", icon: LineChart, path: "/forecasts", resource: "forecasts" },
+
       { title: "AI Insights", icon: Sparkles, path: "/ai-insights", resource: "ai_insights" },
       { title: "VAT Reports", icon: FileText, path: "/vat-reports", resource: "vat_reports" },
       { title: "VAT Overview", icon: Target, path: "/vat-overview", resource: "vat_overview" },

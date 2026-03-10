@@ -24,7 +24,7 @@ import ResourceAllocation from "@/pages/resource-allocation";
 import Timesheets from "@/pages/timesheets";
 import Costs from "@/pages/costs";
 import Milestones from "@/pages/milestones";
-import Forecasts from "@/pages/forecasts";
+
 import Pipeline from "@/pages/pipeline";
 import WhatIfScenarios from "@/pages/scenarios";
 import DataSources from "@/pages/data-sources";
@@ -53,7 +53,7 @@ function Router() {
       <Route path="/timesheets" component={Timesheets} />
       <Route path="/costs" component={Costs} />
       <Route path="/milestones" component={Milestones} />
-      <Route path="/forecasts" component={Forecasts} />
+
       <Route path="/pipeline" component={Pipeline} />
       <Route path="/scenarios" component={WhatIfScenarios} />
       <Route path="/data-sources" component={DataSources} />
