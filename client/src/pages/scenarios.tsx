@@ -35,7 +35,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentFy, getElapsedFyMonths } from "@/lib/fy-utils";
-import type { PipelineOpportunity, Scenario, ProjectMonthly } from "@shared/schema";
+import type { PipelineOpportunity, Scenario, ProjectMonthly, Project } from "@shared/schema";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 const CLASSIFICATIONS = ["S", "DVF", "DF", "Q", "A"];
@@ -359,37 +359,44 @@ type YtdActuals = {
   remainingGP: number;
 };
 
-function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY: string): YtdActuals {
+function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY: string): Omit<YtdActuals, 'remainingRevenue' | 'remainingGP'> {
   const monthlyRevenue = new Array(12).fill(0);
   const monthlyGP = new Array(12).fill(0);
   const elapsedMonths = getElapsedFyMonths(selectedFY);
 
-  if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths, remainingRevenue: 0, remainingGP: 0 };
+  if (!monthlyData) return { monthlyRevenue, monthlyGP, totalRevenue: 0, totalCost: 0, totalGP: 0, elapsedMonths };
 
   const fyRows = monthlyData.filter(m => m.fyYear === selectedFY);
   let totalRevenue = 0;
   let totalCost = 0;
-  let remainingRevenue = 0;
-  let remainingGP = 0;
 
   for (const row of fyRows) {
     const month = row.month ?? 0;
-    if (month < 1 || month > 12) continue;
+    if (month < 1 || month > 12 || month > elapsedMonths) continue;
     const rev = Number(row.revenue) || 0;
     const cost = Number(row.cost) || 0;
-
-    if (month <= elapsedMonths) {
-      monthlyRevenue[month - 1] += rev;
-      monthlyGP[month - 1] += rev - cost;
-      totalRevenue += rev;
-      totalCost += cost;
-    } else {
-      remainingRevenue += rev;
-      remainingGP += rev - cost;
-    }
+    monthlyRevenue[month - 1] += rev;
+    monthlyGP[month - 1] += rev - cost;
+    totalRevenue += rev;
+    totalCost += cost;
   }
 
-  return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths, remainingRevenue, remainingGP };
+  return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
+}
+
+function computeRemainingContracted(projects: Project[] | undefined): { remainingRevenue: number; remainingGP: number } {
+  if (!projects) return { remainingRevenue: 0, remainingGP: 0 };
+  let remainingRevenue = 0;
+  let remainingGP = 0;
+  for (const p of projects) {
+    if (p.status === "closed" || p.status === "Closed" || p.adStatus === "Closed") continue;
+    const balance = Number(p.balanceAmount) || 0;
+    if (balance <= 0) continue;
+    const gmPercent = Number(p.toDateGmPercent) || 0;
+    remainingRevenue += balance;
+    remainingGP += balance * (gmPercent / 100);
+  }
+  return { remainingRevenue, remainingGP };
 }
 
 function ScenarioMetricValue({ isLoading, value, fallback, testId, className, skeletonWidth = "w-24" }: Readonly<{
@@ -995,6 +1002,7 @@ export default function Scenarios() {
   const { data: scenarios, isLoading: loadingScenarios } = useQuery<Scenario[]>({ queryKey: ["/api/scenarios"] });
   const { data: refData } = useQuery<ReferenceData[]>({ queryKey: ["/api/reference-data"] });
   const { data: monthlyData, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({ queryKey: ["/api/project-monthly"] });
+  const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
 
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
   const [winRates, setWinRates] = useState<Record<string, number>>({ ...DEFAULT_WIN_RATES });
@@ -1085,7 +1093,13 @@ export default function Scenarios() {
 
   const isOpenOpps = selectedFY === "open_opps";
 
-  const ytdActuals = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
+  const ytdBase = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
+  const remaining = useMemo(() => computeRemainingContracted(projects), [projects]);
+  const ytdActuals: YtdActuals = useMemo(() => ({
+    ...ytdBase,
+    remainingRevenue: remaining.remainingRevenue,
+    remainingGP: remaining.remainingGP,
+  }), [ytdBase, remaining]);
 
   const gpFallbackRate = 0.20;
 
