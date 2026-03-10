@@ -127,6 +127,7 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: "billing", label: "Billing" },
   { key: "adStatus", label: "A/D Status" },
   { key: "workOrder", label: "Work Order ($)" },
+  { key: "budget", label: "Budget ($)" },
   { key: "actual", label: "Actual ($)" },
   { key: "balance", label: "Balance ($)" },
   { key: "forecastRev", label: "Forecast Rev ($)" },
@@ -282,11 +283,12 @@ export default function ProjectsList() {
     return filteredProjects.reduce(
       (acc, p) => ({
         workOrder: acc.workOrder + parseNum(p.workOrderAmount),
+        budget: acc.budget + parseNum(p.budgetAmount),
         actual: acc.actual + parseNum(p.actualAmount),
         balance: acc.balance + parseNum(p.balanceAmount),
         forecastRev: acc.forecastRev + parseNum(p.forecastedRevenue),
       }),
-      { workOrder: 0, actual: 0, balance: 0, forecastRev: 0 }
+      { workOrder: 0, budget: 0, actual: 0, balance: 0, forecastRev: 0 }
     );
   }, [filteredProjects]);
 
@@ -680,6 +682,7 @@ export default function ProjectsList() {
                     {isCol("billing") && <TableHead className="whitespace-nowrap">Billing</TableHead>}
                     {isCol("adStatus") && <TableHead className="whitespace-nowrap">A/D Status</TableHead>}
                     {isCol("workOrder") && <TableHead className="text-right whitespace-nowrap">Work Order ($)</TableHead>}
+                    {isCol("budget") && <TableHead className="text-right whitespace-nowrap">Budget ($)</TableHead>}
                     {isCol("actual") && <TableHead className="text-right whitespace-nowrap">Actual ($)</TableHead>}
                     {isCol("balance") && <TableHead className="text-right whitespace-nowrap">Balance ($)</TableHead>}
                     {isCol("forecastRev") && <TableHead className="text-right whitespace-nowrap">Forecast Rev ($)</TableHead>}
@@ -761,6 +764,15 @@ export default function ProjectsList() {
                             data-testid={`text-work-order-${project.id}`}
                           >
                             {formatCurrency(project.workOrderAmount)}
+                          </TableCell>
+                        )}
+                        {isCol("budget") && (
+                          <TableCell
+                            className="text-right"
+                            onClick={() => navigate(`/projects/${project.id}`)}
+                            data-testid={`text-budget-${project.id}`}
+                          >
+                            {formatCurrency(project.budgetAmount)}
                           </TableCell>
                         )}
                         {isCol("actual") && (
@@ -866,6 +878,11 @@ export default function ProjectsList() {
                       {isCol("workOrder") && (
                         <TableCell className="text-right font-semibold" data-testid="text-total-work-order">
                           {formatCurrency(totals.workOrder)}
+                        </TableCell>
+                      )}
+                      {isCol("budget") && (
+                        <TableCell className="text-right font-semibold" data-testid="text-total-budget">
+                          {formatCurrency(totals.budget)}
                         </TableCell>
                       )}
                       {isCol("actual") && (
