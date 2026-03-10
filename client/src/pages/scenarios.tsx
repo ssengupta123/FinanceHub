@@ -384,21 +384,21 @@ function computeYtdActuals(monthlyData: ProjectMonthly[] | undefined, selectedFY
   return { monthlyRevenue, monthlyGP, totalRevenue, totalCost, totalGP: totalRevenue - totalCost, elapsedMonths };
 }
 
-function computeRemainingContracted(projects: Project[] | undefined, ytdRevenue: number): { remainingRevenue: number; remainingGP: number } {
+function computeRemainingContracted(projects: Project[] | undefined): { remainingRevenue: number; remainingGP: number } {
   if (!projects) return { remainingRevenue: 0, remainingGP: 0 };
-  let totalBudget = 0;
-  let weightedGmSum = 0;
+  let remainingRevenue = 0;
+  let remainingGP = 0;
   for (const p of projects) {
     if (p.status === "closed" || p.status === "Closed" || p.adStatus === "Closed") continue;
     const budget = Number(p.budgetAmount) || 0;
-    if (budget <= 0) continue;
+    const actual = Number(p.actualAmount) || 0;
+    const remaining = Math.max(0, budget - actual);
+    if (remaining <= 0) continue;
     const gmPercent = Number(p.toDateGmPercent) || 0;
-    totalBudget += budget;
-    weightedGmSum += budget * (gmPercent / 100);
+    remainingRevenue += remaining;
+    remainingGP += remaining * (gmPercent / 100);
   }
-  const remaining = Math.max(0, totalBudget - ytdRevenue);
-  const avgGm = totalBudget > 0 ? weightedGmSum / totalBudget : 0;
-  return { remainingRevenue: remaining, remainingGP: remaining * avgGm };
+  return { remainingRevenue, remainingGP };
 }
 
 function ScenarioMetricValue({ isLoading, value, fallback, testId, className, skeletonWidth = "w-24" }: Readonly<{
@@ -1096,7 +1096,7 @@ export default function Scenarios() {
   const isOpenOpps = selectedFY === "open_opps";
 
   const ytdBase = useMemo(() => computeYtdActuals(monthlyData, selectedFY), [monthlyData, selectedFY]);
-  const remaining = useMemo(() => computeRemainingContracted(projects, ytdBase.totalRevenue), [projects, ytdBase.totalRevenue]);
+  const remaining = useMemo(() => computeRemainingContracted(projects), [projects]);
   const ytdActuals: YtdActuals = useMemo(() => ({
     ...ytdBase,
     remainingRevenue: remaining.remainingRevenue,

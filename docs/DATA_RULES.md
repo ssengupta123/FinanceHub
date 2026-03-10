@@ -66,7 +66,7 @@ Projected Total = YTD Actual Revenue + Remaining Contracted Revenue + Pipeline W
 
 **Components:**
 - **YTD Actual Revenue:** Sum of `project_monthly` revenue for all elapsed FY months
-- **Remaining Contracted Revenue:** Total budgeted amount across active (non-closed) projects minus YTD actual revenue. GP is estimated using a weighted average of each project's to-date GM%. This represents the portion of budgeted revenue not yet realised.
+- **Remaining Contracted Revenue:** For each active (non-closed) project: `max(0, budget - actual)`. Summed across all projects. GP is estimated per project using its to-date GM%. This represents the undelivered contract value per project.
 
 ### Cost Derivation from Job Plans
 When deriving project financials from timesheets, cost is calculated using the **daily gross cost rate** from resource plans (job plans), not the `cost_value` stored on individual timesheet entries:
