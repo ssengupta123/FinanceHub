@@ -88,12 +88,17 @@ function processResourcePlans(
   plans: ResourcePlan[],
   empMap: Map<number, Employee>,
   projMap: Map<number, Project>,
+  staffTypeFilter: string,
 ): Map<number, ResourceSummary> {
   const byEmployee = new Map<number, ResourceSummary>();
 
   for (const rp of plans) {
     const emp = empMap.get(rp.employeeId);
     if (!emp || emp.status === "inactive") continue;
+    if (staffTypeFilter !== "All") {
+      const empStaffType = emp.staffType || "Permanent";
+      if (empStaffType !== staffTypeFilter) continue;
+    }
     const proj = projMap.get(rp.projectId);
     if (proj && (proj.status === "closed" || proj.status === "completed")) continue;
 
@@ -158,6 +163,7 @@ function formatOverallocatedText(count: number): string {
 
 export default function ResourceAllocation() {
   const [numWeeks, setNumWeeks] = useState(26);
+  const [staffTypeFilter, setStaffTypeFilter] = useState("Permanent");
   const [filterOveralloc, setFilterOveralloc] = useState(false);
   const [expandedResources, setExpandedResources] = useState<Record<number, boolean>>({});
 
@@ -172,10 +178,10 @@ export default function ResourceAllocation() {
 
   const resources = useMemo((): ResourceSummary[] => {
     if (!plans?.length) return [];
-    const byEmployee = processResourcePlans(plans, empMap, projMap);
+    const byEmployee = processResourcePlans(plans, empMap, projMap, staffTypeFilter);
     const visibleKeys = new Set(weeks.map(w => getWeekKey(w)));
     return finalizeResources(byEmployee, plans, visibleKeys);
-  }, [plans, empMap, projMap, weeks]);
+  }, [plans, empMap, projMap, weeks, staffTypeFilter]);
 
   const displayed = filterOveralloc ? resources.filter(r => r.overallocatedWeeks > 0) : resources;
   const totalOverallocated = resources.filter(r => r.overallocatedWeeks > 0).length;
@@ -199,6 +205,16 @@ export default function ResourceAllocation() {
           <p className="text-sm text-muted-foreground">Cross-project resource view with overallocation detection</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={staffTypeFilter} onValueChange={setStaffTypeFilter}>
+            <SelectTrigger className="w-[150px] h-8 text-sm" data-testid="select-staff-type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Permanent">Permanent</SelectItem>
+              <SelectItem value="Contractor">Contractors</SelectItem>
+              <SelectItem value="All">All Staff</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={String(numWeeks)} onValueChange={v => setNumWeeks(Number(v))}>
             <SelectTrigger className="w-[130px] h-8 text-sm" data-testid="select-weeks-range">
               <SelectValue />
