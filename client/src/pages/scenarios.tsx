@@ -389,11 +389,11 @@ function computeRemainingContracted(projects: Project[] | undefined, ytdRevenue:
   let totalSold = 0;
   let weightedGmSum = 0;
   for (const p of projects) {
-    const cv = Number(p.contractValue) || 0;
-    if (cv <= 0) continue;
-    totalSold += cv;
+    const budget = Number(p.budgetAmount) || 0;
+    if (budget <= 0) continue;
+    totalSold += budget;
     const gmPercent = Number(p.toDateGmPercent) || 0;
-    weightedGmSum += cv * (gmPercent / 100);
+    weightedGmSum += budget * (gmPercent / 100);
   }
   const remainingRevenue = Math.max(0, totalSold - ytdRevenue);
   const avgGm = totalSold > 0 ? weightedGmSum / totalSold : 0;

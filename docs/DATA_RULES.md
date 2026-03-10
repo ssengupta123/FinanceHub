@@ -66,7 +66,7 @@ Projected Total = YTD Actual Revenue + Remaining Contracted Revenue + Pipeline W
 
 **Components:**
 - **YTD Actual Revenue:** Sum of `project_monthly` revenue for all elapsed FY months
-- **Remaining Contracted Revenue:** Total Sold (sum of `contractValue` across FY projects — same as the Dashboard "Sold" card) minus YTD Actual Revenue. Formula: `Remaining = Sold - YTD Revenue`. GP uses a weighted average GM% across projects.
+- **Remaining Contracted Revenue:** Total Sold (sum of `budgetAmount` across FY projects — same as the Dashboard "Sold" card) minus YTD Actual Revenue. Formula: `Remaining = Sold - YTD Revenue`. GP uses a weighted average GM% across projects.
 
 ### Cost Derivation from Job Plans
 When deriving project financials from timesheets, cost is calculated using the **daily gross cost rate** from resource plans (job plans), not the `cost_value` stored on individual timesheet entries:

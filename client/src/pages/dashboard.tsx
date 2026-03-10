@@ -147,7 +147,7 @@ export default function Dashboard() {
 
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
 
-  const totalContracted = fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.contractValue || "0"), 0);
+  const totalContracted = fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.budgetAmount || "0"), 0);
 
   const { totalRevenue, totalCosts } = useMemo(() => {
     let rev = 0;
