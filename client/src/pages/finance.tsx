@@ -297,7 +297,7 @@ export default function FinanceDashboard() {
       const monthRecords = fyMonthlyData.filter(m => m.month === monthNum);
       const revenue = monthRecords.reduce((s, m) => s + parseNum(m.revenue), 0);
       const cost = monthRecords.reduce((s, m) => s + parseNum(m.cost), 0);
-      const profit = monthRecords.reduce((s, m) => s + parseNum(m.profit), 0);
+      const profit = revenue - cost;
       const gm = revenue > 0 ? (profit / revenue) * 100 : 0;
       return { revenue, cost, profit, gm };
     });
