@@ -67,6 +67,13 @@ Projected Total = YTD Actual Revenue + Remaining Contracted Revenue + Pipeline W
 **Components:**
 - **YTD Actual Revenue:** Sum of `project_monthly` revenue for all elapsed FY months
 - **Remaining Contracted Revenue:** Total budgeted amount across active (non-closed) projects minus YTD actual revenue. GP is estimated using a weighted average of each project's to-date GM%. This represents the portion of budgeted revenue not yet realised.
+
+### Cost Derivation from Job Plans
+When deriving project financials from timesheets, cost is calculated using the **daily gross cost rate** from resource plans (job plans), not the `cost_value` stored on individual timesheet entries:
+- Daily cost rate = `hourly_gross_cost × 8` (from `resource_plans` per employee per project)
+- Cost = `days_worked × daily_cost_rate`
+- This ensures that even if a permanent employee works more than 8 hours, the cost is capped at the daily rate
+- Profit = Revenue - Cost
 - **Pipeline Weighted Revenue:** Sum of pipeline opportunity values multiplied by win probability percentages
 
 The same formula applies to GP:

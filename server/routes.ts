@@ -2939,11 +2939,20 @@ export async function registerRoutes(
   app.post("/api/derive/project-financials", requirePermission("projects", "create"), async (req, res) => {
     try {
       const timesheetAgg = await db("timesheets")
-        .select("project_id", "fy_year", "fy_month")
+        .select("employee_id", "project_id", "fy_year", "fy_month")
         .sum("sale_value as total_revenue")
-        .sum("cost_value as total_cost")
         .sum("hours_worked as total_hours")
-        .groupBy("project_id", "fy_year", "fy_month");
+        .sum("days_worked as total_days")
+        .groupBy("employee_id", "project_id", "fy_year", "fy_month");
+
+      const resourcePlans = await db("resource_plans")
+        .select("employee_id", "project_id", "hourly_gross_cost");
+      const costRateMap = new Map<string, number>();
+      for (const rp of resourcePlans) {
+        const key = `${rp.employee_id}-${rp.project_id}`;
+        const dailyCost = (Number(rp.hourly_gross_cost) || 0) * 8;
+        if (dailyCost > 0) costRateMap.set(key, dailyCost);
+      }
 
       const fyMonthLabels = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -2951,19 +2960,37 @@ export async function registerRoutes(
       let monthlyCreated = 0;
       let projectsUpdated = 0;
 
-      const projectTotals = new Map<number, { revenue: number; cost: number; hours: number }>();
+      const monthlyAgg = new Map<string, { revenue: number; cost: number; hours: number; projectId: number; fyYear: string; fyMonth: number }>();
 
       for (const row of timesheetAgg) {
         if (!row.fy_year || !row.fy_month || !row.project_id) continue;
 
         const revenue = Number(row.total_revenue || 0);
-        const cost = Number(row.total_cost || 0);
+        const days = Number(row.total_days || 0);
+        const hours = Number(row.total_hours || 0);
+
+        const rpKey = `${row.employee_id}-${row.project_id}`;
+        const dailyCostRate = costRateMap.get(rpKey) || 0;
+        const cost = dailyCostRate > 0 ? days * dailyCostRate : 0;
+
+        const aggKey = `${row.project_id}-${row.fy_year}-${row.fy_month}`;
+        const existing = monthlyAgg.get(aggKey) || { revenue: 0, cost: 0, hours: 0, projectId: row.project_id, fyYear: row.fy_year, fyMonth: row.fy_month };
+        existing.revenue += revenue;
+        existing.cost += cost;
+        existing.hours += hours;
+        monthlyAgg.set(aggKey, existing);
+      }
+
+      const projectTotals = new Map<number, { revenue: number; cost: number; hours: number }>();
+
+      for (const [, agg] of monthlyAgg) {
+        const revenue = agg.revenue;
+        const cost = agg.cost;
         const profit = revenue - cost;
-        const fyMonth = row.fy_month;
-        const monthLabel = fyMonthLabels[fyMonth - 1];
+        const monthLabel = fyMonthLabels[agg.fyMonth - 1];
 
         const existing = await db("project_monthly")
-          .where({ project_id: row.project_id, fy_year: row.fy_year, month: fyMonth })
+          .where({ project_id: agg.projectId, fy_year: agg.fyYear, month: agg.fyMonth })
           .first();
 
         if (existing) {
@@ -2975,9 +3002,9 @@ export async function registerRoutes(
           monthlyUpdated++;
         } else {
           await db("project_monthly").insert({
-            project_id: row.project_id,
-            fy_year: row.fy_year,
-            month: fyMonth,
+            project_id: agg.projectId,
+            fy_year: agg.fyYear,
+            month: agg.fyMonth,
             month_label: monthLabel,
             revenue: revenue.toFixed(2),
             cost: cost.toFixed(2),
@@ -2986,11 +3013,11 @@ export async function registerRoutes(
           monthlyCreated++;
         }
 
-        const pt = projectTotals.get(row.project_id) || { revenue: 0, cost: 0, hours: 0 };
+        const pt = projectTotals.get(agg.projectId) || { revenue: 0, cost: 0, hours: 0 };
         pt.revenue += revenue;
         pt.cost += cost;
-        pt.hours += Number(row.total_hours || 0);
-        projectTotals.set(row.project_id, pt);
+        pt.hours += agg.hours;
+        projectTotals.set(agg.projectId, pt);
       }
 
       for (const [projectId, totals] of Array.from(projectTotals)) {
