@@ -71,7 +71,8 @@ Projected Total = YTD Actual Revenue + Remaining Contracted Revenue + Pipeline W
 ### Cost Derivation from Job Plans
 When deriving project financials from timesheets, cost is calculated using the **daily gross cost rate** from resource plans (job plans), not the `cost_value` stored on individual timesheet entries:
 - Daily cost rate = `hourly_gross_cost × 8` (from `resource_plans` per employee per project)
-- Cost = `days_worked × daily_cost_rate`
+- Cost = `days_worked × daily_cost_rate` when a resource plan exists
+- Fallback: if no resource plan exists for an employee-project pair, uses the timesheet's `cost_value`
 - This ensures that even if a permanent employee works more than 8 hours, the cost is capped at the daily rate
 - Profit = Revenue - Cost
 - **Pipeline Weighted Revenue:** Sum of pipeline opportunity values multiplied by win probability percentages

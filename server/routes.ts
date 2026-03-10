@@ -2941,6 +2941,7 @@ export async function registerRoutes(
       const timesheetAgg = await db("timesheets")
         .select("employee_id", "project_id", "fy_year", "fy_month")
         .sum("sale_value as total_revenue")
+        .sum("cost_value as total_cost")
         .sum("hours_worked as total_hours")
         .sum("days_worked as total_days")
         .groupBy("employee_id", "project_id", "fy_year", "fy_month");
@@ -2968,10 +2969,11 @@ export async function registerRoutes(
         const revenue = Number(row.total_revenue || 0);
         const days = Number(row.total_days || 0);
         const hours = Number(row.total_hours || 0);
+        const timesheetCost = Number(row.total_cost || 0);
 
         const rpKey = `${row.employee_id}-${row.project_id}`;
         const dailyCostRate = costRateMap.get(rpKey) || 0;
-        const cost = dailyCostRate > 0 ? days * dailyCostRate : 0;
+        const cost = dailyCostRate > 0 ? days * dailyCostRate : timesheetCost;
 
         const aggKey = `${row.project_id}-${row.fy_year}-${row.fy_month}`;
         const existing = monthlyAgg.get(aggKey) || { revenue: 0, cost: 0, hours: 0, projectId: row.project_id, fyYear: row.fy_year, fyMonth: row.fy_month };
