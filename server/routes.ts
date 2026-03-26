@@ -1687,9 +1687,12 @@ export async function registerRoutes(
             projectId: r.project_id,
             weekEnding: r.week_ending instanceof Date ? r.week_ending.toISOString().split("T")[0] : String(r.week_ending).split("T")[0],
             hoursWorked: String(r.hours_worked ?? 0),
+            daysWorked: String(r.days_worked ?? 0),
             billable: r.billable,
             costValue: String(r.cost_value ?? 0),
             saleValue: String(r.sale_value ?? 0),
+            source: r.source ?? "unknown",
+            status: r.status ?? "approved",
           }));
           return res.json(mapped);
         }

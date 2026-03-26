@@ -23,6 +23,16 @@ export function getFyOptions(existing: string[]): string[] {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+export function getFyDateRange(fy: string): { fyStart: Date; fyEnd: Date } | null {
+  const parts = fy.split("-");
+  if (parts.length !== 2) return null;
+  const fyStartYear = 2000 + Number.parseInt(parts[0], 10);
+  return {
+    fyStart: new Date(fyStartYear, 6, 1),       // July 1
+    fyEnd: new Date(fyStartYear + 1, 5, 30),    // June 30
+  };
+}
+
 export function getElapsedFyMonths(fy: string): number {
   const now = new Date();
   const parts = fy.split("-");

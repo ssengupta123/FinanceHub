@@ -24,6 +24,37 @@ import {
 import { DollarSign, TrendingUp, TrendingDown, Percent, Layers, SplitSquareHorizontal, Settings2 } from "lucide-react";
 import type { Project, ProjectMonthly } from "@shared/schema";
 
+interface CostsSummaryRow {
+  project_id: number;
+  month: string;
+  project_name: string;
+  total_cost: string;
+  total_revenue: string;
+  total_hours: string;
+  entry_count: string;
+}
+
+interface FyMonthRecord {
+  projectId: number;
+  fyYear: string;
+  month: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+}
+
+function calendarMonthToFy(calMonth: string): { fyYear: string; month: number } | null {
+  const parts = calMonth.split("-");
+  if (parts.length !== 2) return null;
+  const year = Number(parts[0]);
+  const mon = Number(parts[1]);
+  if (Number.isNaN(year) || Number.isNaN(mon) || mon < 1 || mon > 12) return null;
+  if (mon >= 7) {
+    return { fyYear: `${String(year).slice(2)}-${String(year + 1).slice(2)}`, month: mon - 6 };
+  }
+  return { fyYear: `${String(year - 1).slice(2)}-${String(year).slice(2)}`, month: mon + 6 };
+}
+
 function formatCurrency(val: string | number | null | undefined): string {
   if (!val) return "$0";
   const n = typeof val === "string" ? Number.parseFloat(val) : val;
@@ -112,7 +143,7 @@ const ALL_COLUMNS: { key: FinanceColumnKey; label: string }[] = [
 
 function buildClientRows(
   fyProjects: Project[],
-  monthlyByProject: Map<number, ProjectMonthly[]>,
+  monthlyByProject: Map<number, FyMonthRecord[]>,
   elapsedMonths: number,
 ): ClientRow[] {
   return fyProjects.map((p) => {
@@ -121,14 +152,14 @@ function buildClientRows(
     const sumRange = (start: number, end: number, field: "revenue" | "cost" | "profit") =>
       rows
         .filter((r) => r.month >= start && r.month <= Math.min(end, elapsedMonths))
-        .reduce((s, r) => s + parseNum(r[field]), 0);
+        .reduce((s, r) => s + r[field], 0);
 
     const q1Rev = sumRange(1, 3, "revenue");
     const q2Rev = sumRange(4, 6, "revenue");
     const q3Rev = sumRange(7, 9, "revenue");
     const q4Rev = sumRange(10, 12, "revenue");
     const ytdRevenue = q1Rev + q2Rev + q3Rev + q4Rev;
-    const ytdCost = rows.filter(r => (r.month ?? 0) <= elapsedMonths).reduce((s, r) => s + parseNum(r.cost), 0);
+    const ytdCost = rows.filter(r => r.month <= elapsedMonths).reduce((s, r) => s + r.cost, 0);
     const ytdGP = ytdRevenue - ytdCost;
     const gpPercent = ytdRevenue > 0 ? (ytdGP / ytdRevenue) * 100 : 0;
 
@@ -241,34 +272,53 @@ export default function FinanceDashboard() {
   const { data: projects, isLoading: loadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
-  const { data: monthlyData, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({
+  const { data: costsSummary, isLoading: loadingCosts } = useQuery<CostsSummaryRow[]>({
+    queryKey: ["/api/costs/summary"],
+  });
+  const { data: projectMonthly, isLoading: loadingMonthly } = useQuery<ProjectMonthly[]>({
     queryKey: ["/api/project-monthly"],
   });
 
-  const isLoading = loadingProjects || loadingMonthly;
+  const isLoading = loadingProjects || loadingCosts || loadingMonthly;
+
+  const fyMonthRecords = useMemo(() => {
+    if (!costsSummary) return [];
+    const records: FyMonthRecord[] = [];
+    costsSummary.forEach(row => {
+      const parsed = calendarMonthToFy(row.month);
+      if (!parsed) return;
+      const rev = parseNum(row.total_revenue);
+      const cost = parseNum(row.total_cost);
+      records.push({
+        projectId: row.project_id,
+        fyYear: parsed.fyYear,
+        month: parsed.month,
+        revenue: rev,
+        cost,
+        profit: rev - cost,
+      });
+    });
+    return records;
+  }, [costsSummary]);
 
   const availableFYs = useMemo(() => {
-    if (!monthlyData) return [getCurrentFy()];
-    const fys = monthlyData.map(m => m.fyYear).filter(Boolean) as string[];
+    if (!fyMonthRecords.length) return [getCurrentFy()];
+    const fys = fyMonthRecords.map(m => m.fyYear).filter(Boolean);
     return getFyOptions(fys);
-  }, [monthlyData]);
+  }, [fyMonthRecords]);
+
+  const fyData = useMemo(() => {
+    return fyMonthRecords.filter(m => m.fyYear === selectedFY);
+  }, [fyMonthRecords, selectedFY]);
 
   const fyProjectIds = useMemo(() => {
-    if (!monthlyData) return new Set<number>();
-    return new Set(
-      monthlyData.filter(m => m.fyYear === selectedFY).map(m => m.projectId)
-    );
-  }, [monthlyData, selectedFY]);
+    return new Set(fyData.map(m => m.projectId));
+  }, [fyData]);
 
   const fyProjects = useMemo(() => {
     if (!projects) return [];
     return projects.filter(p => fyProjectIds.has(p.id));
   }, [projects, fyProjectIds]);
-
-  const fyMonthlyData = useMemo(() => {
-    if (!monthlyData) return [];
-    return monthlyData.filter(m => m.fyYear === selectedFY);
-  }, [monthlyData, selectedFY]);
 
   const toggleColumn = (key: FinanceColumnKey) => {
     setVisibleColumns(prev => toggleColumnInSet(prev, key));
@@ -278,12 +328,28 @@ export default function FinanceDashboard() {
 
   const elapsedMonths = getElapsedFyMonths(selectedFY);
 
-  const monthlyByProject = new Map<number, ProjectMonthly[]>();
-  fyMonthlyData.forEach((m) => {
-    const list = monthlyByProject.get(m.projectId) || [];
-    list.push(m);
-    monthlyByProject.set(m.projectId, list);
-  });
+  // KPI summary cards use project_monthly (same source as Dashboard) so totals match
+  const kpiTotals = useMemo(() => {
+    if (!projectMonthly) return { revenue: 0, cost: 0, gp: 0, gpPercent: 0 };
+    const fyRecords = projectMonthly.filter(
+      m => m.fyYear === selectedFY && (m.month ?? 0) <= elapsedMonths
+    );
+    const revenue = fyRecords.reduce((s, m) => s + parseNum(m.revenue), 0);
+    const cost = fyRecords.reduce((s, m) => s + parseNum(m.cost), 0);
+    const gp = revenue - cost;
+    const gpPercent = revenue > 0 ? (gp / revenue) * 100 : 0;
+    return { revenue, cost, gp, gpPercent };
+  }, [projectMonthly, selectedFY, elapsedMonths]);
+
+  const monthlyByProject = useMemo(() => {
+    const map = new Map<number, FyMonthRecord[]>();
+    fyData.forEach((m) => {
+      const list = map.get(m.projectId) || [];
+      list.push(m);
+      map.set(m.projectId, list);
+    });
+    return map;
+  }, [fyData]);
 
   const clientRows = buildClientRows(fyProjects, monthlyByProject, elapsedMonths);
 
@@ -291,17 +357,21 @@ export default function FinanceDashboard() {
 
   const financeSummary = computeFinanceSummary(clientRows, isLoading);
 
+  const fyDataFiltered = useMemo(() => {
+    return fyData.filter(m => fyProjectIds.has(m.projectId));
+  }, [fyData, fyProjectIds]);
+
   const monthlySnapshot = useMemo(() => {
     return FY_MONTHS.map((_, mi) => {
       const monthNum = mi + 1;
-      const monthRecords = fyMonthlyData.filter(m => m.month === monthNum);
-      const revenue = monthRecords.reduce((s, m) => s + parseNum(m.revenue), 0);
-      const cost = monthRecords.reduce((s, m) => s + parseNum(m.cost), 0);
+      const monthRecords = fyDataFiltered.filter(m => m.month === monthNum);
+      const revenue = monthRecords.reduce((s, m) => s + m.revenue, 0);
+      const cost = monthRecords.reduce((s, m) => s + m.cost, 0);
       const profit = revenue - cost;
       const gm = revenue > 0 ? (profit / revenue) * 100 : 0;
       return { revenue, cost, profit, gm };
     });
-  }, [fyMonthlyData]);
+  }, [fyDataFiltered]);
 
   const {
     totalRevenue, totalCost, totalGP, totalGPPercent,
@@ -328,7 +398,7 @@ export default function FinanceDashboard() {
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className={revenueCardBorder}>
+          <Card className={kpiTotals.revenue > 0 ? "border-green-500/50" : ""}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -338,7 +408,7 @@ export default function FinanceDashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <div className="text-2xl font-bold" data-testid="text-finance-revenue">
-                  {formatCurrency(totalRevenue)}
+                  {formatCurrency(kpiTotals.revenue)}
                 </div>
               )}
               <p className="text-xs text-muted-foreground">YTD across all projects</p>
@@ -355,14 +425,14 @@ export default function FinanceDashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <div className="text-2xl font-bold" data-testid="text-finance-cost">
-                  {formatCurrency(totalCost)}
+                  {formatCurrency(kpiTotals.cost)}
                 </div>
               )}
               <p className="text-xs text-muted-foreground">YTD gross costs</p>
             </CardContent>
           </Card>
 
-          <Card className={gpCardClassName(isLoading, totalGP)}>
+          <Card className={kpiTotals.gp > 0 ? "border-green-500/50" : "border-red-500/50"}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -371,15 +441,15 @@ export default function FinanceDashboard() {
               {isLoading ? (
                 <Skeleton className="h-8 w-24" />
               ) : (
-                <div className={`text-2xl font-bold ${totalGP > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-finance-gp">
-                  {formatCurrency(totalGP)}
+                <div className={`text-2xl font-bold ${kpiTotals.gp > 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} data-testid="text-finance-gp">
+                  {formatCurrency(kpiTotals.gp)}
                 </div>
               )}
               <p className="text-xs text-muted-foreground">Revenue minus costs</p>
             </CardContent>
           </Card>
 
-          <Card className={gpMarginCardBorder}>
+          <Card className={computeGpMarginBorder(isLoading, kpiTotals.gpPercent)}>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">GP Margin %</CardTitle>
               <Percent className="h-4 w-4 text-muted-foreground" />
@@ -389,7 +459,7 @@ export default function FinanceDashboard() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <div className="text-2xl font-bold" data-testid="text-finance-gp-margin">
-                  {totalGPPercent.toFixed(1)}%
+                  {kpiTotals.gpPercent.toFixed(1)}%
                 </div>
               )}
               <p className="text-xs text-muted-foreground">Overall gross profit margin</p>

@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import type { Project, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths, getElapsedFyInfo, getFyDateRange } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -147,7 +147,25 @@ export default function Dashboard() {
 
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
 
-  const totalContracted = fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.budgetAmount || "0"), 0);
+  const totalContracted = useMemo(() => {
+    if (!projects) return 0;
+    const range = getFyDateRange(selectedFY);
+    if (!range) return 0;
+    const { fyStart, fyEnd } = range;
+    return projects
+      .filter(p => {
+        // Include projects whose dates overlap with the FY
+        if (p.startDate) {
+          const start = new Date(p.startDate);
+          const end = p.endDate ? new Date(p.endDate) : null;
+          return start <= fyEnd && (end === null || end >= fyStart);
+        }
+        // Also include active projects with no start date — these are newly added
+        // contracts that haven't been dated yet but are clearly current-FY work
+        return p.status === "active" || p.adStatus === "Active";
+      })
+      .reduce((sum, p) => sum + Number.parseFloat(p.budgetAmount || "0"), 0);
+  }, [projects, selectedFY]);
 
   const { totalRevenue, totalCosts } = useMemo(() => {
     let rev = 0;
@@ -232,14 +250,35 @@ export default function Dashboard() {
       const actualRevenue = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.revenue || "0"), 0);
       const actualCost = monthlyRecords.reduce((s, m) => s + Number.parseFloat(m.cost || "0"), 0);
       const isElapsed = monthNum <= elapsedMonths;
-
-      if (isElapsed) {
-        return { month, revenue: actualRevenue, cost: actualCost, profit: actualRevenue - actualCost, projectedRevenue: null as number | null, projectedCost: null as number | null, projectedProfit: null as number | null };
-      }
+      const isBridgePoint = monthNum === elapsedMonths + 1;
 
       const futureRev = actualRevenue > 0 ? actualRevenue : avgRevenue;
       const futureCost = actualCost > 0 ? actualCost : avgCost;
-      return { month, revenue: null as number | null, cost: null as number | null, profit: null as number | null, projectedRevenue: futureRev, projectedCost: futureCost, projectedProfit: futureRev - futureCost };
+
+      if (isElapsed) {
+        // For the last actual month, also seed the projected series so the dashed line starts there
+        const isLastActual = monthNum === elapsedMonths;
+        return {
+          month,
+          revenue: actualRevenue,
+          cost: actualCost,
+          profit: actualRevenue - actualCost,
+          projectedRevenue: isLastActual ? (actualRevenue as number | null) : null as number | null,
+          projectedCost: isLastActual ? (actualCost as number | null) : null as number | null,
+          projectedProfit: isLastActual ? ((actualRevenue - actualCost) as number | null) : null as number | null,
+        };
+      }
+
+      return {
+        month,
+        // For the first projected month, also keep actual revenue so the solid line connects
+        revenue: isBridgePoint ? (futureRev as number | null) : null as number | null,
+        cost: isBridgePoint ? (futureCost as number | null) : null as number | null,
+        profit: isBridgePoint ? ((futureRev - futureCost) as number | null) : null as number | null,
+        projectedRevenue: futureRev,
+        projectedCost: futureCost,
+        projectedProfit: futureRev - futureCost,
+      };
     });
   }, [fyProjectMonthly, elapsedMonths]);
 
