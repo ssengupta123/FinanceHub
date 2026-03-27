@@ -35,11 +35,20 @@ These thresholds apply to:
 
 **Location:** Dashboard, Finance, Scenarios pages
 
-YTD revenue and cost figures use **raw timesheet data** from `project_monthly` records without any day-level pro-rating.
+YTD revenue and cost figures use **raw timesheet data** without any day-level pro-rating.
 
-- The current month's data from `project_monthly` is included as-is (no dayFraction multiplier)
+- **Finance page KPI cards:** Source from `project_monthly` records filtered to `fy_year === selectedFY && month <= elapsedMonths`. This aligns exactly with the Dashboard source.
+- **Finance client table & Monthly Snapshot:** Source from `/api/costs/summary` (raw timesheets aggregated by project + calendar month), then filtered client-side by FY and elapsed months.
+- **Dashboard & Scenarios:** Use `project_monthly` records (derived from timesheets via the derive endpoint). The current month's data is included as-is (no dayFraction multiplier).
+- **Costs page:** Sources from `/api/costs/summary` (raw timesheets), filtered client-side by FY using `monthToFy`.
+- **Resource Plans / Allocations page:** Sources from `/api/resource-allocations` (raw timesheets aggregated by employee + project + month), filtered client-side by FY using `monthToFy`.
 - Revenue and cost are summed directly for all elapsed months (FY month 1 through current month)
-- This applies across Dashboard totals, Finance project rows, and Scenarios YTD actuals
+
+**Important — Duplicate `excel-import` rows (March 2026):** The database contains two sets of timesheet rows for the same data:
+- `source = 'itimesheets'` — 17,982 rows, $16.4M revenue (canonical iTimesheets CSV import; `fy_year` is set)
+- `source = 'excel-import'` — 17,982 rows, $16.4M revenue (older Excel-based import of the same data; `fy_year` is empty string)
+
+The `excel-import` rows are duplicates and must be excluded from all aggregations. The derive endpoint already excludes them implicitly (empty string `fy_year` is falsy in JavaScript). The `/api/costs/summary`, `/api/resource-allocations`, and `/api/utilization/weekly` endpoints explicitly filter `.whereNot({ source: "excel-import" })` to prevent double-counting. The canonical revenue total for FY25-26 is **$16,416,739.11**.
 
 ---
 
@@ -155,6 +164,28 @@ Forecast for future quarters combines data from two sources:
 2. **Job Plans (resource_plans):** Revenue projected from resource plan weekly allocations using `discounted_hourly_rate`, and cost projected using `hourly_gross_cost`
 
 The combined forecast provides a more complete picture of expected Q4 performance by including both existing project commitments and planned resource allocations from job plans.
+
+---
+
+## 11. Timesheets Weekly Calendar Grid
+
+**Location:** Timesheets page (`/timesheets`)
+
+The timesheets page displays a **6-week rolling calendar grid** with employees as rows and weeks as columns.
+
+**Colour-coding thresholds (per cell, total hours for that employee in that week):**
+- **Green:** 40h+ (full utilisation)
+- **Amber:** 24–39h (partial utilisation)
+- **Red:** <24h (low utilisation)
+
+**Behaviour:**
+- The grid auto-anchors to the **latest week with data** in the selected FY, so switching FYs always shows relevant entries rather than empty current-date weeks
+- Week navigation arrows shift the 6-week window forward/backward; "Today" button resets to default position
+- Clicking an employee row expands to show per-project hour breakdowns
+- Billable classification in detail rows: **green** = all hours billable, **amber** = mixed billable/non-billable, **grey** = all non-billable
+- Summary cards show Total Hours, Billable %, and Active Staff for the visible 6-week window
+- Timesheet `weekEnding` dates are mapped to their Monday week key using local date components (timezone-safe)
+- The FY-filtered API endpoint returns `daysWorked`, `source`, and `status` fields alongside core timesheet data
 
 ---
 
