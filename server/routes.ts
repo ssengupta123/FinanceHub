@@ -1680,6 +1680,7 @@ export async function registerRoutes(
           const data = await db("timesheets")
             .where("week_ending", ">=", startDate)
             .where("week_ending", "<=", endDate)
+            .whereNot({ source: "excel-import" })
             .orderBy("week_ending", "desc");
           const mapped = data.map((r: any) => ({
             id: r.id,
@@ -1753,6 +1754,7 @@ export async function registerRoutes(
         .sum({ total_hours: db.raw("CAST(timesheets.hours_worked AS numeric)") })
         .count({ entry_count: "*" })
         .leftJoin("projects", "timesheets.project_id", "projects.id")
+        .whereNot({ "timesheets.source": "excel-import" })
         .groupBy("timesheets.project_id", db.raw(monthExpr), "projects.name")
         .orderBy([{ column: "month", order: "desc" }, { column: "total_cost", order: "desc" }]);
       res.json(rows);
@@ -1780,6 +1782,7 @@ export async function registerRoutes(
         .count({ entry_count: "*" })
         .leftJoin("projects", "timesheets.project_id", "projects.id")
         .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .whereNot({ "timesheets.source": "excel-import" })
         .groupBy("timesheets.employee_id", "timesheets.project_id",
           db.raw(monthExpr),
           "projects.name", "employees.first_name", "employees.last_name")
@@ -1807,7 +1810,8 @@ export async function registerRoutes(
         .sum({ billable_hours: db.raw(billableExpr) })
         .sum({ cost_value: db.raw("CAST(timesheets.cost_value AS numeric)") })
         .sum({ sale_value: db.raw("CAST(timesheets.sale_value AS numeric)") })
-        .leftJoin("employees", "timesheets.employee_id", "employees.id");
+        .leftJoin("employees", "timesheets.employee_id", "employees.id")
+        .whereNot({ "timesheets.source": "excel-import" });
 
       if (req.query.fy) {
         const fy = String(req.query.fy);
