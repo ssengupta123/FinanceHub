@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentFy } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions } from "@/lib/fy-utils";
 import { FySelector } from "@/components/fy-selector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,16 @@ function parseNum(val: string | number | null | undefined): number {
 
 type SortField = "employee_name" | "project_name" | "month" | "total_hours" | "total_cost";
 
+function monthToFy(yyyyMm: string): string | null {
+  if (!yyyyMm || yyyyMm.length < 7) return null;
+  const [yearStr, monStr] = yyyyMm.split("-");
+  const year = Number.parseInt(yearStr);
+  const mon = Number.parseInt(monStr);
+  if (Number.isNaN(year) || Number.isNaN(mon)) return null;
+  const fyStart = mon >= 7 ? year : year - 1;
+  return `${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+}
+
 export default function ResourcePlans() {
   const { toast } = useToast();
   const { can } = useAuth();
@@ -67,21 +77,31 @@ export default function ResourcePlans() {
   const employeeMap = new Map(employees?.map(e => [e.id, e]) || []);
   const projectMap = new Map(projects?.map(p => [p.id, p]) || []);
 
-  const availableMonths = useMemo(() => {
-    const months = new Set((allocations || []).map(r => r.month));
-    return Array.from(months).sort((a, b) => a.localeCompare(b)).reverse();
+  const availableFYs = useMemo(() => {
+    if (!allocations) return [getCurrentFy()];
+    const fys = allocations.map(r => monthToFy(r.month)).filter(Boolean) as string[];
+    return getFyOptions(fys);
   }, [allocations]);
+
+  const fyFilteredAllocations = useMemo(() => {
+    return (allocations || []).filter(r => monthToFy(r.month) === selectedFY);
+  }, [allocations, selectedFY]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set(fyFilteredAllocations.map(r => r.month));
+    return Array.from(months).sort((a, b) => a.localeCompare(b)).reverse();
+  }, [fyFilteredAllocations]);
 
   const uniqueEmployees = useMemo(() => {
     const empMap = new Map<string, string>();
-    (allocations || []).forEach(r => {
+    fyFilteredAllocations.forEach(r => {
       empMap.set(String(r.employee_id), r.employee_name);
     });
     return Array.from(empMap.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [allocations]);
+  }, [fyFilteredAllocations]);
 
   const filtered = useMemo(() => {
-    let data = allocations || [];
+    let data = fyFilteredAllocations;
     if (filterMonth !== "all") data = data.filter(r => r.month === filterMonth);
     if (filterEmployee !== "all") data = data.filter(r => String(r.employee_id) === filterEmployee);
 
@@ -106,7 +126,7 @@ export default function ResourcePlans() {
       return sortAsc ? aVal - bVal : bVal - aVal;
     });
     return data;
-  }, [allocations, filterMonth, filterEmployee, sortField, sortAsc]);
+  }, [fyFilteredAllocations, filterMonth, filterEmployee, sortField, sortAsc]);
 
   const totals = useMemo(() => {
     const totalHours = filtered.reduce((s, r) => s + parseNum(r.total_hours), 0);
@@ -153,7 +173,7 @@ export default function ResourcePlans() {
           <p className="text-sm text-muted-foreground">Actual resource allocations derived from timesheet data</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <FySelector value={selectedFY} options={[getCurrentFy()]} onChange={setSelectedFY} />
+          <FySelector value={selectedFY} options={availableFYs} onChange={setSelectedFY} />
           <Select value={filterMonth} onValueChange={setFilterMonth}>
             <SelectTrigger className="w-[160px]" data-testid="select-filter-month-trigger">
               <SelectValue placeholder="Filter by month" />
