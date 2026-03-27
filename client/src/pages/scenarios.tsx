@@ -121,6 +121,8 @@ function fyMonthIndex(date: Date, fyStart: Date): number {
 
 function parseDate(dateStr: string | null | undefined): Date | null {
   if (!dateStr) return null;
+  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
   const d = new Date(dateStr);
   return Number.isNaN(d.getTime()) ? null : d;
 }
@@ -472,7 +474,15 @@ function ProjectedSummaryCards({ ytd, scenarioResults, isLoading, revenueGoal, m
           </CardHeader>
           <CardContent>
             <ScenarioMetricValue isLoading={isLoading} value={scenarioResults ? formatCurrency(pipelineRev) : ""} fallback="$0" testId="text-weighted-revenue" />
-            <p className="text-xs text-muted-foreground">{scenarioResults?.pipelineCount || 0} opps, {12 - ytd.elapsedMonths} months remaining</p>
+            <p className="text-xs text-muted-foreground">
+              Remaining {12 - ytd.elapsedMonths} months · {scenarioResults?.pipelineCount || 0} opps
+            </p>
+            {scenarioResults && scenarioResults.totalRev > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Full FY (all months): {formatCurrency(scenarioResults.totalRev)}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-0.5 italic">FY-attributed value × win rate</p>
           </CardContent>
         </Card>
         <Card className="border-l-4 border-l-green-500">
@@ -1053,10 +1063,13 @@ export default function Scenarios() {
         if (startDate && expiryDate) {
           return startDate <= fyEnd && expiryDate >= fyStart;
         }
+        if (startDate) {
+          return startDate <= fyEnd;
+        }
         if (dueDate) {
           return dueDate >= fyStart && dueDate <= fyEnd;
         }
-        return true;
+        return false;
       }
       return false;
     });
@@ -1133,7 +1146,8 @@ export default function Scenarios() {
           <h1 className="text-2xl font-semibold" data-testid="text-scenarios-title">What-If Scenarios</h1>
           <p className="text-sm text-muted-foreground">
             YTD actuals + pipeline weighted forecast = projected position
-            {scenarioResults && ` \u2014 ${scenarioResults.pipelineCount} opportunities in ${formatFyLabel(selectedFY)}`}
+            {allFyPipeline.length > 0 && ` \u2014 ${allFyPipeline.length} opportunities in ${formatFyLabel(selectedFY)}`}
+            {excludedOppIds.size > 0 && ` (${excludedOppIds.size} excluded)`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

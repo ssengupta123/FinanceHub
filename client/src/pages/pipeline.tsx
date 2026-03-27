@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { getCurrentFy } from "@/lib/fy-utils";
+import { getCurrentFy, getFyDateRange } from "@/lib/fy-utils";
 import {
   Table,
   TableBody,
@@ -140,10 +140,18 @@ export default function Pipeline() {
 
   const [selectedFY, setSelectedFY] = useState(() => getCurrentFy());
 
+  const parseLocalDate = (str: string | null | undefined): Date | null => {
+    if (!str) return null;
+    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
   const getDueDateFY = (dueDate: string | null | undefined): string | null => {
     if (!dueDate) return null;
-    const d = new Date(dueDate);
-    if (Number.isNaN(d.getTime())) return null;
+    const d = parseLocalDate(dueDate);
+    if (!d) return null;
     const m = d.getMonth();
     const y = d.getFullYear();
     const fyStart = m >= 6 ? y : y - 1;
@@ -173,7 +181,21 @@ export default function Pipeline() {
       return pipeline.filter(o => o.fyYear === "open_opps");
     }
     const directMatch = pipeline.filter(o => o.fyYear === selectedFY);
-    const fromOpenOpps = pipeline.filter(o => o.fyYear === "open_opps" && getDueDateFY(o.dueDate) === selectedFY);
+    const fyRange = getFyDateRange(selectedFY);
+    const fromOpenOpps = pipeline.filter(o => {
+      if (o.fyYear !== "open_opps") return false;
+      if (!fyRange) return getDueDateFY(o.dueDate) === selectedFY;
+      const { fyStart, fyEnd } = fyRange;
+      const startDate = parseLocalDate(o.startDate);
+      const expiryDate = parseLocalDate(o.expiryDate);
+      if (startDate && expiryDate) {
+        return startDate <= fyEnd && expiryDate >= fyStart;
+      }
+      if (startDate) {
+        return startDate <= fyEnd;
+      }
+      return getDueDateFY(o.dueDate) === selectedFY;
+    });
     if (directMatch.length > 0 && fromOpenOpps.length > 0) {
       const directIds = new Set(directMatch.map(o => o.id));
       return [...directMatch, ...fromOpenOpps.filter(o => !directIds.has(o.id))];
@@ -328,7 +350,7 @@ export default function Pipeline() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-weighted-pipeline">{formatCurrency(totalWeightedValue)}</div>
-            <p className="text-xs text-muted-foreground">Risk-adjusted value</p>
+            <p className="text-xs text-muted-foreground">Full contract value × win rate</p>
           </CardContent>
         </Card>
         <Card>

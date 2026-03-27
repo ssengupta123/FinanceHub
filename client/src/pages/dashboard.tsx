@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import type { Project, PipelineOpportunity, ProjectMonthly } from "@shared/schema";
 import { FySelector } from "@/components/fy-selector";
-import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths, getElapsedFyInfo, getFyDateRange } from "@/lib/fy-utils";
+import { getCurrentFy, getFyOptions, getFyFromDate, getElapsedFyMonths, getElapsedFyInfo } from "@/lib/fy-utils";
 
 const FY_MONTHS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
@@ -148,24 +148,11 @@ export default function Dashboard() {
   const activeProjects = fyProjects.filter(p => p.status === "active" || p.adStatus === "Active");
 
   const totalContracted = useMemo(() => {
-    if (!projects) return 0;
-    const range = getFyDateRange(selectedFY);
-    if (!range) return 0;
-    const { fyStart, fyEnd } = range;
-    return projects
-      .filter(p => {
-        // Include projects whose dates overlap with the FY
-        if (p.startDate) {
-          const start = new Date(p.startDate);
-          const end = p.endDate ? new Date(p.endDate) : null;
-          return start <= fyEnd && (end === null || end >= fyStart);
-        }
-        // Also include active projects with no start date — these are newly added
-        // contracts that haven't been dated yet but are clearly current-FY work
-        return p.status === "active" || p.adStatus === "Active";
-      })
-      .reduce((sum, p) => sum + Number.parseFloat(p.budgetAmount || "0"), 0);
-  }, [projects, selectedFY]);
+    // Use fyProjects (projects with actual project_monthly records in this FY)
+    // This avoids inflating Sold with multi-year contracts that only partially
+    // overlap the FY by date but may not have delivered work yet this year.
+    return fyProjects.reduce((sum, p) => sum + Number.parseFloat(p.budgetAmount || "0"), 0);
+  }, [fyProjects]);
 
   const { totalRevenue, totalCosts } = useMemo(() => {
     let rev = 0;
