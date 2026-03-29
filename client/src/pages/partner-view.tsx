@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Handshake, DollarSign, Users, Filter, Award, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -486,15 +486,33 @@ export default function PartnerView() {
             <CardTitle className="text-base">Pipeline Value by VAT</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[280px]" data-testid="chart-by-vat">
+            <div className="h-[300px]" data-testid="chart-by-vat">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={byVatChart} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, value }) => `${name}: ${formatDollars(value)}`}>
+                  <Pie
+                    data={byVatChart}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="45%"
+                    outerRadius={90}
+                    labelLine={false}
+                    label={({ name, value, percent }) =>
+                      percent > 0.08 ? `${name}: ${formatDollars(value)}` : null
+                    }
+                  >
                     {byVatChart.map((entry, i) => (
                       <Cell key={`cell-${entry.name}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(v: number) => formatDollars(v)} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                  <Legend
+                    formatter={(value, entry: any) => (
+                      <span className="text-xs">{value}: {formatDollars(entry.payload?.value ?? 0)}</span>
+                    )}
+                    iconType="circle"
+                    iconSize={8}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
